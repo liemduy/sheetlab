@@ -131,6 +131,7 @@ function App() {
   }
 
   function handleResetScore() {
+    updateToolState({ placementMode: 'place' });
     commitScoreChange(
       createEmptyScore(toolState.scoreType, {
         pageSize: score.pageSize,

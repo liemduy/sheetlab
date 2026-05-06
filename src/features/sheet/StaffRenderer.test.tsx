@@ -74,12 +74,17 @@ function expectRenderedYsInsideSvg(container: HTMLElement, svgHeight: number) {
 
 describe('StaffRenderer', () => {
   it('renders an empty treble staff system', () => {
-    render(<StaffRenderer score={createEmptyScore('treble', { measureCount: 4 })} />);
+    const { container } = render(
+      <StaffRenderer score={createEmptyScore('treble', { measureCount: 4 })} />,
+    );
 
     expect(
       screen.getByRole('img', { name: 'Treble staff notation system' }),
     ).toBeInTheDocument();
     expect(screen.getByTestId('vexflow-renderer')).toBeInTheDocument();
+    expect(container.querySelector('.vexflow-stage-spacer')).toHaveStyle({
+      paddingBottom: `${(getScoreSvgHeight('treble') / SVG_WIDTH) * 100}%`,
+    });
     expect(screen.getByTestId('staff-treble')).toBeInTheDocument();
     expect(screen.queryByTestId('staff-bass')).not.toBeInTheDocument();
     expect(screen.getAllByTestId('measure-barline-treble')).toHaveLength(5);

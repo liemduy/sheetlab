@@ -86,6 +86,21 @@ describe('App editor state', () => {
     ).toBeInTheDocument();
   });
 
+  it('returns to place mode after reset so a new score starts safely', () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Insert' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+
+    expect(screen.getByRole('button', { name: 'Place' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText('Place'),
+    ).toBeInTheDocument();
+  });
+
   it('updates score type, page size, accidental, and tempo from the left panel', () => {
     render(<App />);
 

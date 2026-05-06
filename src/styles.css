@@ -313,9 +313,15 @@ button {
 
 .vexflow-stage {
   position: relative;
-  width: 920px;
-  max-width: none;
+  width: 100%;
+  max-width: 920px;
   margin-inline: auto;
+}
+
+.vexflow-stage-spacer {
+  display: block;
+  width: 100%;
+  pointer-events: none;
 }
 
 .vexflow-output,
@@ -325,6 +331,11 @@ button {
   inset: 0;
   width: 100%;
   height: 100%;
+}
+
+.vexflow-output svg {
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .notation-overlay {

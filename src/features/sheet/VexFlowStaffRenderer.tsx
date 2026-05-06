@@ -79,6 +79,11 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
       data-testid="vexflow-renderer"
       style={{ aspectRatio: `${SVG_WIDTH} / ${height}` }}
     >
+      <div
+        aria-hidden="true"
+        className="vexflow-stage-spacer"
+        style={{ paddingBottom: `${(height / SVG_WIDTH) * 100}%` }}
+      />
       <div ref={containerRef} className="vexflow-output" aria-hidden="true" />
       <NotationOverlay
         activeEventId={props.activeEventId}
