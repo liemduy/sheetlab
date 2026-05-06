@@ -65,4 +65,51 @@ describe('sheet interaction mapping', () => {
     expect(mapPointToMusicPosition({ x: 20, y: getPitchY({ step: 'E', octave: 4 }, 'treble', 0) }, score)).toBeNull();
     expect(mapPointToMusicPosition({ x: STAFF_LEFT, y: 20 }, score)).toBeNull();
   });
+
+  it.each([
+    {
+      pitch: { step: 'A' as const, octave: 3 },
+      scoreType: 'treble' as const,
+      staffId: 'treble',
+      staffIndex: 0,
+    },
+    {
+      pitch: { step: 'C' as const, octave: 6 },
+      scoreType: 'treble' as const,
+      staffId: 'treble',
+      staffIndex: 0,
+    },
+    {
+      pitch: { step: 'A' as const, octave: 1 },
+      scoreType: 'grand' as const,
+      staffId: 'bass',
+      staffIndex: 1,
+    },
+    {
+      pitch: { step: 'E' as const, octave: 4 },
+      scoreType: 'grand' as const,
+      staffId: 'bass',
+      staffIndex: 1,
+    },
+  ])('maps ledger stress pointer $pitch.step$pitch.octave on $staffId', ({
+    pitch,
+    scoreType,
+    staffId,
+    staffIndex,
+  }) => {
+    const score = createEmptyScore(scoreType, { measureCount: 4 });
+    const staff = score.parts[0]?.staves[staffIndex];
+    const result = mapPointToMusicPosition(
+      {
+        x: getBeatX(0, 0, score.timeSignature.beats),
+        y: getPitchY(pitch, staff?.clef ?? 'treble', staffIndex),
+      },
+      score,
+    );
+
+    expect(result).toMatchObject({
+      staffId,
+      pitch,
+    });
+  });
 });

@@ -25,7 +25,7 @@ export interface MusicPosition {
 }
 
 const SNAP_BEAT = 0.5;
-const STAFF_VERTICAL_PADDING = 22;
+const STAFF_VERTICAL_PADDING = 44;
 const NOTE_STEPS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'] as const;
 const TOP_LINE_BY_CLEF = {
   treble: { step: 'F', octave: 5 },

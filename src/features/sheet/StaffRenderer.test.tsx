@@ -1,7 +1,9 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { placeScoreEvent } from '../../domain/score/editing';
 import { createEmptyScore } from '../../domain/score/factories';
 import { trebleStudyFixture } from '../../domain/score/fixtures';
+import type { Clef, Pitch, ScoreType, StaffId } from '../../domain/score/types';
 import type { MusicPosition } from './interaction';
 import { getScoreSvgHeight, getStaffTop, SVG_WIDTH } from './layout';
 import { getBeatX, getPitchY } from './notationGeometry';
@@ -40,6 +42,34 @@ function svgToClientPoint(bounds: DOMRect, x: number, y: number) {
     clientX: bounds.left + (x / SVG_WIDTH) * bounds.width,
     clientY: bounds.top + (y / getScoreSvgHeight('treble')) * bounds.height,
   };
+}
+
+function getRenderedYValues(container: HTMLElement) {
+  const values: number[] = [];
+
+  container
+    .querySelectorAll(
+      '.score-event-notehead, .score-event-stem, .notation-ledger-line',
+    )
+    .forEach((element) => {
+      ['cy', 'y1', 'y2'].forEach((attribute) => {
+        const value = element.getAttribute(attribute);
+
+        if (value !== null) {
+          values.push(Number(value));
+        }
+      });
+    });
+
+  return values;
+}
+
+function expectRenderedYsInsideSvg(container: HTMLElement, svgHeight: number) {
+  const yValues = getRenderedYValues(container);
+
+  expect(yValues.length).toBeGreaterThan(0);
+  expect(Math.min(...yValues)).toBeGreaterThanOrEqual(0);
+  expect(Math.max(...yValues)).toBeLessThanOrEqual(svgHeight);
 }
 
 describe('StaffRenderer', () => {
@@ -249,6 +279,119 @@ describe('StaffRenderer', () => {
         .querySelectorAll('[data-testid="ledger-line"]').length,
     ).toBeGreaterThan(0);
   });
+
+  it.each([
+    {
+      clef: 'treble',
+      expectedLedgerLines: 2,
+      pitch: { step: 'A', octave: 3 },
+      scoreType: 'treble',
+      staffId: 'treble',
+      staffIndex: 0,
+    },
+    {
+      clef: 'treble',
+      expectedLedgerLines: 1,
+      pitch: { step: 'C', octave: 4 },
+      scoreType: 'treble',
+      staffId: 'treble',
+      staffIndex: 0,
+    },
+    {
+      clef: 'treble',
+      expectedLedgerLines: 1,
+      pitch: { step: 'A', octave: 5 },
+      scoreType: 'treble',
+      staffId: 'treble',
+      staffIndex: 0,
+    },
+    {
+      clef: 'treble',
+      expectedLedgerLines: 2,
+      pitch: { step: 'C', octave: 6 },
+      scoreType: 'treble',
+      staffId: 'treble',
+      staffIndex: 0,
+    },
+    {
+      clef: 'bass',
+      expectedLedgerLines: 3,
+      pitch: { step: 'A', octave: 1 },
+      scoreType: 'grand',
+      staffId: 'bass',
+      staffIndex: 1,
+    },
+    {
+      clef: 'bass',
+      expectedLedgerLines: 2,
+      pitch: { step: 'C', octave: 2 },
+      scoreType: 'grand',
+      staffId: 'bass',
+      staffIndex: 1,
+    },
+    {
+      clef: 'bass',
+      expectedLedgerLines: 1,
+      pitch: { step: 'C', octave: 4 },
+      scoreType: 'grand',
+      staffId: 'bass',
+      staffIndex: 1,
+    },
+    {
+      clef: 'bass',
+      expectedLedgerLines: 2,
+      pitch: { step: 'E', octave: 4 },
+      scoreType: 'grand',
+      staffId: 'bass',
+      staffIndex: 1,
+    },
+  ] satisfies Array<{
+    clef: Clef;
+    expectedLedgerLines: number;
+    pitch: Pitch;
+    scoreType: ScoreType;
+    staffId: StaffId;
+    staffIndex: number;
+  }>)(
+    'renders unclipped ledger stress note $pitch.step$pitch.octave on $staffId',
+    ({ clef, expectedLedgerLines, pitch, scoreType, staffId, staffIndex }) => {
+      const score = placeScoreEvent(createEmptyScore(scoreType), {
+        eventId: 'ledger-stress-note',
+        staffId,
+        measureIndex: 0,
+        beat: 0,
+        duration: 'quarter',
+        entryMode: 'note',
+        pitch,
+      });
+      const hoverPosition: MusicPosition = {
+        staffId,
+        staffIndex,
+        measureIndex: 0,
+        beat: 0,
+        pitch,
+        x: getBeatX(0, 0, score.timeSignature.beats),
+        y: getPitchY(pitch, clef, staffIndex),
+      };
+      const { container } = render(
+        <StaffRenderer hoverPosition={hoverPosition} score={score} />,
+      );
+      const placedEvent = container.querySelector(
+        '[data-event-id="ledger-stress-note"]',
+      );
+      const ghostEvent = screen.getByTestId('ghost-event');
+      const svgHeight = getScoreSvgHeight(scoreType);
+
+      expect(
+        placedEvent?.querySelectorAll('[data-testid="ledger-line"]'),
+      ).toHaveLength(expectedLedgerLines);
+      expect(
+        ghostEvent.querySelectorAll('[data-testid="ledger-line"]'),
+      ).toHaveLength(expectedLedgerLines);
+      expectRenderedYsInsideSvg(placedEvent as HTMLElement, svgHeight);
+      expectRenderedYsInsideSvg(ghostEvent, svgHeight);
+    },
+  );
 
   it('keeps VexFlow staff lines aligned with overlay pitch geometry', () => {
     const { container } = render(
