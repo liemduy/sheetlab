@@ -57,6 +57,105 @@ function getMeasureCount(score) {
   );
 }
 
+function createLayout(score) {
+  const [pageWidth, pageHeight] = getPageSize(score);
+  const staffLeft = 62;
+  const staffRight = pageWidth - 62;
+
+  return {
+    measureCount: getMeasureCount(score),
+    pageHeight,
+    pageWidth,
+    staffLeft,
+    staffRight,
+    staffWidth: staffRight - staffLeft,
+    systemTop: 218,
+    timeSignature: score.timeSignature,
+  };
+}
+
+function getEventDrawing(event, staff, staffIndex, measureIndex, layout) {
+  const measureWidth = layout.staffWidth / layout.measureCount;
+  const contentLeft = layout.staffLeft + measureIndex * measureWidth + 52;
+  const contentWidth = measureWidth - 66;
+  const x =
+    contentLeft +
+    (event.beat / layout.timeSignature.beats) * Math.max(1, contentWidth);
+  const staffTop = layout.systemTop + staffIndex * STAFF_GAP;
+  const y =
+    event.kind === 'note'
+      ? getPitchY(event.pitch, staff.clef, staffTop)
+      : staffTop + STAFF_LINE_SPACING * 2;
+  const ledgerYs = event.kind === 'note' ? getLedgerLineYs(y, staffTop) : [];
+  const middleLineY = staffTop + STAFF_LINE_SPACING * 2;
+  const stemDirection = y <= middleLineY ? 'down' : 'up';
+  const stem =
+    event.kind === 'note' && event.duration !== 'whole'
+      ? {
+          direction: stemDirection,
+          endY: stemDirection === 'up' ? y - STEM_LENGTH : y + STEM_LENGTH,
+          x: stemDirection === 'up' ? x + NOTEHEAD_RX : x - NOTEHEAD_RX,
+        }
+      : null;
+  const bounds = {
+    maxX: x + NOTEHEAD_RX,
+    maxY: y + NOTEHEAD_RY,
+    minX: x - NOTEHEAD_RX,
+    minY: y - NOTEHEAD_RY,
+  };
+
+  for (const ledgerY of ledgerYs) {
+    bounds.minX = Math.min(bounds.minX, x - LEDGER_HALF_WIDTH);
+    bounds.maxX = Math.max(bounds.maxX, x + LEDGER_HALF_WIDTH);
+    bounds.minY = Math.min(bounds.minY, ledgerY);
+    bounds.maxY = Math.max(bounds.maxY, ledgerY);
+  }
+
+  if (stem) {
+    bounds.minX = Math.min(bounds.minX, stem.x);
+    bounds.maxX = Math.max(bounds.maxX, stem.x);
+    bounds.minY = Math.min(bounds.minY, y, stem.endY);
+    bounds.maxY = Math.max(bounds.maxY, y, stem.endY);
+  }
+
+  return {
+    bounds,
+    ledgerYs,
+    staffId: staff.id,
+    staffIndex,
+    staffTop,
+    stem,
+    x,
+    y,
+  };
+}
+
+export function createScorePdfLayout(score) {
+  const layout = createLayout(score);
+  const staves = score.parts[0]?.staves ?? [];
+
+  return {
+    events: staves.flatMap((staff, staffIndex) =>
+      staff.measures.flatMap((measure) =>
+        measure.voices[0]?.events.map((event) => ({
+          ...getEventDrawing(event, staff, staffIndex, measure.index, layout),
+          event,
+          measureIndex: measure.index,
+        })) ?? [],
+      ),
+    ),
+    layout,
+    pageSize: [layout.pageWidth, layout.pageHeight],
+    staves: staves.map((staff, staffIndex) => ({
+      bottom:
+        layout.systemTop + staffIndex * STAFF_GAP + STAFF_LINE_SPACING * 4,
+      clef: staff.clef,
+      id: staff.id,
+      top: layout.systemTop + staffIndex * STAFF_GAP,
+    })),
+  };
+}
+
 function drawStaff(doc, staff, staffIndex, layout) {
   const staffTop = layout.systemTop + staffIndex * STAFF_GAP;
   const measureWidth = layout.staffWidth / layout.measureCount;
@@ -113,17 +212,13 @@ function drawGrandConnectors(doc, layout, staffCount) {
 }
 
 function drawNote(doc, event, staff, staffIndex, measureIndex, layout) {
-  const measureWidth = layout.staffWidth / layout.measureCount;
-  const contentLeft = layout.staffLeft + measureIndex * measureWidth + 52;
-  const contentWidth = measureWidth - 66;
-  const x =
-    contentLeft +
-    (event.beat / layout.timeSignature.beats) * Math.max(1, contentWidth);
-  const staffTop = layout.systemTop + staffIndex * STAFF_GAP;
-  const y =
-    event.kind === 'note'
-      ? getPitchY(event.pitch, staff.clef, staffTop)
-      : staffTop + STAFF_LINE_SPACING * 2;
+  const { ledgerYs, staffTop, stem, x, y } = getEventDrawing(
+    event,
+    staff,
+    staffIndex,
+    measureIndex,
+    layout,
+  );
 
   if (event.kind === 'rest') {
     doc.rect(x - 5, y - 3, 10, 4).fill('#111111');
@@ -132,7 +227,7 @@ function drawNote(doc, event, staff, staffIndex, measureIndex, layout) {
 
   doc.lineWidth(0.7).strokeColor('#111111').fillColor('#111111');
 
-  for (const ledgerY of getLedgerLineYs(y, staffTop)) {
+  for (const ledgerY of ledgerYs) {
     doc
       .moveTo(x - LEDGER_HALF_WIDTH, ledgerY)
       .lineTo(x + LEDGER_HALF_WIDTH, ledgerY)
@@ -149,27 +244,14 @@ function drawNote(doc, event, staff, staffIndex, measureIndex, layout) {
     return;
   }
 
-  const middleLineY = staffTop + STAFF_LINE_SPACING * 2;
-  const stemDirection = y <= middleLineY ? 'down' : 'up';
-  const stemX = stemDirection === 'up' ? x + NOTEHEAD_RX : x - NOTEHEAD_RX;
-  const stemEndY = stemDirection === 'up' ? y - STEM_LENGTH : y + STEM_LENGTH;
-
-  doc.moveTo(stemX, y).lineTo(stemX, stemEndY).stroke();
+  if (stem) {
+    doc.moveTo(stem.x, y).lineTo(stem.x, stem.endY).stroke();
+  }
 }
 
 function drawScore(doc, score) {
-  const [pageWidth] = getPageSize(score);
-  const staffLeft = 62;
-  const staffRight = pageWidth - 62;
   const staves = score.parts[0]?.staves ?? [];
-  const layout = {
-    measureCount: getMeasureCount(score),
-    staffLeft,
-    staffRight,
-    staffWidth: staffRight - staffLeft,
-    systemTop: 218,
-    timeSignature: score.timeSignature,
-  };
+  const layout = createLayout(score);
 
   doc.font('Times-Bold').fontSize(26).text(score.title || 'Untitled', 0, 56, {
     align: 'center',
@@ -177,8 +259,8 @@ function drawScore(doc, score) {
   doc
     .font('Times-Italic')
     .fontSize(11)
-    .text(`Moderato \u2669 = ${score.tempo}`, staffLeft, 106)
-    .text(score.composer || 'Composer', staffRight - 96, 106, {
+    .text(`Moderato \u2669 = ${score.tempo}`, layout.staffLeft, 106)
+    .text(score.composer || 'Composer', layout.staffRight - 96, 106, {
       align: 'right',
       width: 96,
     });
