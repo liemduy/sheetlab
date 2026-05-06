@@ -248,7 +248,7 @@ function App() {
     if (result.updated) {
       commitScoreChange(result.score, 'Event moved');
       setSelectedEventId(eventId);
-      setSelectedEventSource('manual');
+      setSelectedEventSource('created');
     } else {
       setEditorMessage(`Cannot move: ${result.reason}`);
     }
