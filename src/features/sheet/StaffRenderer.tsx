@@ -1,6 +1,6 @@
 import type { Score } from '../../domain/score/types';
 import type { DurationValue } from '../../domain/score/types';
-import type { EntryMode } from '../editor/editorState';
+import type { EntryMode, PlacementMode } from '../editor/editorState';
 import type { MusicPosition } from './interaction';
 import { VexFlowStaffRenderer } from './VexFlowStaffRenderer';
 
@@ -17,6 +17,7 @@ export interface StaffRendererProps {
   selectedEventId?: string | null;
   activeEventId?: string | null;
   playbackBeat?: number | null;
+  placementMode?: PlacementMode;
 }
 
 export function StaffRenderer(props: StaffRendererProps) {

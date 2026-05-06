@@ -474,6 +474,14 @@ button {
   vector-effect: non-scaling-stroke;
 }
 
+.insertion-cursor {
+  stroke: #2b67ff;
+  stroke-dasharray: 4 3;
+  stroke-linecap: round;
+  stroke-width: 2.2;
+  vector-effect: non-scaling-stroke;
+}
+
 .tool-button:disabled {
   cursor: not-allowed;
   opacity: 0.45;

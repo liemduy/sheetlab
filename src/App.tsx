@@ -33,6 +33,7 @@ import type {
 import { StaffRenderer } from './features/sheet/StaffRenderer';
 import { formatPitch } from './features/sheet/interaction';
 import type { MusicPosition } from './features/sheet/interaction';
+import { snapInsertPositionToEventBoundary } from './features/sheet/insertPosition';
 import { playTimelineAudio } from './features/playback/audioEngine';
 import {
   buildPlaybackTimeline,
@@ -83,6 +84,17 @@ function App() {
     }));
   }
 
+  function scrollNotationIntoView() {
+    window.requestAnimationFrame(() => {
+      if (typeof notationViewportRef.current?.scrollIntoView === 'function') {
+        notationViewportRef.current.scrollIntoView({
+          behavior: 'auto',
+          block: 'center',
+        });
+      }
+    });
+  }
+
   function updateSelectedEvent(
     update: Parameters<typeof tryUpdateScoreEvent>[2],
     successMessage: string,
@@ -128,14 +140,7 @@ function App() {
     );
     setHoverPosition(null);
     setSelectedEventId(null);
-    window.requestAnimationFrame(() => {
-      if (typeof notationViewportRef.current?.scrollIntoView === 'function') {
-        notationViewportRef.current.scrollIntoView({
-          behavior: 'auto',
-          block: 'center',
-        });
-      }
-    });
+    scrollNotationIntoView();
   }
 
   function handleAddMeasure() {
@@ -171,18 +176,22 @@ function App() {
   }
 
   function handlePlaceAtPosition(position: MusicPosition) {
+    const placementPosition =
+      toolState.placementMode === 'insert'
+        ? snapInsertPositionToEventBoundary(score, position)
+        : position;
     const accidental =
       toolState.accidental === 'none' ? undefined : toolState.accidental;
     const eventId = `event-${eventCounter.current++}`;
 
     const placeRequest = {
       eventId,
-      staffId: position.staffId,
-      measureIndex: position.measureIndex,
-      beat: position.beat,
+      staffId: placementPosition.staffId,
+      measureIndex: placementPosition.measureIndex,
+      beat: placementPosition.beat,
       duration: toolState.duration,
       entryMode: toolState.entryMode,
-      pitch: position.pitch,
+      pitch: placementPosition.pitch,
       accidental,
     };
     const result =
@@ -469,7 +478,10 @@ function App() {
                     toolState.placementMode === placementMode ? ' is-active' : ''
                   }`}
                   aria-pressed={toolState.placementMode === placementMode}
-                  onClick={() => updateToolState({ placementMode })}
+                  onClick={() => {
+                    updateToolState({ placementMode });
+                    scrollNotationIntoView();
+                  }}
                 >
                   {PLACEMENT_MODE_LABEL[placementMode]}
                 </button>
@@ -686,13 +698,14 @@ function App() {
                 activeEventId={activePlaybackEvent?.id ?? null}
                 hoverPosition={hoverPosition}
                 playbackBeat={playbackBeat}
+                placementMode={toolState.placementMode}
                 selectedEventId={selectedEventId}
                 score={score}
                 onHoverPositionChange={setHoverPosition}
-              onPlaceAtPosition={handlePlaceAtPosition}
-              onDeleteEvent={handleDeleteEvent}
-              onMoveEvent={handleMoveEvent}
-              onSelectEvent={(eventId) => {
+                onPlaceAtPosition={handlePlaceAtPosition}
+                onDeleteEvent={handleDeleteEvent}
+                onMoveEvent={handleMoveEvent}
+                onSelectEvent={(eventId) => {
                   setSelectedEventId(eventId);
                   setEditorMessage('Event selected');
                 }}

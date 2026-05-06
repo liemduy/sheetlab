@@ -119,6 +119,44 @@ describe('StaffRenderer', () => {
     );
   });
 
+  it('renders an insertion cursor and smaller note hit targets in insert mode', () => {
+    render(
+      <StaffRenderer
+        duration="quarter"
+        entryMode="note"
+        hoverPosition={trebleHover}
+        placementMode="insert"
+        score={trebleStudyFixture}
+      />,
+    );
+
+    expect(screen.getByTestId('insertion-cursor')).toBeInTheDocument();
+    expect(screen.getAllByTestId('score-event-target')[0]).toHaveAttribute(
+      'width',
+      '16',
+    );
+  });
+
+  it('snaps the insert preview to the nearest valid event boundary', () => {
+    render(
+      <StaffRenderer
+        duration="quarter"
+        entryMode="note"
+        hoverPosition={{
+          ...trebleHover,
+          beat: 0.5,
+        }}
+        placementMode="insert"
+        score={trebleStudyFixture}
+      />,
+    );
+
+    expect(Number(screen.getByTestId('insertion-cursor').getAttribute('x1'))).toBeCloseTo(
+      getBeatX(0, 1, trebleStudyFixture.timeSignature.beats),
+      2,
+    );
+  });
+
   it('renders a ghost rest when rest mode is active', () => {
     render(
       <StaffRenderer

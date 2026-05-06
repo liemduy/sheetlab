@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 import type { Score, ScoreEvent, Staff } from '../../domain/score/types';
 import type { DurationValue } from '../../domain/score/types';
-import type { EntryMode } from '../editor/editorState';
+import type { EntryMode, PlacementMode } from '../editor/editorState';
 import { formatPitch, mapPointToMusicPosition } from './interaction';
 import type { MusicPosition } from './interaction';
 import {
@@ -12,6 +12,7 @@ import {
   getMeasureX,
   getStaffTop,
 } from './layout';
+import { snapInsertPositionToEventBoundary } from './insertPosition';
 import { getBeatX, getPitchY } from './notationGeometry';
 import { NoteGlyph, RestGlyph } from './notationGlyph';
 
@@ -26,6 +27,7 @@ interface NotationOverlayProps {
   onDeleteEvent?: (eventId: string) => void;
   onMoveEvent?: (eventId: string, position: MusicPosition) => void;
   playbackBeat?: number | null;
+  placementMode?: PlacementMode;
   score: Score;
   selectedEventId?: string | null;
   svgHeight: number;
@@ -55,6 +57,7 @@ function EventHitTarget({
   onDeleteEvent,
   onStartDrag,
   onSelectEvent,
+  placementMode,
   selectedEventId,
   staff,
   staffIndex,
@@ -66,6 +69,7 @@ function EventHitTarget({
   onDeleteEvent?: (eventId: string) => void;
   onStartDrag: (eventId: string, event: MouseEvent<SVGGElement>) => void;
   onSelectEvent?: (eventId: string) => void;
+  placementMode: PlacementMode;
   selectedEventId?: string | null;
   staff: Staff;
   staffIndex: number;
@@ -81,6 +85,8 @@ function EventHitTarget({
           event.beat + 1
         }`
       : `Rest measure ${measureIndex + 1} beat ${event.beat + 1}`;
+  const targetWidth = placementMode === 'insert' ? 16 : 28;
+  const targetHeight = placementMode === 'insert' ? 30 : 40;
 
   return (
     <>
@@ -133,7 +139,15 @@ function EventHitTarget({
             />
           )}
         </g>
-        <rect className="score-event-target" x={x - 14} y={y - 20} width={28} height={40} rx={4} />
+        <rect
+          className="score-event-target"
+          data-testid="score-event-target"
+          height={targetHeight}
+          rx={4}
+          width={targetWidth}
+          x={x - targetWidth / 2}
+          y={y - targetHeight / 2}
+        />
         {selectedEventId === event.id || activeEventId === event.id ? (
           <ellipse className="score-event-ring" cx={x} cy={y} rx={14} ry={11} />
         ) : null}
@@ -221,6 +235,38 @@ function GhostEvent({
   );
 }
 
+function InsertionCursor({
+  position,
+  score,
+}: {
+  position: MusicPosition;
+  score: Score;
+}) {
+  const staff = score.parts[0]?.staves[position.staffIndex];
+
+  if (!staff) {
+    return null;
+  }
+
+  const x = getBeatX(
+    position.measureIndex,
+    position.beat,
+    score.timeSignature.beats,
+  );
+  const staffTop = getStaffTop(position.staffIndex);
+
+  return (
+    <line
+      className="insertion-cursor"
+      data-testid="insertion-cursor"
+      x1={x}
+      x2={x}
+      y1={staffTop - 28}
+      y2={staffTop + STAFF_LINE_SPACING * 4 + 28}
+    />
+  );
+}
+
 export function NotationOverlay({
   activeEventId,
   duration,
@@ -232,6 +278,7 @@ export function NotationOverlay({
   onDeleteEvent,
   onSelectEvent,
   playbackBeat,
+  placementMode = 'place',
   score,
   selectedEventId,
   svgHeight,
@@ -255,6 +302,10 @@ export function NotationOverlay({
           .flatMap((measure) => measure.voices)
           .flatMap((voice) => voice.events)
           .find((event) => event.id === dragState.eventId) ?? null;
+  const displayHoverPosition =
+    placementMode === 'insert' && hoverPosition
+      ? snapInsertPositionToEventBoundary(score, hoverPosition)
+      : hoverPosition;
 
   function getEventMusicPosition(event: MouseEvent<SVGSVGElement>) {
     return mapPointToMusicPosition(getSvgPoint(event, svgHeight), score);
@@ -365,6 +416,7 @@ export function NotationOverlay({
                   })
                 }
                 onSelectEvent={onSelectEvent}
+                placementMode={placementMode}
                 selectedEventId={selectedEventId}
                 staff={staff}
                 staffIndex={staffIndex}
@@ -391,13 +443,18 @@ export function NotationOverlay({
           y2={getStaffTop(staves.length - 1) + STAFF_LINE_SPACING * 4 + 24}
         />
       ) : null}
-      {!dragState && hoverPosition ? (
-        <GhostEvent
-          duration={duration}
-          entryMode={entryMode}
-          position={hoverPosition}
-          score={score}
-        />
+      {!dragState && displayHoverPosition ? (
+        <>
+          {placementMode === 'insert' ? (
+            <InsertionCursor position={displayHoverPosition} score={score} />
+          ) : null}
+          <GhostEvent
+            duration={duration}
+            entryMode={entryMode}
+            position={displayHoverPosition}
+            score={score}
+          />
+        </>
       ) : null}
       {dragState?.previewPosition && draggedEvent ? (
         <GhostEvent

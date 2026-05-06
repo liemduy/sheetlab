@@ -91,6 +91,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         onPlaceAtPosition={props.onPlaceAtPosition}
         onSelectEvent={props.onSelectEvent}
         playbackBeat={props.playbackBeat}
+        placementMode={props.placementMode}
         score={props.score}
         selectedEventId={props.selectedEventId}
         svgHeight={height}
