@@ -265,6 +265,19 @@ describe('StaffRenderer', () => {
     expect(Math.abs(firstStaffLineY - getStaffTop(0))).toBeLessThanOrEqual(0.75);
   });
 
+  it('adds a viewBox to the VexFlow svg so the editor can scale without horizontal scroll', () => {
+    const { container } = render(
+      <StaffRenderer score={createEmptyScore('treble', { measureCount: 4 })} />,
+    );
+    const vexflowSvg = container.querySelector('.vexflow-output svg');
+
+    expect(vexflowSvg).toHaveAttribute(
+      'viewBox',
+      `0 0 ${SVG_WIDTH} ${getScoreSvgHeight('treble')}`,
+    );
+    expect(vexflowSvg).toHaveAttribute('preserveAspectRatio', 'xMinYMin meet');
+  });
+
   it('maps real pointer coordinates on the visible middle treble line to B4', () => {
     const score = createEmptyScore('treble', { measureCount: 4 });
     const onHoverPositionChange = vi.fn();

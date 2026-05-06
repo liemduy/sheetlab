@@ -44,6 +44,13 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
     }),
   );
 
+  const svg = container.querySelector('svg');
+
+  if (svg) {
+    svg.setAttribute('viewBox', `0 0 ${SVG_WIDTH} ${height}`);
+    svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
+  }
+
   if (score.type === 'grand' && renderedStaves.length >= 2) {
     new StaveConnector(renderedStaves[0][0], renderedStaves[1][0])
       .setType('brace')

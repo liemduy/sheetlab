@@ -64,6 +64,7 @@ function App() {
   const [playbackElapsedSeconds, setPlaybackElapsedSeconds] = useState(0);
   const eventCounter = useRef(1);
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const notationViewportRef = useRef<HTMLDivElement | null>(null);
   const playbackController = useRef<{ stop: () => void } | null>(null);
   const playbackEndTimer = useRef<number | null>(null);
   const playbackInterval = useRef<number | null>(null);
@@ -127,6 +128,14 @@ function App() {
     );
     setHoverPosition(null);
     setSelectedEventId(null);
+    window.requestAnimationFrame(() => {
+      if (typeof notationViewportRef.current?.scrollIntoView === 'function') {
+        notationViewportRef.current.scrollIntoView({
+          behavior: 'auto',
+          block: 'center',
+        });
+      }
+    });
   }
 
   function handleAddMeasure() {
@@ -666,7 +675,11 @@ function App() {
                 <span>{score.composer || 'Composer'}</span>
               </div>
             </div>
-            <div className="notation-scroll" aria-label="Notation viewport">
+            <div
+              ref={notationViewportRef}
+              className="notation-scroll"
+              aria-label="Notation viewport"
+            >
               <StaffRenderer
                 duration={toolState.duration}
                 entryMode={toolState.entryMode}
