@@ -346,6 +346,26 @@ button {
   fill: transparent;
 }
 
+.staff-hover-guide {
+  pointer-events: none;
+}
+
+.staff-hover-guide rect {
+  fill: rgb(23 107 84 / 7%);
+  stroke: rgb(23 107 84 / 22%);
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.staff-hover-guide text {
+  fill: var(--accent-strong);
+  font-family: Cambria, "Times New Roman", serif;
+  font-size: 0.72rem;
+  font-style: italic;
+  font-weight: 700;
+  text-anchor: start;
+}
+
 .measure-guide {
   stroke: transparent;
   pointer-events: none;

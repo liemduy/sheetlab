@@ -10,6 +10,7 @@ import {
   STAFF_LINE_SPACING,
   SVG_WIDTH,
   getMeasureX,
+  getStaffRight,
   getStaffTop,
 } from './layout';
 import { snapInsertPositionToEventBoundary } from './insertPosition';
@@ -267,6 +268,42 @@ function InsertionCursor({
   );
 }
 
+function StaffHoverGuide({
+  position,
+  score,
+}: {
+  position: MusicPosition;
+  score: Score;
+}) {
+  const staff = score.parts[0]?.staves[position.staffIndex];
+
+  if (!staff) {
+    return null;
+  }
+
+  const staffTop = getStaffTop(position.staffIndex);
+  const measureCount = staff.measures.length;
+
+  return (
+    <g
+      className="staff-hover-guide"
+      data-staff-id={staff.id}
+      data-testid="staff-hover-guide"
+    >
+      <rect
+        height={STAFF_LINE_SPACING * 4 + 34}
+        rx={8}
+        width={getStaffRight(measureCount) - STAFF_LEFT}
+        x={STAFF_LEFT}
+        y={staffTop - 17}
+      />
+      <text x={STAFF_LEFT - 58} y={staffTop + STAFF_LINE_SPACING * 2 + 4}>
+        {staff.clef === 'treble' ? 'Treble' : 'Bass'}
+      </text>
+    </g>
+  );
+}
+
 export function NotationOverlay({
   activeEventId,
   duration,
@@ -371,6 +408,9 @@ export function NotationOverlay({
       }}
     >
       <rect className="staff-page-bg" x={0} y={0} width={SVG_WIDTH} height={svgHeight} />
+      {!dragState && displayHoverPosition ? (
+        <StaffHoverGuide position={displayHoverPosition} score={score} />
+      ) : null}
       {score.type === 'grand' && staves.length > 1 ? (
         <line
           className="measure-guide"

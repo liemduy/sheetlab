@@ -104,6 +104,29 @@ describe('StaffRenderer', () => {
     expect(screen.getAllByTestId('measure-barline-bass')).toHaveLength(5);
   });
 
+  it('highlights the hovered staff in a grand staff system', () => {
+    render(
+      <StaffRenderer
+        hoverPosition={{
+          staffId: 'bass',
+          staffIndex: 1,
+          measureIndex: 0,
+          beat: 0,
+          pitch: { step: 'C', octave: 3 },
+          x: getBeatX(0, 0, 4),
+          y: getPitchY({ step: 'C', octave: 3 }, 'bass', 1),
+        }}
+        score={createEmptyScore('grand', { measureCount: 4 })}
+      />,
+    );
+
+    expect(screen.getByTestId('staff-hover-guide')).toHaveAttribute(
+      'data-staff-id',
+      'bass',
+    );
+    expect(screen.getByText('Bass')).toBeInTheDocument();
+  });
+
   it('renders a ghost note at the hover position', () => {
     render(
       <StaffRenderer

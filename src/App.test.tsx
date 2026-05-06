@@ -264,6 +264,7 @@ describe('App editor state', () => {
       clientX: STAFF_LEFT,
       clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
     });
+    fireEvent.click(screen.getByRole('button', { name: 'Note E4 measure 1 beat 1' }));
     fireEvent.click(screen.getByRole('button', { name: 'Half' }));
     fireEvent.change(screen.getByLabelText('Accidental'), {
       target: { value: 'sharp' },
@@ -274,6 +275,59 @@ describe('App editor state', () => {
       'half',
     );
     expect(screen.getByLabelText('Note E#4 measure 1 beat 1')).toBeInTheDocument();
+  });
+
+  it('does not change the auto-selected previous note when choosing the next duration', () => {
+    render(<App />);
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Half' }));
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 2, 4),
+      clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toHaveAttribute(
+      'data-duration',
+      'quarter',
+    );
+    expect(screen.getByLabelText('Note G4 measure 1 beat 3')).toHaveAttribute(
+      'data-duration',
+      'half',
+    );
+  });
+
+  it('places independent treble and bass durations in a grand staff score', () => {
+    render(<App />);
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Score type' }), {
+      target: { value: 'grand' },
+    });
+    const overlay = screen.getByTestId('staff-renderer');
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'B', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Whole' }));
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'C', octave: 3 }, 'bass', 1),
+    });
+
+    expect(screen.getByLabelText('Note B4 measure 1 beat 1')).toHaveAttribute(
+      'data-duration',
+      'quarter',
+    );
+    expect(screen.getByLabelText('Note C3 measure 1 beat 1')).toHaveAttribute(
+      'data-duration',
+      'whole',
+    );
   });
 
   it('inserts a missing note and shifts later notes to the right', () => {

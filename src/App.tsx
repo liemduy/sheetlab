@@ -48,6 +48,8 @@ import {
 } from './features/persistence/projectStorage';
 
 function App() {
+  type SelectionSource = 'created' | 'manual';
+
   const [toolState, setToolState] = useState<EditorToolState>(
     DEFAULT_EDITOR_TOOL_STATE,
   );
@@ -61,6 +63,8 @@ function App() {
   const [futureScores, setFutureScores] = useState<Score[]>([]);
   const [editorMessage, setEditorMessage] = useState('Ready');
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [selectedEventSource, setSelectedEventSource] =
+    useState<SelectionSource | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackElapsedSeconds, setPlaybackElapsedSeconds] = useState(0);
   const eventCounter = useRef(1);
@@ -99,7 +103,7 @@ function App() {
     update: Parameters<typeof tryUpdateScoreEvent>[2],
     successMessage: string,
   ) {
-    if (!selectedEventId) {
+    if (!selectedEventId || selectedEventSource !== 'manual') {
       return;
     }
 
@@ -128,6 +132,8 @@ function App() {
     );
     setHoverPosition(null);
     setSelectedEventId(null);
+    setSelectedEventSource(null);
+    scrollNotationIntoView();
   }
 
   function handleResetScore() {
@@ -141,6 +147,7 @@ function App() {
     );
     setHoverPosition(null);
     setSelectedEventId(null);
+    setSelectedEventSource(null);
     scrollNotationIntoView();
   }
 
@@ -206,6 +213,7 @@ function App() {
         toolState.placementMode === 'insert' ? 'Event inserted' : 'Event placed',
       );
       setSelectedEventId(eventId);
+      setSelectedEventSource('created');
     } else {
       setEditorMessage(`Cannot place: ${result.reason}`);
     }
@@ -218,12 +226,14 @@ function App() {
 
     commitScoreChange(deleteScoreEvent(score, selectedEventId), 'Event deleted');
     setSelectedEventId(null);
+    setSelectedEventSource(null);
   }
 
   function handleDeleteEvent(eventId: string) {
     commitScoreChange(deleteScoreEvent(score, eventId), 'Event deleted');
     if (selectedEventId === eventId) {
       setSelectedEventId(null);
+      setSelectedEventSource(null);
     }
   }
 
@@ -238,6 +248,7 @@ function App() {
     if (result.updated) {
       commitScoreChange(result.score, 'Event moved');
       setSelectedEventId(eventId);
+      setSelectedEventSource('manual');
     } else {
       setEditorMessage(`Cannot move: ${result.reason}`);
     }
@@ -254,6 +265,7 @@ function App() {
     setFutureScores((currentFuture) => [score, ...currentFuture]);
     setScore(previousScore);
     setSelectedEventId(null);
+    setSelectedEventSource(null);
     setEditorMessage('Undo');
   }
 
@@ -268,6 +280,7 @@ function App() {
     setFutureScores(remainingFuture);
     setScore(nextScore);
     setSelectedEventId(null);
+    setSelectedEventSource(null);
     setEditorMessage('Redo');
   }
 
@@ -291,6 +304,7 @@ function App() {
       tempo: storedScore.tempo,
     }));
     setSelectedEventId(null);
+    setSelectedEventSource(null);
     setHoverPosition(null);
   }
 
@@ -311,6 +325,7 @@ function App() {
         tempo: importedScore.tempo,
       }));
       setSelectedEventId(null);
+      setSelectedEventSource(null);
       setHoverPosition(null);
     } catch {
       setEditorMessage('Invalid JSON project');
@@ -448,7 +463,10 @@ function App() {
                   toolState.duration === duration ? ' is-active' : ''
                 }`}
                 aria-pressed={toolState.duration === duration}
-                onClick={() => handleDurationChange(duration)}
+                onClick={() => {
+                  handleDurationChange(duration);
+                  scrollNotationIntoView();
+                }}
               >
                 {DURATION_LABEL[duration]}
               </button>
@@ -463,7 +481,10 @@ function App() {
                   toolState.entryMode === entryMode ? ' is-active' : ''
                 }`}
                 aria-pressed={toolState.entryMode === entryMode}
-                onClick={() => updateToolState({ entryMode })}
+                onClick={() => {
+                  updateToolState({ entryMode });
+                  scrollNotationIntoView();
+                }}
               >
                 {entryMode === 'note' ? 'Note' : 'Rest'}
               </button>
@@ -708,6 +729,7 @@ function App() {
                 onMoveEvent={handleMoveEvent}
                 onSelectEvent={(eventId) => {
                   setSelectedEventId(eventId);
+                  setSelectedEventSource('manual');
                   setEditorMessage('Event selected');
                 }}
               />
