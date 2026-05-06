@@ -4,13 +4,15 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node server/dev-server.mjs",
+    "dev:vite": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "pdfkit": "^0.18.0",
     "react": "latest",
     "react-dom": "latest",
     "tone": "^15.1.22",

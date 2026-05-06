@@ -348,9 +348,44 @@ function App() {
     setEditorMessage('JSON downloaded');
   }
 
-  function handleExportPdf() {
-    setEditorMessage('Opening print dialog');
-    window.print();
+  function getDownloadBaseName() {
+    return (
+      score.title
+        .trim()
+        .replace(/[^a-z0-9-_]+/gi, '-')
+        .replace(/^-+|-+$/g, '')
+        .toLowerCase() || 'sheetlab-score'
+    );
+  }
+
+  async function handleExportPdf() {
+    setEditorMessage('Exporting PDF');
+
+    try {
+      const response = await fetch('/api/export-pdf', {
+        body: JSON.stringify(score),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        throw new Error('PDF export failed');
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+
+      link.href = url;
+      link.download = `${getDownloadBaseName()}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setEditorMessage('PDF downloaded');
+    } catch {
+      setEditorMessage('PDF export failed');
+    }
   }
 
   function stopPlayback() {
@@ -574,7 +609,7 @@ function App() {
             <button type="button" className="tool-button" onClick={handleDownloadProject}>
               Download JSON
             </button>
-            <button type="button" className="tool-button" onClick={handleExportPdf}>
+            <button type="button" className="tool-button" onClick={() => void handleExportPdf()}>
               Export PDF
             </button>
           </div>

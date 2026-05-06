@@ -477,13 +477,68 @@ describe('App editor state', () => {
     });
   });
 
-  it('exports PDF through the browser print dialog', () => {
-    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+  it('exports PDF through the backend endpoint', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      blob: vi
+        .fn()
+        .mockResolvedValue(new Blob(['%PDF-'], { type: 'application/pdf' })),
+      ok: true,
+    });
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined);
+    const createObjectUrlSpy = vi.fn().mockReturnValue('blob:sheetlab-pdf');
+    const revokeObjectUrlSpy = vi.fn();
+    const originalCreateObjectUrl = URL.createObjectURL;
+    const originalRevokeObjectUrl = URL.revokeObjectURL;
 
+    vi.stubGlobal('fetch', fetchSpy);
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: createObjectUrlSpy,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: revokeObjectUrlSpy,
+    });
     render(<App />);
+
     fireEvent.click(screen.getByRole('button', { name: 'Export PDF' }));
 
-    expect(printSpy).toHaveBeenCalledTimes(1);
-    printSpy.mockRestore();
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith(
+        '/api/export-pdf',
+        expect.objectContaining({
+          method: 'POST',
+        }),
+      );
+    });
+    expect(createObjectUrlSpy).toHaveBeenCalledWith(expect.any(Blob));
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(revokeObjectUrlSpy).toHaveBeenCalledWith('blob:sheetlab-pdf');
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'PDF downloaded',
+      ),
+    ).toBeInTheDocument();
+
+    vi.unstubAllGlobals();
+    if (originalCreateObjectUrl) {
+      Object.defineProperty(URL, 'createObjectURL', {
+        configurable: true,
+        value: originalCreateObjectUrl,
+      });
+    } else {
+      Reflect.deleteProperty(URL, 'createObjectURL');
+    }
+    if (originalRevokeObjectUrl) {
+      Object.defineProperty(URL, 'revokeObjectURL', {
+        configurable: true,
+        value: originalRevokeObjectUrl,
+      });
+    } else {
+      Reflect.deleteProperty(URL, 'revokeObjectURL');
+    }
+    clickSpy.mockRestore();
   });
 });
