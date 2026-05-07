@@ -338,7 +338,7 @@ describe('App editor state', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('places notes on the snapped visible slot when the user clicks between slots', () => {
+  it('places notes on the first rhythm slot when the user clicks inside an empty measure', () => {
     render(<App />);
     startWriting();
 
@@ -347,10 +347,10 @@ describe('App editor state', () => {
       clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
     });
 
-    expect(screen.getByLabelText('Note E4 measure 1 beat 3')).toBeInTheDocument();
+    expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toBeInTheDocument();
     expect(
       within(screen.getByLabelText('Current editor state')).getByText(
-        'treble M1 B4 E4',
+        'treble M1 B2 E4',
       ),
     ).toBeInTheDocument();
   });
@@ -410,6 +410,29 @@ describe('App editor state', () => {
     await waitFor(() => {
       expect(container.querySelectorAll('.vexflow-output .vf-beam').length).toBeGreaterThan(0);
     });
+  });
+
+  it('snaps an empty measure to its first rhythm slot instead of free-clicking the middle', () => {
+    render(<App />);
+    startWriting('Eighth');
+
+    const overlay = screen.getByTestId('staff-renderer');
+    const middleOfEmptyMeasure = {
+      clientX: getBeatX(0, 2, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    };
+
+    fireEvent.mouseMove(overlay, middleOfEmptyMeasure);
+
+    expect(screen.getByTestId('active-input-cursor')).toHaveAttribute(
+      'data-beat',
+      '0',
+    );
+
+    fireEvent.click(overlay, middleOfEmptyMeasure);
+
+    expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Note E4 measure 1 beat 3')).not.toBeInTheDocument();
   });
 
   it('previews and places the note the user points at on a real-sized sheet', async () => {

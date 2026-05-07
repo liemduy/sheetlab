@@ -33,6 +33,7 @@ import { snapInsertPositionToEventBoundary } from './insertPosition';
 import { getBeatX, getPitchY } from './notationGeometry';
 import { ChordGlyph, NoteGlyph, RestGlyph } from './notationGlyph';
 import { getMeasureKey } from './measureKey';
+import { snapPositionToRhythmSlot } from './rhythmSlots';
 
 export interface RenderedEventLayout {
   beat: number;
@@ -728,10 +729,11 @@ function snapPositionToInputGrid(
   staffGap: number,
   eventLayouts: Record<string, RenderedEventLayout> = {},
 ) {
+  const rhythmSlotPosition = snapPositionToRhythmSlot(score, position);
   const snappedPosition =
     inputCursorToMusicPosition(
       createInputCursorFromPosition(
-        position,
+        rhythmSlotPosition,
         duration,
         'note-input',
         score.timeSignature.beats,
@@ -739,7 +741,7 @@ function snapPositionToInputGrid(
       ),
       score,
       staffGap,
-    ) ?? position;
+    ) ?? rhythmSlotPosition;
   const nearbyEventLayout = Object.values(eventLayouts)
     .filter(
       (layout) =>
@@ -917,7 +919,18 @@ export function NotationOverlay({
           return;
         }
 
-        onHoverPositionChange?.(isInputArmed ? position : null);
+        onHoverPositionChange?.(
+          isInputArmed && position
+            ? snapPositionToInputGrid(
+                position,
+                duration,
+                dots,
+                score,
+                staffGap,
+                eventLayouts,
+              )
+            : null,
+        );
       }}
       onMouseLeave={() => {
         setDragState(null);
