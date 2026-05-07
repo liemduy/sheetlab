@@ -68,6 +68,18 @@ describe('sheet interaction mapping', () => {
 
   it.each([
     {
+      pitch: { step: 'F' as const, octave: 3 },
+      scoreType: 'treble' as const,
+      staffId: 'treble',
+      staffIndex: 0,
+    },
+    {
+      pitch: { step: 'E' as const, octave: 6 },
+      scoreType: 'treble' as const,
+      staffId: 'treble',
+      staffIndex: 0,
+    },
+    {
       pitch: { step: 'A' as const, octave: 3 },
       scoreType: 'treble' as const,
       staffId: 'treble',
@@ -78,6 +90,18 @@ describe('sheet interaction mapping', () => {
       scoreType: 'treble' as const,
       staffId: 'treble',
       staffIndex: 0,
+    },
+    {
+      pitch: { step: 'C' as const, octave: 1 },
+      scoreType: 'grand' as const,
+      staffId: 'bass',
+      staffIndex: 1,
+    },
+    {
+      pitch: { step: 'G' as const, octave: 4 },
+      scoreType: 'grand' as const,
+      staffId: 'bass',
+      staffIndex: 1,
     },
     {
       pitch: { step: 'A' as const, octave: 1 },

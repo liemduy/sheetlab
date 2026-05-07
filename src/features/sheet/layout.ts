@@ -6,7 +6,7 @@ export const MEASURE_WIDTH = 174.5;
 export const MEASURE_LEFT_PADDING = 18;
 export const FIRST_MEASURE_LEFT_PADDING = 70;
 export const MEASURE_RIGHT_PADDING = 18;
-export const FIRST_STAFF_Y = 92;
+export const FIRST_STAFF_Y = 118;
 export const SVG_WIDTH = 920;
 export const VEXFLOW_STAVE_TOP_LINE_OFFSET = 44.5;
 
@@ -42,5 +42,5 @@ export function getStaffRight(measureCount: number) {
 }
 
 export function getScoreSvgHeight(scoreType: 'treble' | 'grand') {
-  return scoreType === 'grand' ? 322 : 194;
+  return scoreType === 'grand' ? 420 : 280;
 }

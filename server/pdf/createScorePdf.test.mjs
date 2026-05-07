@@ -23,6 +23,12 @@ describe('createScorePdf', () => {
 
   it.each([
     {
+      expectedLedgerLines: 3,
+      pitch: { step: 'F', octave: 3 },
+      scoreType: 'treble',
+      staffId: 'treble',
+    },
+    {
       expectedLedgerLines: 2,
       pitch: { step: 'A', octave: 3 },
       scoreType: 'treble',
@@ -41,10 +47,22 @@ describe('createScorePdf', () => {
       staffId: 'treble',
     },
     {
+      expectedLedgerLines: 3,
+      pitch: { step: 'E', octave: 6 },
+      scoreType: 'treble',
+      staffId: 'treble',
+    },
+    {
       expectedLedgerLines: 2,
       pitch: { step: 'C', octave: 6 },
       scoreType: 'treble',
       staffId: 'treble',
+    },
+    {
+      expectedLedgerLines: 5,
+      pitch: { step: 'C', octave: 1 },
+      scoreType: 'grand',
+      staffId: 'bass',
     },
     {
       expectedLedgerLines: 3,
@@ -61,6 +79,12 @@ describe('createScorePdf', () => {
     {
       expectedLedgerLines: 1,
       pitch: { step: 'C', octave: 4 },
+      scoreType: 'grand',
+      staffId: 'bass',
+    },
+    {
+      expectedLedgerLines: 3,
+      pitch: { step: 'G', octave: 4 },
       scoreType: 'grand',
       staffId: 'bass',
     },

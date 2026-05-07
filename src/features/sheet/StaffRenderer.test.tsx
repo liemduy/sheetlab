@@ -458,6 +458,14 @@ describe('StaffRenderer', () => {
   it.each([
     {
       clef: 'treble',
+      expectedLedgerLines: 3,
+      pitch: { step: 'F', octave: 3 },
+      scoreType: 'treble',
+      staffId: 'treble',
+      staffIndex: 0,
+    },
+    {
+      clef: 'treble',
       expectedLedgerLines: 2,
       pitch: { step: 'A', octave: 3 },
       scoreType: 'treble',
@@ -482,11 +490,27 @@ describe('StaffRenderer', () => {
     },
     {
       clef: 'treble',
+      expectedLedgerLines: 3,
+      pitch: { step: 'E', octave: 6 },
+      scoreType: 'treble',
+      staffId: 'treble',
+      staffIndex: 0,
+    },
+    {
+      clef: 'treble',
       expectedLedgerLines: 2,
       pitch: { step: 'C', octave: 6 },
       scoreType: 'treble',
       staffId: 'treble',
       staffIndex: 0,
+    },
+    {
+      clef: 'bass',
+      expectedLedgerLines: 5,
+      pitch: { step: 'C', octave: 1 },
+      scoreType: 'grand',
+      staffId: 'bass',
+      staffIndex: 1,
     },
     {
       clef: 'bass',
@@ -508,6 +532,14 @@ describe('StaffRenderer', () => {
       clef: 'bass',
       expectedLedgerLines: 1,
       pitch: { step: 'C', octave: 4 },
+      scoreType: 'grand',
+      staffId: 'bass',
+      staffIndex: 1,
+    },
+    {
+      clef: 'bass',
+      expectedLedgerLines: 3,
+      pitch: { step: 'G', octave: 4 },
       scoreType: 'grand',
       staffId: 'bass',
       staffIndex: 1,

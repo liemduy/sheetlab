@@ -25,7 +25,7 @@ export interface MusicPosition {
 }
 
 const SNAP_BEAT = 0.5;
-const STAFF_VERTICAL_PADDING = 44;
+const STAFF_VERTICAL_PADDING = 78;
 const NOTE_STEPS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'] as const;
 const TOP_LINE_BY_CLEF = {
   treble: { step: 'F', octave: 5 },
@@ -56,15 +56,24 @@ export function formatPitch(pitch: Pitch) {
 }
 
 function findStaffAtY(staves: Staff[], y: number) {
-  return staves.find((_, staffIndex) => {
-    const staffTop = getStaffTop(staffIndex);
-    const staffBottom = staffTop + STAFF_LINE_SPACING * 4;
+  const candidates = staves
+    .map((staff, staffIndex) => {
+      const staffTop = getStaffTop(staffIndex);
+      const staffBottom = staffTop + STAFF_LINE_SPACING * 4;
+      const staffCenter = staffTop + STAFF_LINE_SPACING * 2;
 
-    return (
-      y >= staffTop - STAFF_VERTICAL_PADDING &&
-      y <= staffBottom + STAFF_VERTICAL_PADDING
-    );
-  });
+      return {
+        distance: Math.abs(y - staffCenter),
+        isInsideEditableBand:
+          y >= staffTop - STAFF_VERTICAL_PADDING &&
+          y <= staffBottom + STAFF_VERTICAL_PADDING,
+        staff,
+      };
+    })
+    .filter((candidate) => candidate.isInsideEditableBand)
+    .sort((a, b) => a.distance - b.distance);
+
+  return candidates[0]?.staff;
 }
 
 export function mapPointToMusicPosition(
