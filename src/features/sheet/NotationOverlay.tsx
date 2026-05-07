@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
+import { getDurationBeats } from '../../domain/score/durations';
 import type { Score, ScoreEvent, Staff } from '../../domain/score/types';
 import type { DurationValue } from '../../domain/score/types';
 import { clampPitchToClefRange } from '../../domain/score/pitchRange';
@@ -628,90 +629,51 @@ function RhythmSlots({
   }
 
   const staves = score.parts[0]?.staves ?? [];
-  const shouldRenderSharedColumns = score.type === 'grand' && staves.length > 1;
   const staffGap = getScoreStaffGap(score);
-  const sharedColumnRange = getTimelineYRange(score, 0, staffGap);
-  const x = getBeatX(
+  const slotStartX = getBeatX(
     inputCursor.measureIndex,
     inputCursor.beat,
     score.timeSignature.beats,
   );
-  const y =
-    getStaffTop(inputCursor.staffIndex, staffGap) + STAFF_LINE_SPACING * 2;
+  const slotEndBeat = Math.min(
+    score.timeSignature.beats,
+    inputCursor.beat +
+      getDurationBeats(inputCursor.duration, inputCursor.dots ?? 0),
+  );
+  const slotEndX = getBeatX(
+    inputCursor.measureIndex,
+    slotEndBeat,
+    score.timeSignature.beats,
+  );
+  const yRange = getTimelineYRange(score, inputCursor.staffIndex, staffGap);
 
   return (
     <g className="rhythm-slots" data-testid="rhythm-slots">
-      {shouldRenderSharedColumns ? (
-        <g className="timeline-columns" data-testid="timeline-columns">
-          <line
-            className="timeline-column is-active"
-            data-beat={inputCursor.beat}
-            data-measure-index={inputCursor.measureIndex}
-            data-testid="timeline-column"
-            x1={x}
-            x2={x}
-            y1={sharedColumnRange.y1}
-            y2={sharedColumnRange.y2}
-          />
-        </g>
-      ) : null}
-      <rect
-        className="rhythm-slot is-active"
+      <g
+        className={`active-input-cursor active-input-cursor-${inputCursor.mode}`}
         data-beat={inputCursor.beat}
+        data-duration={inputCursor.duration}
         data-measure-index={inputCursor.measureIndex}
         data-staff-id={inputCursor.staffId}
-        data-testid="rhythm-slot"
-        height={3}
-        rx={1.5}
-        width={10}
-        x={x - 5}
-        y={y - 1.5}
-      />
-    </g>
-  );
-}
-
-function ActiveInputCursor({
-  cursor,
-  score,
-  staffGap,
-}: {
-  cursor?: InputCursor | null;
-  score: Score;
-  staffGap: number;
-}) {
-  if (!cursor) {
-    return null;
-  }
-
-  const staff = score.parts[0]?.staves[cursor.staffIndex];
-
-  if (!staff) {
-    return null;
-  }
-
-  const x = getBeatX(
-    cursor.measureIndex,
-    cursor.beat,
-    score.timeSignature.beats,
-  );
-  const yRange = getTimelineYRange(score, cursor.staffIndex, staffGap);
-  return (
-    <g
-      className={`active-input-cursor active-input-cursor-${cursor.mode}`}
-      data-beat={cursor.beat}
-      data-measure-index={cursor.measureIndex}
-      data-staff-id={cursor.staffId}
-      data-testid="active-input-cursor"
-    >
-      <line
-        className="active-input-cursor-line"
-        data-testid="active-input-cursor-line"
-        x1={x}
-        x2={x}
-        y1={yRange.y1}
-        y2={yRange.y2}
-      />
+        data-testid="active-input-cursor"
+      >
+        <rect
+          className={`rhythm-slot timeline-slot is-active${
+            score.type === 'grand' && staves.length > 1 ? ' is-grand-slot' : ''
+          }`}
+          data-beat={inputCursor.beat}
+          data-duration={inputCursor.duration}
+          data-measure-index={inputCursor.measureIndex}
+          data-slot-end-beat={slotEndBeat}
+          data-staff-id={inputCursor.staffId}
+          data-testid="rhythm-slot"
+          height={yRange.y2 - yRange.y1}
+          rx={7}
+          width={Math.max(6, slotEndX - slotStartX)}
+          x={slotStartX}
+          y={yRange.y1}
+        />
+      </g>
     </g>
   );
 }
@@ -879,18 +841,28 @@ export function NotationOverlay({
     }
 
     const origin = dragState.originPosition;
-    const staff = staves[origin.staffIndex];
+    const mappedPosition = mapPointToMusicPosition(
+      {
+        ...point,
+        x: origin.x,
+      },
+      score,
+    );
+    const targetStaffIndex = mappedPosition?.staffIndex ?? origin.staffIndex;
+    const staff = staves[targetStaffIndex];
 
-    if (!staff || staff.id !== origin.staffId) {
+    if (!staff) {
       return null;
     }
 
-    const pitch = mapStaffYToPitch(point.y, staff.clef, origin.staffIndex, staffGap);
-    const y = getPitchY(pitch, staff.clef, origin.staffIndex, staffGap);
+    const pitch = mapStaffYToPitch(point.y, staff.clef, targetStaffIndex, staffGap);
+    const y = getPitchY(pitch, staff.clef, targetStaffIndex, staffGap);
 
     return {
       ...origin,
       pitch,
+      staffId: staff.id,
+      staffIndex: targetStaffIndex,
       y,
     };
   }
@@ -974,7 +946,7 @@ export function NotationOverlay({
       <rect className="staff-page-bg" x={0} y={0} width={SVG_WIDTH} height={svgHeight} />
       <RhythmSlots
         inputCursor={inputCursor}
-        isInputArmed={isInputArmed}
+        isInputArmed={shouldShowInputPreview}
         score={score}
       />
       {!dragState && displayHoverPosition ? (
@@ -993,9 +965,6 @@ export function NotationOverlay({
           y1={getStaffTop(0, staffGap)}
           y2={getStaffTop(staves.length - 1, staffGap) + STAFF_LINE_SPACING * 4}
         />
-      ) : null}
-      {shouldShowInputPreview ? (
-        <ActiveInputCursor cursor={inputCursor} score={score} staffGap={staffGap} />
       ) : null}
       {displayHoverPosition ? (
         <>

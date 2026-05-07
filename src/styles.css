@@ -405,30 +405,18 @@ button {
 }
 
 .rhythm-slot {
-  fill: rgb(43 103 255 / 12%);
-  stroke: transparent;
+  fill: rgb(43 103 255 / 10%);
+  stroke: rgb(43 103 255 / 18%);
+  stroke-width: 0.9;
+  vector-effect: non-scaling-stroke;
 }
 
 .rhythm-slot.is-active {
-  fill: rgb(43 103 255 / 28%);
+  fill: rgb(43 103 255 / 16%);
 }
 
-.timeline-column {
-  stroke: rgb(43 103 255 / 10%);
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
-}
-
-.timeline-column.is-active {
-  stroke: rgb(43 103 255 / 35%);
-  stroke-width: 1.6;
-}
-
-.active-input-cursor-line {
-  stroke: #2b67ff;
-  stroke-linecap: round;
-  stroke-width: 2;
-  vector-effect: non-scaling-stroke;
+.timeline-slot.is-grand-slot {
+  fill: rgb(43 103 255 / 8%);
 }
 
 .measure-guide {
@@ -503,6 +491,10 @@ button {
 .ghost-event .score-event-stem,
 .ghost-event .notation-ledger-line {
   stroke: var(--accent);
+}
+
+.ghost-event .score-event-stem {
+  display: none;
 }
 
 .ghost-event .notation-accidental,

@@ -406,9 +406,15 @@ function App() {
     pitchIndex?: number | null,
   ) {
     const foundEvent = findScoreEvent(score, eventId);
+    const staysInOriginalSlot =
+      foundEvent !== null &&
+      position.staffId === foundEvent.staffId &&
+      position.measureIndex === foundEvent.measureIndex &&
+      position.beat === foundEvent.event.beat;
     const isPitchOnlyMove =
       foundEvent !== null &&
       isPitchedScoreEvent(foundEvent.event) &&
+      staysInOriginalSlot &&
       pitchIndex !== null &&
       pitchIndex !== undefined;
     const result = tryUpdateScoreEvent(

@@ -141,11 +141,11 @@ describe('score editing', () => {
 
     expect(findScoreEvent(trebleScore, 'too-low-treble')?.event).toMatchObject({
       kind: 'note',
-      pitch: { step: 'F', octave: 3 },
+      pitch: { step: 'C', octave: 3 },
     });
     expect(findScoreEvent(bassScore, 'too-low-bass')?.event).toMatchObject({
       kind: 'note',
-      pitch: { step: 'A', octave: 1 },
+      pitch: { step: 'A', octave: 0 },
     });
   });
 

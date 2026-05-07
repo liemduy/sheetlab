@@ -138,18 +138,18 @@ describe('sheet interaction mapping', () => {
   it('clamps treble pointer pitch to the readable ledger range', () => {
     expect(
       formatPitch(mapStaffYToPitch(getStaffTop(0) + 1000, 'treble', 0)),
-    ).toBe('F3');
+    ).toBe('C3');
     expect(
       formatPitch(mapStaffYToPitch(getStaffTop(0) - 1000, 'treble', 0)),
-    ).toBe('E6');
+    ).toBe('C7');
   });
 
   it('clamps bass pointer pitch to the readable ledger range', () => {
     expect(
       formatPitch(mapStaffYToPitch(getStaffTop(1) + 1000, 'bass', 1)),
-    ).toBe('A1');
+    ).toBe('A0');
     expect(
       formatPitch(mapStaffYToPitch(getStaffTop(1) - 1000, 'bass', 1)),
-    ).toBe('G4');
+    ).toBe('C5');
   });
 });

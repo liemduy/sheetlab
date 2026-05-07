@@ -84,7 +84,7 @@ describe('vexflow adapter', () => {
         },
         'treble',
       ).keys,
-    ).toEqual(['f/3']);
+    ).toEqual(['c/3']);
   });
 
   it('maps rest events to clef-aware VexFlow rest specs', () => {

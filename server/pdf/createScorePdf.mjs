@@ -16,8 +16,17 @@ const NOTEHEAD_RX = 5.4;
 const NOTEHEAD_RY = 3.7;
 const STEM_LENGTH = 28;
 const LEDGER_HALF_WIDTH = 10;
-const STAFF_LEDGER_LINE_LIMIT = 3;
 const STAFF_DYNAMIC_PADDING = 22;
+const CLEF_PITCH_RANGE = {
+  treble: {
+    max: { step: 'C', octave: 7 },
+    min: { step: 'C', octave: 3 },
+  },
+  bass: {
+    max: { step: 'C', octave: 5 },
+    min: { step: 'A', octave: 0 },
+  },
+};
 
 function getPageSize(score) {
   return PAGE_SIZES[score.pageSize] ?? PAGE_SIZES.a4;
@@ -27,26 +36,8 @@ function pitchValue(pitch) {
   return pitch.octave * NOTE_STEPS.length + NOTE_STEPS.indexOf(pitch.step);
 }
 
-function pitchFromValue(value) {
-  const stepCount = NOTE_STEPS.length;
-  const stepIndex = ((value % stepCount) + stepCount) % stepCount;
-  const octave = Math.floor((value - stepIndex) / stepCount);
-
-  return {
-    octave,
-    step: NOTE_STEPS[stepIndex],
-  };
-}
-
 function getClefPitchRange(clef) {
-  const topLineValue = pitchValue(TOP_LINE_BY_CLEF[clef]);
-  const bottomLineValue = topLineValue - 8;
-  const ledgerRange = STAFF_LEDGER_LINE_LIMIT * 2;
-
-  return {
-    max: pitchFromValue(topLineValue + ledgerRange),
-    min: pitchFromValue(bottomLineValue - ledgerRange),
-  };
+  return CLEF_PITCH_RANGE[clef];
 }
 
 function clampPitchToClefRange(pitch, clef) {
@@ -78,7 +69,7 @@ function getLedgerLineYs(y, staffTop) {
 
   for (
     let lineY = staffTop - STAFF_LINE_SPACING;
-    lineY >= y - 0.01 && ys.length < STAFF_LEDGER_LINE_LIMIT;
+    lineY >= y - 0.01;
     lineY -= STAFF_LINE_SPACING
   ) {
     ys.push(lineY);
@@ -86,7 +77,7 @@ function getLedgerLineYs(y, staffTop) {
 
   for (
     let lineY = staffBottom + STAFF_LINE_SPACING;
-    lineY <= y + 0.01 && ys.length < STAFF_LEDGER_LINE_LIMIT;
+    lineY <= y + 0.01;
     lineY += STAFF_LINE_SPACING
   ) {
     ys.push(lineY);

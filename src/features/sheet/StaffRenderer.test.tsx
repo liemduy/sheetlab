@@ -51,10 +51,15 @@ function setVisibleSheetBounds(element: Element) {
   return bounds;
 }
 
-function svgToClientPoint(bounds: DOMRect, x: number, y: number) {
+function svgToClientPoint(
+  bounds: DOMRect,
+  x: number,
+  y: number,
+  svgHeight = getScoreSvgHeight('treble'),
+) {
   return {
     clientX: bounds.left + (x / SVG_WIDTH) * bounds.width,
-    clientY: bounds.top + (y / getScoreSvgHeight('treble')) * bounds.height,
+    clientY: bounds.top + (y / svgHeight) * bounds.height,
   };
 }
 
@@ -156,7 +161,7 @@ describe('StaffRenderer', () => {
     expect(screen.getAllByTestId('rhythm-slot')).toHaveLength(1);
   });
 
-  it('renders shared timeline columns across grand-staff piano slots', () => {
+  it('renders a shared highlighted slot across grand-staff piano staves', () => {
     render(
       <StaffRenderer
         duration="quarter"
@@ -173,12 +178,12 @@ describe('StaffRenderer', () => {
       />,
     );
 
-    expect(screen.getAllByTestId('timeline-column')).toHaveLength(1);
     expect(screen.getAllByTestId('rhythm-slot')).toHaveLength(1);
-    expect(document.querySelectorAll('.timeline-column.is-active')).toHaveLength(1);
+    expect(document.querySelectorAll('.timeline-slot.is-grand-slot')).toHaveLength(1);
+    expect(screen.getByTestId('rhythm-slot')).toHaveAttribute('data-beat', '1');
   });
 
-  it('renders the active blue input cursor at the current slot', () => {
+  it('renders the active highlighted input slot at the current duration width', () => {
     render(
       <StaffRenderer
         duration="quarter"
@@ -199,9 +204,16 @@ describe('StaffRenderer', () => {
       'data-staff-id',
       'treble',
     );
+    expect(screen.getByTestId('active-input-cursor')).toHaveAttribute(
+      'data-duration',
+      'quarter',
+    );
     expect(
-      Number(screen.getByTestId('active-input-cursor-line').getAttribute('x1')),
+      Number(screen.getByTestId('rhythm-slot').getAttribute('x')),
     ).toBeCloseTo(getBeatX(1, 2, 4), 2);
+    expect(
+      Number(screen.getByTestId('rhythm-slot').getAttribute('width')),
+    ).toBeCloseTo(getBeatX(1, 3, 4) - getBeatX(1, 2, 4), 2);
     expect(document.querySelectorAll('.rhythm-slot.is-active')).toHaveLength(1);
   });
 
@@ -235,12 +247,16 @@ describe('StaffRenderer', () => {
       />,
     );
 
+    const slot = screen.getByTestId('rhythm-slot');
+
     expect(
-      Number(screen.getByTestId('active-input-cursor-line').getAttribute('y1')),
+      Number(slot.getAttribute('y')),
     ).toBe(getStaffTop(0) - 36);
     expect(
-      Number(screen.getByTestId('active-input-cursor-line').getAttribute('y2')),
-    ).toBe(getStaffTop(1) + STAFF_LINE_SPACING * 4 + 36);
+      Number(slot.getAttribute('height')),
+    ).toBe(
+      getStaffTop(1) + STAFF_LINE_SPACING * 4 + 36 - (getStaffTop(0) - 36),
+    );
   });
 
   it('highlights the hovered staff in a grand staff system', () => {
@@ -686,8 +702,62 @@ describe('StaffRenderer', () => {
       expect.objectContaining({
         beat: 0,
         measureIndex: 0,
-        pitch: { step: 'F', octave: 3 },
+        pitch: { step: 'C', octave: 3 },
         staffId: 'treble',
+      }),
+      0,
+    );
+  });
+
+  it('keeps drag column fixed but switches staff when a piano note crosses staves', () => {
+    const score = placeScoreEvent(createEmptyScore('grand', { measureCount: 1 }), {
+      eventId: 'cross-staff-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const onMoveEvent = vi.fn();
+
+    render(
+      <StaffRenderer
+        onMoveEvent={onMoveEvent}
+        score={score}
+        selectedEventId="cross-staff-note"
+      />,
+    );
+
+    const overlay = screen.getByTestId('staff-renderer');
+    const bounds = setVisibleSheetBounds(overlay);
+    const startPoint = svgToClientPoint(
+      bounds,
+      getBeatX(0, 0, score.timeSignature.beats),
+      getPitchY({ step: 'C', octave: 4 }, 'treble', 0, getScoreStaffGap(score)),
+      getScoreSvgHeight(score),
+    );
+    const targetPoint = svgToClientPoint(
+      bounds,
+      getBeatX(0, 3, score.timeSignature.beats),
+      getPitchY({ step: 'C', octave: 2 }, 'bass', 1, getScoreStaffGap(score)),
+      getScoreSvgHeight(score),
+    );
+
+    fireEvent.mouseDown(
+      screen.getByRole('button', { name: 'Note C4 measure 1 beat 1' }),
+      startPoint,
+    );
+    fireEvent.mouseMove(overlay, targetPoint);
+    fireEvent.mouseUp(overlay, targetPoint);
+
+    expect(onMoveEvent).toHaveBeenCalledWith(
+      'cross-staff-note',
+      expect.objectContaining({
+        beat: 0,
+        measureIndex: 0,
+        pitch: { step: 'C', octave: 2 },
+        staffId: 'bass',
       }),
       0,
     );
@@ -915,7 +985,7 @@ describe('StaffRenderer', () => {
     expect(screen.getAllByTestId('score-event')).toHaveLength(2);
   });
 
-  it('caps grand staff expansion for legacy pitches outside the readable range', () => {
+  it('keeps legacy pitches inside a practical staff gap without capping valid ledger lines', () => {
     const score = createEmptyScore('grand');
 
     score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events.push({
@@ -931,10 +1001,10 @@ describe('StaffRenderer', () => {
     const dynamicGap = getScoreStaffGap(score);
 
     expect(dynamicGap).toBeGreaterThan(STAFF_GAP);
-    expect(dynamicGap).toBeLessThan(260);
+    expect(dynamicGap).toBeLessThan(300);
     expect(
       Number(connector.getAttribute('y2')) - Number(connector.getAttribute('y1')),
-    ).toBeLessThan(320);
+    ).toBeLessThan(360);
   });
 
   it.each([
@@ -942,6 +1012,14 @@ describe('StaffRenderer', () => {
       clef: 'treble',
       expectedLedgerLines: 3,
       pitch: { step: 'F', octave: 3 },
+      scoreType: 'treble',
+      staffId: 'treble',
+      staffIndex: 0,
+    },
+    {
+      clef: 'treble',
+      expectedLedgerLines: 4,
+      pitch: { step: 'C', octave: 3 },
       scoreType: 'treble',
       staffId: 'treble',
       staffIndex: 0,
@@ -985,6 +1063,14 @@ describe('StaffRenderer', () => {
       scoreType: 'treble',
       staffId: 'treble',
       staffIndex: 0,
+    },
+    {
+      clef: 'bass',
+      expectedLedgerLines: 5,
+      pitch: { step: 'C', octave: 1 },
+      scoreType: 'grand',
+      staffId: 'bass',
+      staffIndex: 1,
     },
     {
       clef: 'bass',

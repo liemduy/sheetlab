@@ -1,12 +1,24 @@
 import type { Clef, Pitch } from './types';
 
 export const NOTE_STEPS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'] as const;
-export const STAFF_LEDGER_LINE_LIMIT = 3;
 
 export const TOP_LINE_BY_CLEF = {
   treble: { step: 'F', octave: 5 },
   bass: { step: 'A', octave: 3 },
 } satisfies Record<Clef, Pitch>;
+
+const CLEF_PITCH_RANGE = {
+  // These are editor safety rails, not a ledger-line drawing limit. Notes
+  // outside this range should normally move to another staff or use 8va later.
+  treble: {
+    max: { step: 'C', octave: 7 },
+    min: { step: 'C', octave: 3 },
+  },
+  bass: {
+    max: { step: 'C', octave: 5 },
+    min: { step: 'A', octave: 0 },
+  },
+} satisfies Record<Clef, { min: Pitch; max: Pitch }>;
 
 export function pitchToDiatonicValue(pitch: Pitch) {
   return pitch.octave * NOTE_STEPS.length + NOTE_STEPS.indexOf(pitch.step);
@@ -24,14 +36,7 @@ export function diatonicValueToPitch(value: number): Pitch {
 }
 
 export function getClefPitchRange(clef: Clef) {
-  const topLineValue = pitchToDiatonicValue(TOP_LINE_BY_CLEF[clef]);
-  const bottomLineValue = topLineValue - 8;
-  const ledgerRange = STAFF_LEDGER_LINE_LIMIT * 2;
-
-  return {
-    max: diatonicValueToPitch(topLineValue + ledgerRange),
-    min: diatonicValueToPitch(bottomLineValue - ledgerRange),
-  };
+  return CLEF_PITCH_RANGE[clef];
 }
 
 export function clampPitchToClefRange(pitch: Pitch, clef: Clef): Pitch {
@@ -50,4 +55,3 @@ export function clampPitchToClefRange(pitch: Pitch, clef: Clef): Pitch {
 
   return pitch;
 }
-
