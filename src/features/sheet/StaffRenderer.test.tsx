@@ -296,9 +296,46 @@ describe('StaffRenderer', () => {
       'aria-label',
       'Delete Note C4 measure 1 beat 1',
     );
-    fireEvent.mouseDown(screen.getByTestId('score-event-delete'));
+    expect(
+      screen
+        .getByTestId('score-event-delete')
+        .querySelector('.score-event-delete-target'),
+    ).toHaveAttribute('r', '18');
+    fireEvent.click(screen.getByTestId('score-event-delete'));
 
     expect(onDeleteEvent).toHaveBeenCalledWith('treble-m1-e1');
+  });
+
+  it('hides note-input preview while the delete target is hovered', () => {
+    render(
+      <StaffRenderer
+        hoverPosition={trebleHover}
+        inputCursor={{
+          beat: 1,
+          duration: 'quarter',
+          measureIndex: 0,
+          mode: 'note-input',
+          pitchPreview: { step: 'C', octave: 4 },
+          staffId: 'treble',
+          staffIndex: 0,
+        }}
+        score={trebleStudyFixture}
+        selectedEventId="treble-m1-e1"
+      />,
+    );
+
+    expect(screen.getByTestId('ghost-event')).toBeInTheDocument();
+    expect(screen.getByTestId('active-input-cursor')).toBeInTheDocument();
+
+    fireEvent.mouseEnter(screen.getByTestId('score-event-delete'));
+
+    expect(screen.queryByTestId('ghost-event')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('active-input-cursor')).not.toBeInTheDocument();
+
+    fireEvent.mouseLeave(screen.getByTestId('score-event-delete'));
+
+    expect(screen.getByTestId('ghost-event')).toBeInTheDocument();
+    expect(screen.getByTestId('active-input-cursor')).toBeInTheDocument();
   });
 
   it('emits a move event when a placed note is dragged to a new grid point', () => {

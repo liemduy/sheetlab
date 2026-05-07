@@ -279,7 +279,7 @@ describe('App editor state', () => {
       'aria-label',
       'Delete Note E4 measure 1 beat 1',
     );
-    fireEvent.mouseDown(screen.getByTestId('score-event-delete'));
+    fireEvent.click(screen.getByTestId('score-event-delete'));
 
     expect(screen.queryByTestId('score-event')).not.toBeInTheDocument();
     expect(

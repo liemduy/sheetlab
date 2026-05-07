@@ -62,6 +62,7 @@ function EventHitTarget({
   event,
   measureIndex,
   onDeleteEvent,
+  onDeleteHoverChange,
   onStartDrag,
   onSelectEvent,
   placementMode,
@@ -74,6 +75,7 @@ function EventHitTarget({
   event: ScoreEvent;
   measureIndex: number;
   onDeleteEvent?: (eventId: string) => void;
+  onDeleteHoverChange: (eventId: string | null) => void;
   onStartDrag: (eventId: string, event: MouseEvent<SVGGElement>) => void;
   onSelectEvent?: (eventId: string) => void;
   placementMode: PlacementMode;
@@ -169,9 +171,23 @@ function EventHitTarget({
           onMouseDown={(deleteMouseDown) => {
             deleteMouseDown.preventDefault();
             deleteMouseDown.stopPropagation();
+          }}
+          onClick={(deleteClick) => {
+            deleteClick.preventDefault();
+            deleteClick.stopPropagation();
             onDeleteEvent?.(event.id);
           }}
-          onClick={(deleteClick) => deleteClick.stopPropagation()}
+          onMouseEnter={(deleteMouseEnter) => {
+            deleteMouseEnter.stopPropagation();
+            onDeleteHoverChange(event.id);
+          }}
+          onMouseLeave={(deleteMouseLeave) => {
+            deleteMouseLeave.stopPropagation();
+            onDeleteHoverChange(null);
+          }}
+          onMouseMove={(deleteMouseMove) => {
+            deleteMouseMove.stopPropagation();
+          }}
           onKeyDown={(deleteKey) => {
             if (deleteKey.key === 'Enter' || deleteKey.key === ' ') {
               deleteKey.preventDefault();
@@ -180,6 +196,12 @@ function EventHitTarget({
             }
           }}
         >
+          <circle
+            className="score-event-delete-target"
+            cx={x + 22}
+            cy={y - 24}
+            r={18}
+          />
           <circle className="score-event-delete-bg" cx={x + 22} cy={y - 24} r={9} />
           <path
             className="score-event-delete-mark"
@@ -487,6 +509,9 @@ export function NotationOverlay({
     startClientX: number;
     startClientY: number;
   } | null>(null);
+  const [deleteHoverEventId, setDeleteHoverEventId] = useState<string | null>(
+    null,
+  );
   const suppressNextPlaceRef = useRef(false);
   const staves = score.parts[0]?.staves ?? [];
   const ariaLabel =
@@ -502,10 +527,13 @@ export function NotationOverlay({
   const snappedHoverPosition =
     inputCursorToMusicPosition(inputCursor, score) ??
     (hoverPosition ? snapPositionToInputGrid(hoverPosition, duration, score) : null);
+  const shouldShowInputPreview = !dragState && !deleteHoverEventId;
   const displayHoverPosition =
-    placementMode === 'insert' && snappedHoverPosition
+    shouldShowInputPreview && placementMode === 'insert' && snappedHoverPosition
       ? snapInsertPositionToEventBoundary(score, snappedHoverPosition)
-      : snappedHoverPosition;
+      : shouldShowInputPreview
+        ? snappedHoverPosition
+        : null;
 
   function getEventMusicPosition(event: MouseEvent<SVGSVGElement>) {
     return mapPointToMusicPosition(getSvgPoint(event, svgHeight), score);
@@ -541,6 +569,7 @@ export function NotationOverlay({
       }}
       onMouseLeave={() => {
         setDragState(null);
+        setDeleteHoverEventId(null);
         onHoverPositionChange?.(null);
       }}
       onMouseUp={(event) => {
@@ -588,6 +617,22 @@ export function NotationOverlay({
           y2={getStaffTop(staves.length - 1) + STAFF_LINE_SPACING * 4}
         />
       ) : null}
+      {shouldShowInputPreview ? (
+        <ActiveInputCursor cursor={inputCursor} score={score} />
+      ) : null}
+      {displayHoverPosition ? (
+        <>
+          {placementMode === 'insert' ? (
+            <InsertionCursor position={displayHoverPosition} score={score} />
+          ) : null}
+          <GhostEvent
+            duration={duration}
+            entryMode={entryMode}
+            position={displayHoverPosition}
+            score={score}
+          />
+        </>
+      ) : null}
       {staves.map((staff, staffIndex) => (
         <g key={staff.id} data-testid={`staff-${staff.id}`}>
           {Array.from(
@@ -613,6 +658,7 @@ export function NotationOverlay({
                 event={event}
                 measureIndex={measure.index}
                 onDeleteEvent={onDeleteEvent}
+                onDeleteHoverChange={setDeleteHoverEventId}
                 onStartDrag={(eventId, dragEvent) =>
                   setDragState({
                     eventId,
@@ -649,20 +695,6 @@ export function NotationOverlay({
           y1={getStaffTop(0) - 24}
           y2={getStaffTop(staves.length - 1) + STAFF_LINE_SPACING * 4 + 24}
         />
-      ) : null}
-      {!dragState ? <ActiveInputCursor cursor={inputCursor} score={score} /> : null}
-      {!dragState && displayHoverPosition ? (
-        <>
-          {placementMode === 'insert' ? (
-            <InsertionCursor position={displayHoverPosition} score={score} />
-          ) : null}
-          <GhostEvent
-            duration={duration}
-            entryMode={entryMode}
-            position={displayHoverPosition}
-            score={score}
-          />
-        </>
       ) : null}
       {dragState?.previewPosition && draggedEvent ? (
         <GhostEvent

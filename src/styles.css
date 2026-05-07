@@ -371,6 +371,12 @@ button {
   pointer-events: none;
 }
 
+.rhythm-slots *,
+.active-input-cursor *,
+.ghost-event * {
+  pointer-events: none;
+}
+
 .rhythm-slot {
   fill: rgb(43 103 255 / 16%);
   stroke: transparent;
@@ -510,6 +516,11 @@ button {
 
 .score-event-delete {
   cursor: pointer;
+}
+
+.score-event-delete-target {
+  fill: transparent;
+  pointer-events: all;
 }
 
 .score-event-delete-bg {
