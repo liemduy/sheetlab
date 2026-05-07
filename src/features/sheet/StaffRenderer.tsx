@@ -23,6 +23,7 @@ export interface StaffRendererProps {
   playbackBeat?: number | null;
   placementMode?: PlacementMode;
   inputCursor?: InputCursor | null;
+  invalidMeasureKeys?: readonly string[];
 }
 
 export function StaffRenderer(props: StaffRendererProps) {

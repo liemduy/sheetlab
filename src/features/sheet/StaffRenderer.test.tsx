@@ -11,6 +11,7 @@ import type {
   StaffId,
 } from '../../domain/score/types';
 import type { MusicPosition } from './interaction';
+import { getMeasureKey } from './measureKey';
 import {
   STAFF_GAP,
   STAFF_LINE_SPACING,
@@ -371,6 +372,25 @@ describe('StaffRenderer', () => {
       container.querySelector('.vexflow-output [data-event-id="treble-m1-e1"]'),
     ).not.toBeNull();
     expect(container.querySelectorAll('.score-event-notehead')).toHaveLength(0);
+  });
+
+  it('marks every note and the staff lines in an invalid measure', () => {
+    const { container } = render(
+      <StaffRenderer
+        invalidMeasureKeys={[getMeasureKey('treble', 0)]}
+        score={trebleStudyFixture}
+      />,
+    );
+
+    expect(screen.getByTestId('invalid-measure-warning')).toHaveAttribute(
+      'data-measure-key',
+      'treble:0',
+    );
+    expect(
+      container.querySelectorAll(
+        '.vexflow-output .vf-user-event.is-invalid-measure[data-measure-index="0"][data-staff-id="treble"]',
+      ),
+    ).toHaveLength(4);
   });
 
   it('renders chord events as one selectable VexFlow chord column', () => {

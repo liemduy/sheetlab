@@ -39,11 +39,13 @@ import type {
   PageSize,
   Score,
   ScoreType,
+  StaffId,
 } from './domain/score/types';
 import { StaffRenderer } from './features/sheet/StaffRenderer';
 import { formatPitch } from './features/sheet/interaction';
 import type { MusicPosition } from './features/sheet/interaction';
 import { snapInsertPositionToEventBoundary } from './features/sheet/insertPosition';
+import { getMeasureKey } from './features/sheet/measureKey';
 import { playTimelineAudio } from './features/playback/audioEngine';
 import {
   buildPlaybackTimeline,
@@ -70,6 +72,7 @@ function App() {
       tempo: DEFAULT_EDITOR_TOOL_STATE.tempo,
     }),
   );
+  const [invalidMeasureKeys, setInvalidMeasureKeys] = useState<string[]>([]);
   const [pastScores, setPastScores] = useState<Score[]>([]);
   const [futureScores, setFutureScores] = useState<Score[]>([]);
   const [editorMessage, setEditorMessage] = useState('Ready');
@@ -89,6 +92,7 @@ function App() {
     setPastScores((currentPast) => [...currentPast, score]);
     setFutureScores([]);
     setScore(nextScore);
+    setInvalidMeasureKeys([]);
     setEditorMessage(message);
   }
 
@@ -97,6 +101,21 @@ function App() {
       ...current,
       ...update,
     }));
+  }
+
+  function markInvalidMeasure(
+    staffId: StaffId,
+    measureIndex: number,
+    message: string,
+  ) {
+    const measureKey = getMeasureKey(staffId, measureIndex);
+
+    setInvalidMeasureKeys((currentKeys) =>
+      currentKeys.includes(measureKey)
+        ? currentKeys
+        : [...currentKeys, measureKey],
+    );
+    setEditorMessage(message);
   }
 
   function scrollNotationIntoView() {
@@ -123,7 +142,17 @@ function App() {
     if (result.updated) {
       commitScoreChange(result.score, successMessage);
     } else {
-      setEditorMessage(`Cannot update: ${result.reason}`);
+      const foundEvent = findScoreEvent(score, selectedEventId);
+
+      if (foundEvent) {
+        markInvalidMeasure(
+          foundEvent.staffId,
+          foundEvent.measureIndex,
+          `Cannot update: ${result.reason}`,
+        );
+      } else {
+        setEditorMessage(`Cannot update: ${result.reason}`);
+      }
     }
   }
 
@@ -314,7 +343,11 @@ function App() {
       setSelectedEventId(null);
       setSelectedEventSource(null);
     } else {
-      setEditorMessage(`Cannot place: ${result.reason}`);
+      markInvalidMeasure(
+        placementPosition.staffId,
+        placementPosition.measureIndex,
+        `Cannot place: ${result.reason}`,
+      );
     }
   }
 
@@ -349,7 +382,11 @@ function App() {
       setSelectedEventId(eventId);
       setSelectedEventSource('manual');
     } else {
-      setEditorMessage(`Cannot move: ${result.reason}`);
+      markInvalidMeasure(
+        position.staffId,
+        position.measureIndex,
+        `Cannot move: ${result.reason}`,
+      );
     }
   }
 
@@ -366,6 +403,7 @@ function App() {
     setSelectedEventId(null);
     setSelectedEventSource(null);
     setInputCursor(null);
+    setInvalidMeasureKeys([]);
     updateToolState({ isInputArmed: false });
     setEditorMessage('Undo');
   }
@@ -383,6 +421,7 @@ function App() {
     setSelectedEventId(null);
     setSelectedEventSource(null);
     setInputCursor(null);
+    setInvalidMeasureKeys([]);
     updateToolState({ isInputArmed: false });
     setEditorMessage('Redo');
   }
@@ -945,6 +984,7 @@ function App() {
                 hoverPosition={hoverPosition}
                 inputCursor={inputCursor}
                 isInputArmed={toolState.isInputArmed}
+                invalidMeasureKeys={invalidMeasureKeys}
                 playbackBeat={playbackBeat}
                 placementMode={toolState.placementMode}
                 selectedEventId={selectedEventId}

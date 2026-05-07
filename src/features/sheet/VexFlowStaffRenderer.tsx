@@ -33,6 +33,7 @@ import {
   pitchToVexFlowKey,
 } from './vexflowAdapter';
 import { getBeatX, getPitchY } from './notationGeometry';
+import { getMeasureKey } from './measureKey';
 
 const REST_KEY_BY_CLEF = {
   treble: 'b/4',
@@ -131,6 +132,8 @@ function drawVexFlowMeasureEvents({
     svgElement.classList.add(...getVexFlowEventClasses(event).split(' '));
     svgElement.setAttribute('data-event-id', event.id);
     svgElement.setAttribute('data-duration', event.duration);
+    svgElement.setAttribute('data-measure-index', String(measureIndex));
+    svgElement.setAttribute('data-staff-id', staff.id);
 
     if (!isGeneratedRestEvent(event)) {
       const eventPitches = getEventPitches(event);
@@ -200,6 +203,7 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
       }
 
       stave.setAttribute('data-measure-index', String(measure.index));
+      stave.setAttribute('data-staff-id', staff.id);
       stave.setContext(context).draw();
 
       return stave;
@@ -254,12 +258,22 @@ function syncVexFlowSelection(
   container: HTMLDivElement,
   selectedEventId?: string | null,
   activeEventId?: string | null,
+  invalidMeasureKeys: readonly string[] = [],
 ) {
+  const invalidMeasureKeySet = new Set(invalidMeasureKeys);
+
   container.querySelectorAll('.vf-user-event').forEach((element) => {
     const eventId = element.getAttribute('data-event-id');
+    const staffId = element.getAttribute('data-staff-id');
+    const measureIndex = Number(element.getAttribute('data-measure-index'));
+    const isInvalidMeasure =
+      (staffId === 'treble' || staffId === 'bass') &&
+      Number.isFinite(measureIndex) &&
+      invalidMeasureKeySet.has(getMeasureKey(staffId, measureIndex));
 
     element.classList.toggle('is-selected', eventId === selectedEventId);
     element.classList.toggle('is-playing', eventId === activeEventId);
+    element.classList.toggle('is-invalid-measure', isInvalidMeasure);
   });
 }
 
@@ -278,9 +292,10 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         containerRef.current,
         props.selectedEventId,
         props.activeEventId,
+        props.invalidMeasureKeys,
       );
     }
-  }, [props.activeEventId, props.score, props.selectedEventId]);
+  }, [props.activeEventId, props.invalidMeasureKeys, props.score, props.selectedEventId]);
 
   useEffect(() => {
     if (containerRef.current) {
@@ -288,9 +303,10 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         containerRef.current,
         props.selectedEventId,
         props.activeEventId,
+        props.invalidMeasureKeys,
       );
     }
-  }, [eventLayouts, props.activeEventId, props.selectedEventId]);
+  }, [eventLayouts, props.activeEventId, props.invalidMeasureKeys, props.selectedEventId]);
 
   return (
     <div
@@ -313,6 +329,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         hoverPosition={props.hoverPosition}
         inputCursor={props.inputCursor}
         isInputArmed={props.isInputArmed ?? true}
+        invalidMeasureKeys={props.invalidMeasureKeys}
         onClearInteraction={props.onClearInteraction}
         onDeleteEvent={props.onDeleteEvent}
         onHoverPositionChange={props.onHoverPositionChange}

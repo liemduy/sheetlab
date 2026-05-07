@@ -389,6 +389,46 @@ describe('App editor state', () => {
     ).toBeGreaterThan(0);
   });
 
+  it('marks a measure red when a duration update would break the measure rhythm', async () => {
+    const { container } = render(<App />);
+    startWriting();
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    ([
+      { beat: 0, pitch: { step: 'C', octave: 4 } },
+      { beat: 1, pitch: { step: 'D', octave: 4 } },
+      { beat: 2, pitch: { step: 'E', octave: 4 } },
+      { beat: 3, pitch: { step: 'F', octave: 4 } },
+    ] as const).forEach(({ beat, pitch }) => {
+      fireEvent.click(overlay, {
+        clientX: getBeatX(0, beat, 4),
+        clientY: getPitchY(pitch, 'treble', 0),
+      });
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Note C4 measure 1 beat 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Whole' }));
+
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'Cannot update: event-overlap',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('invalid-measure-warning')).toHaveAttribute(
+      'data-measure-key',
+      'treble:0',
+    );
+    expect(screen.getByRole('button', { name: 'Note C4 measure 1 beat 1' }))
+      .toHaveAttribute('data-duration', 'quarter');
+    await waitFor(() => {
+      expect(
+        container.querySelectorAll(
+          '.vexflow-output .vf-user-event.is-invalid-measure[data-staff-id="treble"][data-measure-index="0"]',
+        ),
+      ).toHaveLength(4);
+    });
+  });
+
   it('deletes a selected score event from the small x target', () => {
     render(<App />);
     startWriting();

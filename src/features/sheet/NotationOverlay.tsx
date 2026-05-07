@@ -26,6 +26,7 @@ import {
 import { snapInsertPositionToEventBoundary } from './insertPosition';
 import { getBeatX, getPitchY } from './notationGeometry';
 import { ChordGlyph, NoteGlyph, RestGlyph } from './notationGlyph';
+import { getMeasureKey } from './measureKey';
 
 export interface RenderedEventLayout {
   beat: number;
@@ -51,6 +52,7 @@ interface NotationOverlayProps {
   hoverPosition?: MusicPosition | null;
   inputCursor?: InputCursor | null;
   isInputArmed?: boolean;
+  invalidMeasureKeys?: readonly string[];
   onClearInteraction?: () => void;
   onHoverPositionChange?: (position: MusicPosition | null) => void;
   onPlaceAtPosition?: (position: MusicPosition) => void;
@@ -393,6 +395,62 @@ function StaffHoverGuide({
   );
 }
 
+function InvalidMeasureWarning({
+  measureIndex,
+  staffId,
+  staffIndex,
+  staffGap,
+}: {
+  measureIndex: number;
+  staffId: Staff['id'];
+  staffIndex: number;
+  staffGap: number;
+}) {
+  const x1 = getMeasureX(measureIndex);
+  const x2 = getMeasureX(measureIndex + 1);
+  const staffTop = getStaffTop(staffIndex, staffGap);
+
+  return (
+    <g
+      className="invalid-measure-warning"
+      data-measure-key={getMeasureKey(staffId, measureIndex)}
+      data-testid="invalid-measure-warning"
+    >
+      <rect
+        className="invalid-measure-bg"
+        height={STAFF_LINE_SPACING * 4 + 28}
+        width={x2 - x1}
+        x={x1}
+        y={staffTop - 14}
+      />
+      {Array.from({ length: 5 }, (_, lineIndex) => (
+        <line
+          key={lineIndex}
+          className="invalid-measure-staff-line"
+          x1={x1}
+          x2={x2}
+          y1={staffTop + lineIndex * STAFF_LINE_SPACING}
+          y2={staffTop + lineIndex * STAFF_LINE_SPACING}
+        />
+      ))}
+      <line
+        className="invalid-measure-barline"
+        x1={x1}
+        x2={x1}
+        y1={staffTop}
+        y2={staffTop + STAFF_LINE_SPACING * 4}
+      />
+      <line
+        className="invalid-measure-barline"
+        x1={x2}
+        x2={x2}
+        y1={staffTop}
+        y2={staffTop + STAFF_LINE_SPACING * 4}
+      />
+    </g>
+  );
+}
+
 function RhythmSlots({
   inputCursor,
   isInputArmed,
@@ -587,6 +645,7 @@ export function NotationOverlay({
   hoverPosition,
   inputCursor,
   isInputArmed = false,
+  invalidMeasureKeys = [],
   onClearInteraction,
   onHoverPositionChange,
   onMoveEvent,
@@ -612,6 +671,7 @@ export function NotationOverlay({
   const suppressNextPlaceRef = useRef(false);
   const staves = score.parts[0]?.staves ?? [];
   const staffGap = getScoreStaffGap(score);
+  const invalidMeasureKeySet = new Set(invalidMeasureKeys);
   const ariaLabel =
     score.type === 'grand' ? 'Grand staff notation system' : 'Treble staff notation system';
   const draggedEvent =
@@ -764,6 +824,17 @@ export function NotationOverlay({
       ) : null}
       {staves.map((staff, staffIndex) => (
         <g key={staff.id} data-testid={`staff-${staff.id}`}>
+          {staff.measures.map((measure) =>
+            invalidMeasureKeySet.has(getMeasureKey(staff.id, measure.index)) ? (
+              <InvalidMeasureWarning
+                key={`invalid-${staff.id}-${measure.index}`}
+                measureIndex={measure.index}
+                staffGap={staffGap}
+                staffId={staff.id}
+                staffIndex={staffIndex}
+              />
+            ) : null,
+          )}
           {Array.from(
             { length: staff.measures.length + 1 },
             (_, barlineIndex) => (

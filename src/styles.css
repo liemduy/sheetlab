@@ -368,6 +368,12 @@ button {
   stroke: var(--accent) !important;
 }
 
+.vexflow-output .vf-user-event.is-invalid-measure,
+.vexflow-output .vf-user-event.is-invalid-measure * {
+  fill: #b42318 !important;
+  stroke: #b42318 !important;
+}
+
 .notation-overlay {
   z-index: 2;
 }
@@ -428,6 +434,21 @@ button {
 .measure-guide {
   stroke: transparent;
   pointer-events: none;
+}
+
+.invalid-measure-warning {
+  pointer-events: none;
+}
+
+.invalid-measure-bg {
+  fill: rgb(180 35 24 / 8%);
+}
+
+.invalid-measure-staff-line,
+.invalid-measure-barline {
+  stroke: #b42318;
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
 }
 
 .staff-line,
