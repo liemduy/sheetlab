@@ -30,7 +30,6 @@ import {
   SCORE_TYPE_LABEL,
 } from './features/editor/editorState';
 import {
-  advanceInputCursor,
   createInputCursorFromPosition,
   formatInputCursor,
 } from './features/editor/inputCursor';
@@ -48,6 +47,7 @@ import { formatPitch } from './features/sheet/interaction';
 import type { MusicPosition } from './features/sheet/interaction';
 import { snapInsertPositionToEventBoundary } from './features/sheet/insertPosition';
 import { getMeasureKey } from './features/sheet/measureKey';
+import { findNextRhythmSlotAfter } from './features/sheet/rhythmSlots';
 import { playTimelineAudio } from './features/playback/audioEngine';
 import {
   buildPlaybackTimeline,
@@ -110,6 +110,35 @@ function isNearSequentialCursor(
   return (
     Math.abs(position.clientX - cursor.clientX) <=
     SEQUENTIAL_CLICK_CLIENT_RADIUS
+  );
+}
+
+function createCursorAfterPlacement(
+  score: Score,
+  placementPosition: MusicPosition,
+  duration: DurationValue,
+  dots: number,
+) {
+  const nextSlot = findNextRhythmSlotAfter(
+    score,
+    placementPosition.staffId,
+    placementPosition.measureIndex,
+    placementPosition.beat,
+  );
+  const nextPosition = nextSlot
+    ? {
+        ...placementPosition,
+        beat: nextSlot.beat,
+        measureIndex: nextSlot.measureIndex,
+      }
+    : placementPosition;
+
+  return createInputCursorFromPosition(
+    nextPosition,
+    duration,
+    'note-input',
+    score.timeSignature.beats,
+    dots,
   );
 }
 
@@ -414,15 +443,11 @@ function App() {
       );
       setHoverPosition(null);
       setInputCursor(
-        advanceInputCursor(
+        createCursorAfterPlacement(
           result.score,
-          createInputCursorFromPosition(
-            placementPosition,
-            toolState.duration,
-            'note-input',
-            result.score.timeSignature.beats,
-            toolState.dots,
-          ),
+          placementPosition,
+          toolState.duration,
+          toolState.dots,
         ),
       );
       setCursorSequenceLocked(true);

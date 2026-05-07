@@ -138,6 +138,38 @@ export function findRhythmSlotAtPosition(score: Score, position: MusicPosition) 
   )[0] ?? null;
 }
 
+export function findNextRhythmSlotAfter(
+  score: Score,
+  staffId: StaffId,
+  measureIndex: number,
+  beat: number,
+) {
+  const staff = score.parts
+    .flatMap((part) => part.staves)
+    .find((candidate) => candidate.id === staffId);
+
+  if (!staff) {
+    return null;
+  }
+
+  for (
+    let currentMeasureIndex = measureIndex;
+    currentMeasureIndex < staff.measures.length;
+    currentMeasureIndex += 1
+  ) {
+    const slots = getRhythmSlotsForMeasure(score, staffId, currentMeasureIndex);
+    const minBeat =
+      currentMeasureIndex === measureIndex ? beat + SLOT_EPSILON : -SLOT_EPSILON;
+    const nextSlot = slots.find((slot) => slot.beat > minBeat);
+
+    if (nextSlot) {
+      return nextSlot;
+    }
+  }
+
+  return null;
+}
+
 export function snapPositionToRhythmSlot(
   score: Score,
   position: MusicPosition,

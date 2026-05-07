@@ -435,6 +435,32 @@ describe('App editor state', () => {
     expect(screen.queryByLabelText('Note E4 measure 1 beat 3')).not.toBeInTheDocument();
   });
 
+  it('splits a rest slot when a shorter note is entered and moves to the next slot', () => {
+    render(<App />);
+    startWriting('Eighth');
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 2, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toHaveAttribute(
+      'data-duration',
+      'eighth',
+    );
+    expect(screen.getByTestId('active-input-cursor')).toHaveAttribute(
+      'data-beat',
+      '0.5',
+    );
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'treble M1 B1.5 E4',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('previews and places the note the user points at on a real-sized sheet', async () => {
     const { container } = render(<App />);
     startWriting();
