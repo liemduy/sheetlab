@@ -27,10 +27,15 @@ function setVisibleSheetBounds(element: Element) {
   return bounds;
 }
 
-function svgToClientPoint(bounds: DOMRect, x: number, y: number) {
+function svgToClientPoint(
+  bounds: DOMRect,
+  x: number,
+  y: number,
+  svgHeight = getScoreSvgHeight('grand'),
+) {
   return {
     clientX: bounds.left + (x / SVG_WIDTH) * bounds.width,
-    clientY: bounds.top + (y / getScoreSvgHeight('grand')) * bounds.height,
+    clientY: bounds.top + (y / svgHeight) * bounds.height,
   };
 }
 
@@ -681,7 +686,7 @@ describe('App editor state', () => {
     ).toBeInTheDocument();
   });
 
-  it('moves a placed note when the user drags it to another pitch and beat', () => {
+  it('updates pitch in the same rhythm column when the user drags a notehead', () => {
     render(<App />);
     startWriting();
 
@@ -707,9 +712,67 @@ describe('App editor state', () => {
     fireEvent.mouseUp(overlay, targetPoint);
 
     expect(screen.queryByLabelText('Note E4 measure 1 beat 1')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Note G4 measure 1 beat 3')).toBeInTheDocument();
+    expect(screen.getByLabelText('Note G4 measure 1 beat 1')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Note G4 measure 1 beat 3')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('invalid-measure-warning')).not.toBeInTheDocument();
     expect(
-      within(screen.getByLabelText('Current editor state')).getByText('Event moved'),
+      within(screen.getByLabelText('Current editor state')).getByText('Pitch updated'),
+    ).toBeInTheDocument();
+  });
+
+  it('updates one chord notehead pitch without moving the chord column', () => {
+    render(<App />);
+    startWriting();
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'C', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Select tool' }));
+
+    const bounds = setVisibleSheetBounds(overlay);
+    const svgHeight = Number(
+      overlay.getAttribute('viewBox')?.split(/\s+/)[3] ?? getScoreSvgHeight('grand'),
+    );
+    const startPoint = svgToClientPoint(
+      bounds,
+      getBeatX(0, 0, 4),
+      getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+      svgHeight,
+    );
+    const targetPoint = svgToClientPoint(
+      bounds,
+      getBeatX(0, 2, 4),
+      getPitchY({ step: 'F', octave: 4 }, 'treble', 0),
+      svgHeight,
+    );
+
+    fireEvent.mouseDown(
+      screen.getByRole('button', { name: 'Chord C4 E4 G4 measure 1 beat 1' }),
+      startPoint,
+    );
+    fireEvent.mouseMove(overlay, targetPoint);
+    fireEvent.mouseUp(overlay, targetPoint);
+
+    expect(
+      screen.getByLabelText('Chord C4 F4 G4 measure 1 beat 1'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText('Chord C4 F4 G4 measure 1 beat 3'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId('invalid-measure-warning')).not.toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText('Pitch updated'),
     ).toBeInTheDocument();
   });
 

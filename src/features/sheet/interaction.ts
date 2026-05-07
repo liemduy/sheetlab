@@ -2,6 +2,7 @@ import type { Pitch, Score, Staff, StaffId } from '../../domain/score/types';
 import {
   MEASURE_WIDTH,
   STAFF_LEFT,
+  STAFF_GAP,
   STAFF_LINE_SPACING,
   getMeasureContentLeft,
   getMeasureContentWidth,
@@ -46,6 +47,22 @@ function diatonicValueToPitch(value: number): Pitch {
     step: NOTE_STEPS[stepIndex],
     octave,
   };
+}
+
+export function mapStaffYToPitch(
+  y: number,
+  clef: Staff['clef'],
+  staffIndex: number,
+  staffGap = STAFF_GAP,
+) {
+  const staffTop = getStaffTop(staffIndex, staffGap);
+  const diatonicOffset = Math.round(
+    (staffTop - y) / (STAFF_LINE_SPACING / 2),
+  );
+
+  return diatonicValueToPitch(
+    pitchToDiatonicValue(TOP_LINE_BY_CLEF[clef]) + diatonicOffset,
+  );
 }
 
 export function formatPitch(pitch: Pitch) {
@@ -108,13 +125,7 @@ export function mapPointToMusicPosition(
     score.timeSignature.beats - SNAP_BEAT,
     Math.max(0, Math.round(rawBeat / SNAP_BEAT) * SNAP_BEAT),
   );
-  const staffTop = getStaffTop(staffIndex, staffGap);
-  const diatonicOffset = Math.round(
-    (staffTop - point.y) / (STAFF_LINE_SPACING / 2),
-  );
-  const pitch = diatonicValueToPitch(
-    pitchToDiatonicValue(TOP_LINE_BY_CLEF[staff.clef]) + diatonicOffset,
-  );
+  const pitch = mapStaffYToPitch(point.y, staff.clef, staffIndex, staffGap);
 
   return {
     staffId: staff.id,

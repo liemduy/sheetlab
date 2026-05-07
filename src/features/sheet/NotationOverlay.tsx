@@ -12,7 +12,11 @@ import {
 import type { EntryMode, PlacementMode } from '../editor/editorState';
 import type { InputCursor } from '../editor/inputCursor';
 import { createInputCursorFromPosition } from '../editor/inputCursor';
-import { formatPitch, mapPointToMusicPosition } from './interaction';
+import {
+  formatPitch,
+  mapPointToMusicPosition,
+  mapStaffYToPitch,
+} from './interaction';
 import type { MusicPosition } from './interaction';
 import {
   STAFF_LEFT,
@@ -160,6 +164,7 @@ function EventHitTarget({
   onStartDrag: (
     eventId: string,
     pitchIndex: number | null,
+    originPosition: MusicPosition | null,
     event: MouseEvent<SVGGElement>,
   ) => void;
   onSelectEvent?: (eventId: string, pitchIndex?: number | null) => void;
@@ -237,6 +242,36 @@ function EventHitTarget({
     ).pitchIndex;
   }
 
+  function getDragPitchIndex(pointerEvent: MouseEvent<SVGElement>) {
+    if (eventPitches.length === 0) {
+      return null;
+    }
+
+    return eventPitches.length === 1 ? 0 : getClosestPitchIndex(pointerEvent);
+  }
+
+  function getDragOriginPosition(pitchIndex: number | null): MusicPosition | null {
+    if (pitchIndex === null) {
+      return null;
+    }
+
+    const pitch = eventPitches[pitchIndex];
+
+    if (!pitch) {
+      return null;
+    }
+
+    return {
+      beat: event.beat,
+      measureIndex,
+      pitch,
+      staffId: staff.id,
+      staffIndex,
+      x,
+      y: getPitchY(pitch, staff.clef, staffIndex, staffGap),
+    };
+  }
+
   function deleteSelectedTarget() {
     if (selectedPitchIndex !== null && selectedPitchIndex !== undefined) {
       onDeleteEvent?.(event.id, selectedPitchIndex);
@@ -273,10 +308,16 @@ function EventHitTarget({
         }}
         onMouseDown={(eventMouseDown) => {
           eventMouseDown.stopPropagation();
-          const pitchIndex = getClosestPitchIndex(eventMouseDown);
+          const selectionPitchIndex = getClosestPitchIndex(eventMouseDown);
+          const dragPitchIndex = getDragPitchIndex(eventMouseDown);
 
-          onSelectEvent?.(event.id, pitchIndex);
-          onStartDrag(event.id, pitchIndex, eventMouseDown);
+          onSelectEvent?.(event.id, selectionPitchIndex);
+          onStartDrag(
+            event.id,
+            dragPitchIndex,
+            getDragOriginPosition(dragPitchIndex),
+            eventMouseDown,
+          );
         }}
         onKeyDown={(eventKey) => {
           if (eventKey.key === 'Enter' || eventKey.key === ' ') {
@@ -778,6 +819,7 @@ export function NotationOverlay({
   const [dragState, setDragState] = useState<{
     eventId: string;
     hasMoved: boolean;
+    originPosition: MusicPosition | null;
     pitchIndex: number | null;
     previewPosition: MusicPosition | null;
     startClientX: number;
@@ -823,6 +865,30 @@ export function NotationOverlay({
     return mapPointToMusicPosition(getSvgPoint(event, svgHeight), score);
   }
 
+  function getDragMusicPosition(event: MouseEvent<SVGSVGElement>) {
+    const point = getSvgPoint(event, svgHeight);
+
+    if (!dragState?.originPosition) {
+      return mapPointToMusicPosition(point, score);
+    }
+
+    const origin = dragState.originPosition;
+    const staff = staves[origin.staffIndex];
+
+    if (!staff || staff.id !== origin.staffId) {
+      return null;
+    }
+
+    const pitch = mapStaffYToPitch(point.y, staff.clef, origin.staffIndex, staffGap);
+    const y = getPitchY(pitch, staff.clef, origin.staffIndex, staffGap);
+
+    return {
+      ...origin,
+      pitch,
+      y,
+    };
+  }
+
   return (
     <svg
       aria-label={ariaLabel}
@@ -831,7 +897,7 @@ export function NotationOverlay({
       role="img"
       viewBox={`0 0 ${SVG_WIDTH} ${svgHeight}`}
       onMouseMove={(event) => {
-        const position = getEventMusicPosition(event);
+        const position = getDragMusicPosition(event);
 
         if (dragState) {
           const movement = Math.hypot(
@@ -861,7 +927,7 @@ export function NotationOverlay({
           return;
         }
 
-        const position = getEventMusicPosition(event);
+        const position = getDragMusicPosition(event);
 
         if (dragState.hasMoved && position) {
           suppressNextPlaceRef.current = true;
@@ -983,10 +1049,11 @@ export function NotationOverlay({
                 measureIndex={measure.index}
                 onDeleteEvent={onDeleteEvent}
                 onDeleteHoverChange={setDeleteHoverEventId}
-                onStartDrag={(eventId, pitchIndex, dragEvent) =>
+                onStartDrag={(eventId, pitchIndex, originPosition, dragEvent) =>
                   setDragState({
                     eventId,
                     hasMoved: false,
+                    originPosition,
                     pitchIndex,
                     previewPosition: null,
                     startClientX: dragEvent.clientX,

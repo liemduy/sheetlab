@@ -588,7 +588,7 @@ describe('StaffRenderer', () => {
     expect(screen.getByTestId('score-event-delete')).toBeInTheDocument();
   });
 
-  it('emits a move event when a placed note is dragged to a new grid point', () => {
+  it('locks notehead drag to the original rhythm column while changing pitch', () => {
     const onMoveEvent = vi.fn();
 
     render(
@@ -618,9 +618,22 @@ describe('StaffRenderer', () => {
     );
     fireEvent.mouseMove(overlay, targetPoint);
 
+    const eventLayoutX = Number(
+      screen
+        .getByRole('button', { name: 'Note C4 measure 1 beat 1' })
+        .getAttribute('data-layout-x'),
+    );
+    const ghostNoteHead = screen
+      .getByTestId('ghost-event')
+      .querySelector('ellipse');
+
     expect(screen.getByTestId('ghost-event')).toHaveAttribute(
       'data-duration',
       'quarter',
+    );
+    expect(Number(ghostNoteHead?.getAttribute('cx'))).toBeCloseTo(
+      eventLayoutX,
+      2,
     );
 
     fireEvent.mouseUp(overlay, targetPoint);
@@ -628,11 +641,70 @@ describe('StaffRenderer', () => {
     expect(onMoveEvent).toHaveBeenCalledWith(
       'treble-m1-e1',
       expect.objectContaining({
-        beat: 2,
+        beat: 0,
         measureIndex: 0,
         pitch: { step: 'G', octave: 4 },
         staffId: 'treble',
       }),
+      0,
+    );
+  });
+
+  it('locks chord notehead drag to the original column and preserves pitch index', () => {
+    const score = createEmptyScore('treble', { measureCount: 1 });
+    const chord: ChordEvent = {
+      id: 'ui-c-major',
+      kind: 'chord',
+      beat: 0,
+      duration: 'quarter',
+      pitches: [
+        { step: 'C', octave: 4 },
+        { step: 'E', octave: 4 },
+        { step: 'G', octave: 4 },
+      ],
+    };
+    const onMoveEvent = vi.fn();
+
+    score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events.push(chord);
+
+    render(
+      <StaffRenderer
+        onMoveEvent={onMoveEvent}
+        score={score}
+        selectedEventId="ui-c-major"
+        selectedPitchIndex={1}
+      />,
+    );
+
+    const overlay = screen.getByTestId('staff-renderer');
+    const bounds = setVisibleSheetBounds(overlay);
+    const startPoint = svgToClientPoint(
+      bounds,
+      getBeatX(0, 0, score.timeSignature.beats),
+      getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    );
+    const targetPoint = svgToClientPoint(
+      bounds,
+      getBeatX(0, 2, score.timeSignature.beats),
+      getPitchY({ step: 'F', octave: 4 }, 'treble', 0),
+    );
+
+    fireEvent.mouseDown(
+      screen.getByRole('button', { name: 'Chord C4 E4 G4 measure 1 beat 1' }),
+      startPoint,
+    );
+    fireEvent.mouseMove(overlay, targetPoint);
+    fireEvent.mouseUp(overlay, targetPoint);
+
+    expect(onMoveEvent).toHaveBeenCalledWith(
+      'ui-c-major',
+      expect.objectContaining({
+        beat: 0,
+        measureIndex: 0,
+        pitch: { step: 'F', octave: 4 },
+        staffId: 'treble',
+      }),
+      1,
     );
   });
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { createEmptyScore, deserializeScore } from './domain/score/factories';
+import { isPitchedScoreEvent } from './domain/score/events';
 import {
   addMeasure,
   countScoreEvents,
@@ -405,14 +406,15 @@ function App() {
     pitchIndex?: number | null,
   ) {
     const foundEvent = findScoreEvent(score, eventId);
-    const isChordPitchMove =
-      foundEvent?.event.kind === 'chord' &&
+    const isPitchOnlyMove =
+      foundEvent !== null &&
+      isPitchedScoreEvent(foundEvent.event) &&
       pitchIndex !== null &&
       pitchIndex !== undefined;
     const result = tryUpdateScoreEvent(
       score,
       eventId,
-      isChordPitchMove
+      isPitchOnlyMove
         ? {
             pitchIndex,
             pitch: position.pitch,
@@ -427,12 +429,15 @@ function App() {
     );
 
     if (result.updated) {
-      commitScoreChange(result.score, 'Event moved');
+      commitScoreChange(
+        result.score,
+        isPitchOnlyMove ? 'Pitch updated' : 'Event moved',
+      );
       const movedEvent = findScoreEvent(result.score, eventId)?.event;
       const movedPitchIndex =
-        isChordPitchMove && movedEvent?.kind === 'chord'
+        isPitchOnlyMove && movedEvent?.kind === 'chord'
           ? movedEvent.pitches.findIndex((pitch) => pitchesMatch(pitch, position.pitch))
-          : pitchIndex;
+          : null;
 
       setSelectedEventId(eventId);
       setSelectedPitchIndex(
