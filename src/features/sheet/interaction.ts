@@ -1,5 +1,11 @@
 import type { Pitch, Score, Staff, StaffId } from '../../domain/score/types';
 import {
+  TOP_LINE_BY_CLEF,
+  clampPitchToClefRange,
+  diatonicValueToPitch,
+  pitchToDiatonicValue,
+} from '../../domain/score/pitchRange';
+import {
   MEASURE_WIDTH,
   STAFF_LEFT,
   STAFF_GAP,
@@ -28,26 +34,6 @@ export interface MusicPosition {
 
 const SNAP_BEAT = 0.5;
 const STAFF_VERTICAL_PADDING = 78;
-const NOTE_STEPS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'] as const;
-const TOP_LINE_BY_CLEF = {
-  treble: { step: 'F', octave: 5 },
-  bass: { step: 'A', octave: 3 },
-} satisfies Record<Staff['clef'], Pitch>;
-
-function pitchToDiatonicValue(pitch: Pitch) {
-  return pitch.octave * NOTE_STEPS.length + NOTE_STEPS.indexOf(pitch.step);
-}
-
-function diatonicValueToPitch(value: number): Pitch {
-  const stepCount = NOTE_STEPS.length;
-  const stepIndex = ((value % stepCount) + stepCount) % stepCount;
-  const octave = Math.floor((value - stepIndex) / stepCount);
-
-  return {
-    step: NOTE_STEPS[stepIndex],
-    octave,
-  };
-}
 
 export function mapStaffYToPitch(
   y: number,
@@ -60,9 +46,11 @@ export function mapStaffYToPitch(
     (staffTop - y) / (STAFF_LINE_SPACING / 2),
   );
 
-  return diatonicValueToPitch(
+  const pitch = diatonicValueToPitch(
     pitchToDiatonicValue(TOP_LINE_BY_CLEF[clef]) + diatonicOffset,
   );
+
+  return clampPitchToClefRange(pitch, clef);
 }
 
 export function formatPitch(pitch: Pitch) {

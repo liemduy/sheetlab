@@ -47,6 +47,27 @@ describe('createScorePdf', () => {
     expect(pdf.subarray(0, 5).toString('utf8')).toBe('%PDF-');
   });
 
+  it('caps PDF layout for legacy pitches outside the readable ledger range', () => {
+    const score = createEmptyScore('grand', { measureCount: 1 });
+
+    score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events.push({
+      id: 'pdf-legacy-underflow',
+      kind: 'note',
+      beat: 0,
+      duration: 'quarter',
+      pitch: { step: 'C', octave: 0 },
+    });
+
+    const layout = createScorePdfLayout(score);
+    const event = layout.events.find(
+      (candidate) => candidate.event.id === 'pdf-legacy-underflow',
+    );
+
+    expect(layout.layout.staffGap).toBeLessThan(180);
+    expect(event?.ledgerYs).toHaveLength(3);
+    expect(event?.bounds.maxY).toBeLessThanOrEqual(layout.pageSize[1] - 24);
+  });
+
   it.each([
     {
       expectedLedgerLines: 3,
@@ -83,12 +104,6 @@ describe('createScorePdf', () => {
       pitch: { step: 'C', octave: 6 },
       scoreType: 'treble',
       staffId: 'treble',
-    },
-    {
-      expectedLedgerLines: 5,
-      pitch: { step: 'C', octave: 1 },
-      scoreType: 'grand',
-      staffId: 'bass',
     },
     {
       expectedLedgerLines: 3,

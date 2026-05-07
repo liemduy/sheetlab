@@ -1,4 +1,5 @@
 import type { DurationValue, Pitch } from '../../domain/score/types';
+import { STAFF_LEDGER_LINE_LIMIT } from '../../domain/score/pitchRange';
 import { STAFF_GAP, STAFF_LINE_SPACING, getStaffTop } from './layout';
 
 type NotationGlyphVariant = 'ghost' | 'placed';
@@ -62,7 +63,8 @@ export function getLedgerLineYs(
 
   for (
     let lineY = staffTop - STAFF_LINE_SPACING;
-    lineY >= y - LEDGER_EPSILON;
+    lineY >= y - LEDGER_EPSILON &&
+    ledgerLineYs.length < STAFF_LEDGER_LINE_LIMIT;
     lineY -= STAFF_LINE_SPACING
   ) {
     ledgerLineYs.push(lineY);
@@ -70,7 +72,8 @@ export function getLedgerLineYs(
 
   for (
     let lineY = staffBottom + STAFF_LINE_SPACING;
-    lineY <= y + LEDGER_EPSILON;
+    lineY <= y + LEDGER_EPSILON &&
+    ledgerLineYs.length < STAFF_LEDGER_LINE_LIMIT;
     lineY += STAFF_LINE_SPACING
   ) {
     ledgerLineYs.push(lineY);

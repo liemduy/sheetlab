@@ -6,6 +6,7 @@ import type {
   ScoreEvent,
 } from '../../domain/score/types';
 import { getEventPitches } from '../../domain/score/events';
+import { clampPitchToClefRange } from '../../domain/score/pitchRange';
 
 export interface VexFlowNoteSpec {
   eventId: string;
@@ -77,7 +78,9 @@ export function scoreEventToVexFlowSpec(
     };
   }
 
-  const pitches = getEventPitches(event);
+  const pitches = getEventPitches(event).map((pitch) =>
+    clampPitchToClefRange(pitch, clef),
+  );
 
   return {
     eventId: event.id,

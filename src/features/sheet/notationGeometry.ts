@@ -1,21 +1,15 @@
 import type { Clef, Pitch } from '../../domain/score/types';
 import {
+  TOP_LINE_BY_CLEF,
+  pitchToDiatonicValue,
+} from '../../domain/score/pitchRange';
+import {
   STAFF_GAP,
   STAFF_LINE_SPACING,
   getMeasureContentLeft,
   getMeasureContentWidth,
   getStaffTop,
 } from './layout';
-
-const NOTE_STEPS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'] as const;
-const TOP_LINE_BY_CLEF = {
-  treble: { step: 'F', octave: 5 },
-  bass: { step: 'A', octave: 3 },
-} satisfies Record<Clef, Pitch>;
-
-function pitchToDiatonicValue(pitch: Pitch) {
-  return pitch.octave * NOTE_STEPS.length + NOTE_STEPS.indexOf(pitch.step);
-}
 
 export function getPitchY(
   pitch: Pitch,

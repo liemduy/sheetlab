@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 import type { Score, ScoreEvent, Staff } from '../../domain/score/types';
 import type { DurationValue } from '../../domain/score/types';
+import { clampPitchToClefRange } from '../../domain/score/pitchRange';
 import {
   formatEventPitchList,
   getEventDots,
@@ -175,11 +176,16 @@ function EventHitTarget({
   staffGap: number;
   staffIndex: number;
 }) {
-  const eventPitches = getEventPitches(event);
+  const eventPitches = getEventPitches(event).map((pitch) =>
+    clampPitchToClefRange(pitch, staff.clef),
+  );
   const primaryPitch = getPrimaryEventPitch(event);
+  const displayPrimaryPitch = primaryPitch
+    ? clampPitchToClefRange(primaryPitch, staff.clef)
+    : null;
   const fallbackY =
-    primaryPitch
-      ? getPitchY(primaryPitch, staff.clef, staffIndex, staffGap)
+    displayPrimaryPitch
+      ? getPitchY(displayPrimaryPitch, staff.clef, staffIndex, staffGap)
       : getStaffTop(staffIndex, staffGap) + STAFF_LINE_SPACING * 2;
   const x = eventLayout?.x ?? getBeatX(measureIndex, event.beat, beatsPerMeasure);
   const y = eventLayout?.y ?? fallbackY;

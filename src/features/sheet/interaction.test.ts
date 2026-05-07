@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createEmptyScore } from '../../domain/score/factories';
-import { STAFF_LEFT, getMeasureContentLeft } from './layout';
-import { formatPitch, mapPointToMusicPosition } from './interaction';
+import { STAFF_LEFT, getMeasureContentLeft, getStaffTop } from './layout';
+import {
+  formatPitch,
+  mapPointToMusicPosition,
+  mapStaffYToPitch,
+} from './interaction';
 import { getBeatX, getPitchY } from './notationGeometry';
 
 describe('sheet interaction mapping', () => {
@@ -92,12 +96,6 @@ describe('sheet interaction mapping', () => {
       staffIndex: 0,
     },
     {
-      pitch: { step: 'C' as const, octave: 1 },
-      scoreType: 'grand' as const,
-      staffId: 'bass',
-      staffIndex: 1,
-    },
-    {
       pitch: { step: 'G' as const, octave: 4 },
       scoreType: 'grand' as const,
       staffId: 'bass',
@@ -135,5 +133,23 @@ describe('sheet interaction mapping', () => {
       staffId,
       pitch,
     });
+  });
+
+  it('clamps treble pointer pitch to the readable ledger range', () => {
+    expect(
+      formatPitch(mapStaffYToPitch(getStaffTop(0) + 1000, 'treble', 0)),
+    ).toBe('F3');
+    expect(
+      formatPitch(mapStaffYToPitch(getStaffTop(0) - 1000, 'treble', 0)),
+    ).toBe('E6');
+  });
+
+  it('clamps bass pointer pitch to the readable ledger range', () => {
+    expect(
+      formatPitch(mapStaffYToPitch(getStaffTop(1) + 1000, 'bass', 1)),
+    ).toBe('A1');
+    expect(
+      formatPitch(mapStaffYToPitch(getStaffTop(1) - 1000, 'bass', 1)),
+    ).toBe('G4');
   });
 });

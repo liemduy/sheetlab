@@ -16,6 +16,7 @@ const NOTEHEAD_RX = 5.4;
 const NOTEHEAD_RY = 3.7;
 const STEM_LENGTH = 28;
 const LEDGER_HALF_WIDTH = 10;
+const STAFF_LEDGER_LINE_LIMIT = 3;
 const STAFF_DYNAMIC_PADDING = 22;
 
 function getPageSize(score) {
@@ -24,6 +25,43 @@ function getPageSize(score) {
 
 function pitchValue(pitch) {
   return pitch.octave * NOTE_STEPS.length + NOTE_STEPS.indexOf(pitch.step);
+}
+
+function pitchFromValue(value) {
+  const stepCount = NOTE_STEPS.length;
+  const stepIndex = ((value % stepCount) + stepCount) % stepCount;
+  const octave = Math.floor((value - stepIndex) / stepCount);
+
+  return {
+    octave,
+    step: NOTE_STEPS[stepIndex],
+  };
+}
+
+function getClefPitchRange(clef) {
+  const topLineValue = pitchValue(TOP_LINE_BY_CLEF[clef]);
+  const bottomLineValue = topLineValue - 8;
+  const ledgerRange = STAFF_LEDGER_LINE_LIMIT * 2;
+
+  return {
+    max: pitchFromValue(topLineValue + ledgerRange),
+    min: pitchFromValue(bottomLineValue - ledgerRange),
+  };
+}
+
+function clampPitchToClefRange(pitch, clef) {
+  const { max, min } = getClefPitchRange(clef);
+  const value = pitchValue(pitch);
+
+  if (value < pitchValue(min)) {
+    return min;
+  }
+
+  if (value > pitchValue(max)) {
+    return max;
+  }
+
+  return pitch;
 }
 
 function getPitchY(pitch, clef, staffTop) {
@@ -38,11 +76,19 @@ function getLedgerLineYs(y, staffTop) {
   const staffBottom = staffTop + STAFF_LINE_SPACING * 4;
   const ys = [];
 
-  for (let lineY = staffTop - STAFF_LINE_SPACING; lineY >= y - 0.01; lineY -= STAFF_LINE_SPACING) {
+  for (
+    let lineY = staffTop - STAFF_LINE_SPACING;
+    lineY >= y - 0.01 && ys.length < STAFF_LEDGER_LINE_LIMIT;
+    lineY -= STAFF_LINE_SPACING
+  ) {
     ys.push(lineY);
   }
 
-  for (let lineY = staffBottom + STAFF_LINE_SPACING; lineY <= y + 0.01; lineY += STAFF_LINE_SPACING) {
+  for (
+    let lineY = staffBottom + STAFF_LINE_SPACING;
+    lineY <= y + 0.01 && ys.length < STAFF_LEDGER_LINE_LIMIT;
+    lineY += STAFF_LINE_SPACING
+  ) {
     ys.push(lineY);
   }
 
@@ -98,7 +144,7 @@ function getStaffPitchBounds(score, staffIndex) {
   }
 
   const pitchYs = eventPitches.map((pitch) =>
-    getPitchY(pitch, staff.clef, 0),
+    getPitchY(clampPitchToClefRange(pitch, staff.clef), staff.clef, 0),
   );
 
   return {
@@ -156,7 +202,9 @@ function getEventDrawing(event, staff, staffIndex, measureIndex, layout) {
     contentLeft +
     (event.beat / layout.timeSignature.beats) * Math.max(1, contentWidth);
   const staffTop = layout.systemTop + staffIndex * layout.staffGap;
-  const eventPitches = getEventPitches(event);
+  const eventPitches = getEventPitches(event).map((pitch) =>
+    clampPitchToClefRange(pitch, staff.clef),
+  );
   const primaryPitch = eventPitches[0];
   const y = primaryPitch
     ? getPitchY(primaryPitch, staff.clef, staffTop)
@@ -316,7 +364,8 @@ function drawNote(doc, event, staff, staffIndex, measureIndex, layout) {
 
   doc.lineWidth(0.7).strokeColor('#111111').fillColor('#111111');
 
-  getEventPitches(event).forEach((pitch) => {
+  getEventPitches(event).forEach((rawPitch) => {
+    const pitch = clampPitchToClefRange(rawPitch, staff.clef);
     const pitchY = getPitchY(pitch, staff.clef, staffTop);
     const accidental = getAccidentalSymbol(pitch.accidental);
 

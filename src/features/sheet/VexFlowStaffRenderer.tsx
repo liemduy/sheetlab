@@ -14,6 +14,7 @@ import {
   getEventPitches,
   isGeneratedRestEvent,
 } from '../../domain/score/events';
+import { clampPitchToClefRange } from '../../domain/score/pitchRange';
 import type { StaffRendererProps } from './StaffRenderer';
 import { NotationOverlay } from './NotationOverlay';
 import type { RenderedEventLayout } from './NotationOverlay';
@@ -48,7 +49,9 @@ function getVexFlowEventClasses(event: ScoreEvent) {
 
 function createVexFlowNote(event: ScoreEvent, staff: Staff) {
   const eventDots = getEventDots(event);
-  const eventPitches = getEventPitches(event);
+  const eventPitches = getEventPitches(event).map((pitch) =>
+    clampPitchToClefRange(pitch, staff.clef),
+  );
   const staveNote =
     event.kind === 'rest'
       ? new StaveNote({
@@ -148,7 +151,12 @@ function drawVexFlowMeasureEvents({
       const pitchYs =
         eventPitches.length > 0
           ? eventPitches.map((pitch) =>
-              getPitchY(pitch, staff.clef, staffIndex, staffGap),
+              getPitchY(
+                clampPitchToClefRange(pitch, staff.clef),
+                staff.clef,
+                staffIndex,
+                staffGap,
+              ),
             )
           : [
               getStaffTop(staffIndex, staffGap) +

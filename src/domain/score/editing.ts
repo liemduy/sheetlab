@@ -16,6 +16,7 @@ import {
   isGeneratedRestEvent,
   isPitchedScoreEvent,
 } from './events';
+import { clampPitchToClefRange } from './pitchRange';
 import {
   beatToTick,
   getDurationTicks,
@@ -81,6 +82,51 @@ function createScoreEvent(request: PlaceScoreEventRequest): ScoreEvent {
       accidental: request.accidental,
     },
   };
+}
+
+function clampScoreEventToStaffRange(event: ScoreEvent, staff: Staff): ScoreEvent {
+  if (event.kind === 'note') {
+    return {
+      ...event,
+      pitch: clampPitchToClefRange(event.pitch, staff.clef),
+    };
+  }
+
+  if (event.kind === 'chord') {
+    const uniquePitches = new Map<string, Pitch>();
+
+    event.pitches
+      .map((pitch) => clampPitchToClefRange(pitch, staff.clef))
+      .forEach((pitch) => {
+        uniquePitches.set(getPitchKey(pitch), pitch);
+      });
+
+    const pitches = [...uniquePitches.values()].sort(comparePitches);
+
+    if (pitches.length === 1) {
+      const pitch = pitches[0];
+
+      if (!pitch) {
+        return event;
+      }
+
+      return {
+        id: event.id,
+        kind: 'note',
+        beat: event.beat,
+        duration: event.duration,
+        dots: event.dots,
+        pitch,
+      };
+    }
+
+    return {
+      ...event,
+      pitches,
+    };
+  }
+
+  return event;
 }
 
 function getPitchKey(pitch: Pitch) {
@@ -383,7 +429,9 @@ function writeScoreEvent(
     };
   }
 
-  if (getEventEnd(nextEvent) > score.timeSignature.beats) {
+  const boundedEvent = clampScoreEventToStaffRange(nextEvent, targetStaff);
+
+  if (getEventEnd(boundedEvent) > score.timeSignature.beats) {
     return {
       score,
       placed: false,
@@ -392,13 +440,13 @@ function writeScoreEvent(
   }
 
   const overlappingEvents = targetVoice.events.filter((event) =>
-    eventsOverlapByTick(nextEvent, event),
+    eventsOverlapByTick(boundedEvent, event),
   );
   const shouldRejectOverlap = overlappingEvents.some(
     (event) =>
       isPitchedScoreEvent(event) &&
       (!options.allowSameStartPitchedReplacement ||
-        getEventStartTick(event) !== getEventStartTick(nextEvent)),
+        getEventStartTick(event) !== getEventStartTick(boundedEvent)),
   );
 
   if (shouldRejectOverlap) {
@@ -415,9 +463,9 @@ function writeScoreEvent(
     nextVoiceEvents = materializeMeasureEvents(
       [
         ...targetVoice.events.filter(
-          (event) => !eventsOverlapByTick(nextEvent, event),
+          (event) => !eventsOverlapByTick(boundedEvent, event),
         ),
-        nextEvent,
+        boundedEvent,
       ],
       score,
       staffId,
@@ -577,7 +625,10 @@ export function tryInsertScoreEvent(
     };
   }
 
-  const nextEvent = createScoreEvent(request);
+  const nextEvent = clampScoreEventToStaffRange(
+    createScoreEvent(request),
+    targetStaff,
+  );
 
   if (getEventEnd(nextEvent) > score.timeSignature.beats) {
     return {

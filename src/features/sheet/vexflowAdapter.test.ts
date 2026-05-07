@@ -72,6 +72,21 @@ describe('vexflow adapter', () => {
     });
   });
 
+  it('clamps event keys to the clef readable ledger range before rendering', () => {
+    expect(
+      scoreEventToVexFlowSpec(
+        {
+          id: 'legacy-underflow',
+          kind: 'note',
+          beat: 0,
+          duration: 'quarter',
+          pitch: { step: 'C', octave: 0 },
+        },
+        'treble',
+      ).keys,
+    ).toEqual(['f/3']);
+  });
+
   it('maps rest events to clef-aware VexFlow rest specs', () => {
     expect(
       scoreEventToVexFlowSpec(

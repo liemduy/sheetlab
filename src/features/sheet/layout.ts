@@ -1,5 +1,10 @@
 import type { Clef, Pitch, Score, ScoreType } from '../../domain/score/types';
 import { getEventPitches } from '../../domain/score/events';
+import {
+  TOP_LINE_BY_CLEF,
+  clampPitchToClefRange,
+  pitchToDiatonicValue,
+} from '../../domain/score/pitchRange';
 
 export const STAFF_LEFT = 76;
 export const STAFF_RIGHT = 884;
@@ -13,16 +18,7 @@ export const FIRST_STAFF_Y = 118;
 export const SVG_WIDTH = 920;
 export const VEXFLOW_STAVE_TOP_LINE_OFFSET = 44.5;
 
-const NOTE_STEPS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'] as const;
-const TOP_LINE_BY_CLEF = {
-  treble: { step: 'F', octave: 5 },
-  bass: { step: 'A', octave: 3 },
-} satisfies Record<Clef, Pitch>;
 const STAFF_DYNAMIC_PADDING = 28;
-
-function pitchToDiatonicValue(pitch: Pitch) {
-  return pitch.octave * NOTE_STEPS.length + NOTE_STEPS.indexOf(pitch.step);
-}
 
 function getPitchYRelativeToStaffTop(pitch: Pitch, clef: Clef) {
   const topLineValue = pitchToDiatonicValue(TOP_LINE_BY_CLEF[clef]);
@@ -49,7 +45,10 @@ function getStaffPitchBounds(score: Score, staffIndex: number) {
   }
 
   const pitchYs = eventPitches.map((pitch) =>
-    getPitchYRelativeToStaffTop(pitch, staff.clef),
+    getPitchYRelativeToStaffTop(
+      clampPitchToClefRange(pitch, staff.clef),
+      staff.clef,
+    ),
   );
 
   return {

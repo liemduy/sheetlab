@@ -650,6 +650,49 @@ describe('StaffRenderer', () => {
     );
   });
 
+  it('clamps extreme notehead drags to the readable ledger range', () => {
+    const onMoveEvent = vi.fn();
+
+    render(
+      <StaffRenderer
+        onMoveEvent={onMoveEvent}
+        score={trebleStudyFixture}
+        selectedEventId="treble-m1-e1"
+      />,
+    );
+
+    const overlay = screen.getByTestId('staff-renderer');
+    const bounds = setVisibleSheetBounds(overlay);
+    const startPoint = svgToClientPoint(
+      bounds,
+      getBeatX(0, 0, trebleStudyFixture.timeSignature.beats),
+      getPitchY({ step: 'C', octave: 4 }, 'treble', 0),
+    );
+    const targetPoint = svgToClientPoint(
+      bounds,
+      getBeatX(0, 3, trebleStudyFixture.timeSignature.beats),
+      getStaffTop(0) + 1000,
+    );
+
+    fireEvent.mouseDown(
+      screen.getByRole('button', { name: 'Note C4 measure 1 beat 1' }),
+      startPoint,
+    );
+    fireEvent.mouseMove(overlay, targetPoint);
+    fireEvent.mouseUp(overlay, targetPoint);
+
+    expect(onMoveEvent).toHaveBeenCalledWith(
+      'treble-m1-e1',
+      expect.objectContaining({
+        beat: 0,
+        measureIndex: 0,
+        pitch: { step: 'F', octave: 3 },
+        staffId: 'treble',
+      }),
+      0,
+    );
+  });
+
   it('locks chord notehead drag to the original column and preserves pitch index', () => {
     const score = createEmptyScore('treble', { measureCount: 1 });
     const chord: ChordEvent = {
@@ -872,6 +915,28 @@ describe('StaffRenderer', () => {
     expect(screen.getAllByTestId('score-event')).toHaveLength(2);
   });
 
+  it('caps grand staff expansion for legacy pitches outside the readable range', () => {
+    const score = createEmptyScore('grand');
+
+    score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events.push({
+      id: 'legacy-underflow',
+      kind: 'note',
+      beat: 0,
+      duration: 'quarter',
+      pitch: { step: 'C', octave: 0 },
+    });
+
+    render(<StaffRenderer score={score} />);
+    const connector = screen.getByTestId('grand-staff-connector');
+    const dynamicGap = getScoreStaffGap(score);
+
+    expect(dynamicGap).toBeGreaterThan(STAFF_GAP);
+    expect(dynamicGap).toBeLessThan(260);
+    expect(
+      Number(connector.getAttribute('y2')) - Number(connector.getAttribute('y1')),
+    ).toBeLessThan(320);
+  });
+
   it.each([
     {
       clef: 'treble',
@@ -920,14 +985,6 @@ describe('StaffRenderer', () => {
       scoreType: 'treble',
       staffId: 'treble',
       staffIndex: 0,
-    },
-    {
-      clef: 'bass',
-      expectedLedgerLines: 5,
-      pitch: { step: 'C', octave: 1 },
-      scoreType: 'grand',
-      staffId: 'bass',
-      staffIndex: 1,
     },
     {
       clef: 'bass',

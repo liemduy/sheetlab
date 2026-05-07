@@ -119,6 +119,36 @@ describe('score editing', () => {
     ]);
   });
 
+  it('clamps placed notes to the staff readable ledger range', () => {
+    const trebleScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'too-low-treble',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 1 },
+    });
+    const bassScore = placeScoreEvent(createEmptyScore('grand'), {
+      eventId: 'too-low-bass',
+      staffId: 'bass',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 0 },
+    });
+
+    expect(findScoreEvent(trebleScore, 'too-low-treble')?.event).toMatchObject({
+      kind: 'note',
+      pitch: { step: 'F', octave: 3 },
+    });
+    expect(findScoreEvent(bassScore, 'too-low-bass')?.event).toMatchObject({
+      kind: 'note',
+      pitch: { step: 'A', octave: 1 },
+    });
+  });
+
   it('adds an empty measure to each staff', () => {
     const score = createEmptyScore('grand', { measureCount: 2 });
     const nextScore = addMeasure(score);
