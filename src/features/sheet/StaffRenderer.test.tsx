@@ -424,6 +424,91 @@ describe('StaffRenderer', () => {
     expect(container.querySelectorAll('.score-event-notehead')).toHaveLength(0);
   });
 
+  it('selects the nearest notehead inside a chord column by pointer height', () => {
+    const score = createEmptyScore('treble', { measureCount: 1 });
+    const chord: ChordEvent = {
+      id: 'ui-c-major',
+      kind: 'chord',
+      beat: 0,
+      duration: 'quarter',
+      pitches: [
+        { step: 'C', octave: 4 },
+        { step: 'E', octave: 4 },
+        { step: 'G', octave: 4 },
+      ],
+    };
+    const onSelectEvent = vi.fn();
+
+    score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events.push(chord);
+
+    const { container, rerender } = render(
+      <StaffRenderer score={score} onSelectEvent={onSelectEvent} />,
+    );
+    const chordButton = screen.getByRole('button', {
+      name: 'Chord C4 E4 G4 measure 1 beat 1',
+    });
+
+    fireEvent.click(chordButton, {
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+
+    expect(onSelectEvent).toHaveBeenLastCalledWith('ui-c-major', 1);
+
+    rerender(
+      <StaffRenderer
+        score={score}
+        selectedEventId="ui-c-major"
+        selectedPitchIndex={1}
+      />,
+    );
+
+    expect(screen.getByTestId('selected-notehead')).toHaveAttribute(
+      'data-pitch-index',
+      '1',
+    );
+    expect(
+      container.querySelector(
+        '.vexflow-output .vf-user-event[data-event-id="ui-c-major"].is-selected',
+      ),
+    ).toBeNull();
+  });
+
+  it('deletes only the selected pitch from a chord delete target', () => {
+    const score = createEmptyScore('treble', { measureCount: 1 });
+    const chord: ChordEvent = {
+      id: 'ui-c-major',
+      kind: 'chord',
+      beat: 0,
+      duration: 'quarter',
+      pitches: [
+        { step: 'C', octave: 4 },
+        { step: 'E', octave: 4 },
+        { step: 'G', octave: 4 },
+      ],
+    };
+    const onDeleteEvent = vi.fn();
+
+    score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events.push(chord);
+
+    render(
+      <StaffRenderer
+        onDeleteEvent={onDeleteEvent}
+        score={score}
+        selectedEventId="ui-c-major"
+        selectedPitchIndex={1}
+      />,
+    );
+
+    expect(screen.getByTestId('score-event-delete')).toHaveAttribute(
+      'aria-label',
+      'Delete Note E4 from Chord C4 E4 G4 measure 1 beat 1',
+    );
+
+    fireEvent.click(screen.getByTestId('score-event-delete'));
+
+    expect(onDeleteEvent).toHaveBeenLastCalledWith('ui-c-major', 1);
+  });
+
   it('delegates adjacent chord-second displacement to VexFlow engraving', () => {
     const score = createEmptyScore('treble', { measureCount: 1 });
     const chord: ChordEvent = {

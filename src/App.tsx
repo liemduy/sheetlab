@@ -5,6 +5,7 @@ import {
   addMeasure,
   countScoreEvents,
   deleteScoreEvent,
+  deleteScoreEventPitch,
   findScoreEvent,
   tryInsertScoreEvent,
   tryPlaceScoreEvent,
@@ -37,6 +38,7 @@ import type { InputCursor } from './features/editor/inputCursor';
 import type {
   DurationValue,
   PageSize,
+  Pitch,
   Score,
   ScoreType,
   StaffId,
@@ -59,6 +61,14 @@ import {
   saveProjectToStorage,
 } from './features/persistence/projectStorage';
 
+function pitchesMatch(first: Pitch, second: Pitch) {
+  return (
+    first.step === second.step &&
+    first.octave === second.octave &&
+    first.accidental === second.accidental
+  );
+}
+
 function App() {
   type SelectionSource = 'manual';
 
@@ -77,6 +87,7 @@ function App() {
   const [futureScores, setFutureScores] = useState<Score[]>([]);
   const [editorMessage, setEditorMessage] = useState('Ready');
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [selectedPitchIndex, setSelectedPitchIndex] = useState<number | null>(null);
   const [selectedEventSource, setSelectedEventSource] =
     useState<SelectionSource | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -137,7 +148,10 @@ function App() {
       return;
     }
 
-    const result = tryUpdateScoreEvent(score, selectedEventId, update);
+    const result = tryUpdateScoreEvent(score, selectedEventId, {
+      ...update,
+      pitchIndex: selectedPitchIndex ?? undefined,
+    });
 
     if (result.updated) {
       commitScoreChange(result.score, successMessage);
@@ -189,6 +203,7 @@ function App() {
     setHoverPosition(null);
     setInputCursor(null);
     setSelectedEventId(null);
+    setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     setEditorMessage('Select mode');
   }
@@ -240,6 +255,7 @@ function App() {
     setHoverPosition(null);
     setInputCursor(null);
     setSelectedEventId(null);
+    setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     scrollNotationIntoView();
   }
@@ -256,6 +272,7 @@ function App() {
     setHoverPosition(null);
     setInputCursor(null);
     setSelectedEventId(null);
+    setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     scrollNotationIntoView();
   }
@@ -341,6 +358,7 @@ function App() {
         ),
       );
       setSelectedEventId(null);
+      setSelectedPitchIndex(null);
       setSelectedEventSource(null);
     } else {
       markInvalidMeasure(
@@ -356,30 +374,72 @@ function App() {
       return;
     }
 
-    commitScoreChange(deleteScoreEvent(score, selectedEventId), 'Event deleted');
+    commitScoreChange(
+      selectedPitchIndex !== null
+        ? deleteScoreEventPitch(score, selectedEventId, selectedPitchIndex)
+        : deleteScoreEvent(score, selectedEventId),
+      'Event deleted',
+    );
     setSelectedEventId(null);
+    setSelectedPitchIndex(null);
     setSelectedEventSource(null);
   }
 
-  function handleDeleteEvent(eventId: string) {
-    commitScoreChange(deleteScoreEvent(score, eventId), 'Event deleted');
+  function handleDeleteEvent(eventId: string, pitchIndex = selectedPitchIndex) {
+    commitScoreChange(
+      pitchIndex !== null && pitchIndex !== undefined
+        ? deleteScoreEventPitch(score, eventId, pitchIndex)
+        : deleteScoreEvent(score, eventId),
+      'Event deleted',
+    );
     if (selectedEventId === eventId) {
       setSelectedEventId(null);
+      setSelectedPitchIndex(null);
       setSelectedEventSource(null);
     }
   }
 
-  function handleMoveEvent(eventId: string, position: MusicPosition) {
-    const result = tryUpdateScoreEvent(score, eventId, {
-      beat: position.beat,
-      measureIndex: position.measureIndex,
-      pitch: position.pitch,
-      staffId: position.staffId,
-    });
+  function handleMoveEvent(
+    eventId: string,
+    position: MusicPosition,
+    pitchIndex?: number | null,
+  ) {
+    const foundEvent = findScoreEvent(score, eventId);
+    const isChordPitchMove =
+      foundEvent?.event.kind === 'chord' &&
+      pitchIndex !== null &&
+      pitchIndex !== undefined;
+    const result = tryUpdateScoreEvent(
+      score,
+      eventId,
+      isChordPitchMove
+        ? {
+            pitchIndex,
+            pitch: position.pitch,
+          }
+        : {
+            beat: position.beat,
+            measureIndex: position.measureIndex,
+            pitchIndex: pitchIndex ?? undefined,
+            pitch: position.pitch,
+            staffId: position.staffId,
+          },
+    );
 
     if (result.updated) {
       commitScoreChange(result.score, 'Event moved');
+      const movedEvent = findScoreEvent(result.score, eventId)?.event;
+      const movedPitchIndex =
+        isChordPitchMove && movedEvent?.kind === 'chord'
+          ? movedEvent.pitches.findIndex((pitch) => pitchesMatch(pitch, position.pitch))
+          : pitchIndex;
+
       setSelectedEventId(eventId);
+      setSelectedPitchIndex(
+        typeof movedPitchIndex === 'number' && movedPitchIndex >= 0
+          ? movedPitchIndex
+          : null,
+      );
       setSelectedEventSource('manual');
     } else {
       markInvalidMeasure(
@@ -401,6 +461,7 @@ function App() {
     setFutureScores((currentFuture) => [score, ...currentFuture]);
     setScore(previousScore);
     setSelectedEventId(null);
+    setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     setInputCursor(null);
     setInvalidMeasureKeys([]);
@@ -419,6 +480,7 @@ function App() {
     setFutureScores(remainingFuture);
     setScore(nextScore);
     setSelectedEventId(null);
+    setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     setInputCursor(null);
     setInvalidMeasureKeys([]);
@@ -447,6 +509,7 @@ function App() {
       isInputArmed: false,
     }));
     setSelectedEventId(null);
+    setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     setInputCursor(null);
     setHoverPosition(null);
@@ -470,6 +533,7 @@ function App() {
         isInputArmed: false,
       }));
       setSelectedEventId(null);
+      setSelectedPitchIndex(null);
       setSelectedEventSource(null);
       setInputCursor(null);
       setHoverPosition(null);
@@ -619,7 +683,7 @@ function App() {
     window.addEventListener('keydown', handleWindowKeyDown);
 
     return () => window.removeEventListener('keydown', handleWindowKeyDown);
-  }, [score, selectedEventId]);
+  }, [score, selectedEventId, selectedPitchIndex]);
 
   return (
     <main className="app-shell" aria-label="SheetLab music editor">
@@ -930,9 +994,14 @@ function App() {
             <div>
               <dt>Selected</dt>
               <dd>
-                {selectedEventId
-                  ? findScoreEvent(score, selectedEventId)?.event.id ?? 'None'
-                  : 'None'}
+                {selectedEventId ? (
+                  <>
+                    {findScoreEvent(score, selectedEventId)?.event.id ?? 'None'}
+                    {selectedPitchIndex !== null ? ` pitch ${selectedPitchIndex + 1}` : ''}
+                  </>
+                ) : (
+                  'None'
+                )}
               </dd>
             </div>
             <div>
@@ -988,19 +1057,25 @@ function App() {
                 playbackBeat={playbackBeat}
                 placementMode={toolState.placementMode}
                 selectedEventId={selectedEventId}
+                selectedPitchIndex={selectedPitchIndex}
                 score={score}
                 onClearInteraction={handleClearInteraction}
                 onHoverPositionChange={handleHoverPositionChange}
                 onPlaceAtPosition={handlePlaceAtPosition}
                 onDeleteEvent={handleDeleteEvent}
                 onMoveEvent={handleMoveEvent}
-                onSelectEvent={(eventId) => {
+                onSelectEvent={(eventId, pitchIndex) => {
                   updateToolState({ isInputArmed: false });
                   setHoverPosition(null);
                   setInputCursor(null);
                   setSelectedEventId(eventId);
+                  setSelectedPitchIndex(pitchIndex ?? null);
                   setSelectedEventSource('manual');
-                  setEditorMessage('Event selected');
+                  setEditorMessage(
+                    pitchIndex !== null && pitchIndex !== undefined
+                      ? 'Notehead selected'
+                      : 'Event selected',
+                  );
                 }}
               />
             </div>

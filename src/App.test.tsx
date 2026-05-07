@@ -250,6 +250,89 @@ describe('App editor state', () => {
     expect(screen.queryByLabelText('Note C4 measure 1 beat 1')).not.toBeInTheDocument();
   });
 
+  it('selects and deletes one notehead inside a chord column', () => {
+    render(<App />);
+    startWriting();
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'C', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Select tool' }));
+    fireEvent.click(screen.getByRole('button', {
+      name: 'Chord C4 E4 G4 measure 1 beat 1',
+    }), {
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.getByTestId('selected-notehead')).toHaveAttribute(
+      'data-pitch-index',
+      '1',
+    );
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'event-3 pitch 2',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('score-event-delete')).toHaveAttribute(
+      'aria-label',
+      'Delete Note E4 from Chord C4 E4 G4 measure 1 beat 1',
+    );
+
+    fireEvent.click(screen.getByTestId('score-event-delete'));
+
+    expect(
+      screen.getByLabelText('Chord C4 G4 measure 1 beat 1'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText('Chord C4 E4 G4 measure 1 beat 1'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('applies accidentals only to the selected notehead in a chord column', () => {
+    render(<App />);
+    startWriting();
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'C', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Select tool' }));
+    fireEvent.click(screen.getByRole('button', {
+      name: 'Chord C4 E4 G4 measure 1 beat 1',
+    }), {
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Sharp' }));
+
+    expect(
+      screen.getByLabelText('Chord C4 E#4 G4 measure 1 beat 1'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText('Chord C#4 E4 G4 measure 1 beat 1'),
+    ).not.toBeInTheDocument();
+  });
+
   it('places notes on the snapped visible slot when the user clicks between slots', () => {
     render(<App />);
     startWriting();

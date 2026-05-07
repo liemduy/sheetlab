@@ -56,13 +56,18 @@ interface NotationOverlayProps {
   onClearInteraction?: () => void;
   onHoverPositionChange?: (position: MusicPosition | null) => void;
   onPlaceAtPosition?: (position: MusicPosition) => void;
-  onSelectEvent?: (eventId: string) => void;
-  onDeleteEvent?: (eventId: string) => void;
-  onMoveEvent?: (eventId: string, position: MusicPosition) => void;
+  onSelectEvent?: (eventId: string, pitchIndex?: number | null) => void;
+  onDeleteEvent?: (eventId: string, pitchIndex?: number | null) => void;
+  onMoveEvent?: (
+    eventId: string,
+    position: MusicPosition,
+    pitchIndex?: number | null,
+  ) => void;
   playbackBeat?: number | null;
   placementMode?: PlacementMode;
   score: Score;
   selectedEventId?: string | null;
+  selectedPitchIndex?: number | null;
   svgHeight: number;
 }
 
@@ -82,6 +87,50 @@ function getSvgPoint(event: MouseEvent<SVGSVGElement>, svgHeight: number) {
   };
 }
 
+function getNestedSvgPoint(event: MouseEvent<SVGElement>) {
+  const svg = event.currentTarget.ownerSVGElement;
+
+  if (!svg) {
+    return {
+      x: event.clientX,
+      y: event.clientY,
+    };
+  }
+
+  const bounds = svg.getBoundingClientRect();
+  const viewBox = svg.viewBox.baseVal;
+  const parsedViewBox = svg
+    .getAttribute('viewBox')
+    ?.split(/\s+/)
+    .map(Number);
+  const svgHeightAttribute = Number(svg.getAttribute('height'));
+  const safeViewBox =
+    Number.isFinite(viewBox.width) && viewBox.width > 0
+      ? viewBox
+      : {
+          x: parsedViewBox?.[0] ?? 0,
+          y: parsedViewBox?.[1] ?? 0,
+          width: parsedViewBox?.[2] ?? SVG_WIDTH,
+          height:
+            parsedViewBox?.[3] ??
+            (Number.isFinite(svgHeightAttribute) && svgHeightAttribute > 0
+              ? svgHeightAttribute
+              : 1),
+        };
+
+  if (bounds.width === 0 || bounds.height === 0) {
+    return {
+      x: event.clientX,
+      y: event.clientY,
+    };
+  }
+
+  return {
+    x: safeViewBox.x + ((event.clientX - bounds.left) / bounds.width) * safeViewBox.width,
+    y: safeViewBox.y + ((event.clientY - bounds.top) / bounds.height) * safeViewBox.height,
+  };
+}
+
 function EventHitTarget({
   activeEventId,
   beatsPerMeasure,
@@ -95,6 +144,7 @@ function EventHitTarget({
   onSelectEvent,
   placementMode,
   selectedEventId,
+  selectedPitchIndex,
   staff,
   staffGap,
   staffIndex,
@@ -105,12 +155,17 @@ function EventHitTarget({
   eventLayout?: RenderedEventLayout;
   isInputArmed?: boolean;
   measureIndex: number;
-  onDeleteEvent?: (eventId: string) => void;
+  onDeleteEvent?: (eventId: string, pitchIndex?: number | null) => void;
   onDeleteHoverChange: (eventId: string | null) => void;
-  onStartDrag: (eventId: string, event: MouseEvent<SVGGElement>) => void;
-  onSelectEvent?: (eventId: string) => void;
+  onStartDrag: (
+    eventId: string,
+    pitchIndex: number | null,
+    event: MouseEvent<SVGGElement>,
+  ) => void;
+  onSelectEvent?: (eventId: string, pitchIndex?: number | null) => void;
   placementMode: PlacementMode;
   selectedEventId?: string | null;
+  selectedPitchIndex?: number | null;
   staff: Staff;
   staffGap: number;
   staffIndex: number;
@@ -142,6 +197,54 @@ function EventHitTarget({
       : Math.max(42, (eventLayout?.maxY ?? y + 10) - (eventLayout?.minY ?? y - 10) + 30);
   const deleteX = (eventLayout?.maxX ?? x) + 22;
   const deleteY = (eventLayout?.minY ?? y) - 24;
+  const selectedPitch =
+    selectedEventId === event.id && selectedPitchIndex !== null && selectedPitchIndex !== undefined
+      ? eventPitches[selectedPitchIndex]
+      : selectedEventId === event.id
+        ? eventPitches[0]
+        : null;
+  const selectedPitchY = selectedPitch
+    ? getPitchY(selectedPitch, staff.clef, staffIndex, staffGap)
+    : null;
+  const deleteLabel =
+    selectedPitch && event.kind === 'chord'
+      ? `Delete Note ${formatPitch(selectedPitch)} from ${label}`
+      : `Delete ${label}`;
+
+  function getClosestPitchIndex(pointerEvent: MouseEvent<SVGElement>) {
+    if (eventPitches.length <= 1) {
+      return null;
+    }
+
+    const point = getNestedSvgPoint(pointerEvent);
+
+    return eventPitches.reduce(
+      (closest, pitch, pitchIndex) => {
+        const pitchY = getPitchY(pitch, staff.clef, staffIndex, staffGap);
+        const distance = Math.abs(point.y - pitchY);
+
+        return distance < closest.distance
+          ? {
+              distance,
+              pitchIndex,
+            }
+          : closest;
+      },
+      {
+        distance: Number.POSITIVE_INFINITY,
+        pitchIndex: 0,
+      },
+    ).pitchIndex;
+  }
+
+  function deleteSelectedTarget() {
+    if (selectedPitchIndex !== null && selectedPitchIndex !== undefined) {
+      onDeleteEvent?.(event.id, selectedPitchIndex);
+      return;
+    }
+
+    onDeleteEvent?.(event.id);
+  }
 
   if (isGeneratedRestEvent(event)) {
     return null;
@@ -166,17 +269,19 @@ function EventHitTarget({
         tabIndex={0}
         onClick={(eventClick) => {
           eventClick.stopPropagation();
-          onSelectEvent?.(event.id);
+          onSelectEvent?.(event.id, getClosestPitchIndex(eventClick));
         }}
         onMouseDown={(eventMouseDown) => {
           eventMouseDown.stopPropagation();
-          onSelectEvent?.(event.id);
-          onStartDrag(event.id, eventMouseDown);
+          const pitchIndex = getClosestPitchIndex(eventMouseDown);
+
+          onSelectEvent?.(event.id, pitchIndex);
+          onStartDrag(event.id, pitchIndex, eventMouseDown);
         }}
         onKeyDown={(eventKey) => {
           if (eventKey.key === 'Enter' || eventKey.key === ' ') {
             eventKey.preventDefault();
-            onSelectEvent?.(event.id);
+            onSelectEvent?.(event.id, eventPitches.length > 1 ? 0 : null);
           }
         }}
       >
@@ -190,9 +295,20 @@ function EventHitTarget({
           y={y - targetHeight / 2}
         />
       </g>
+      {selectedEventId === event.id && selectedPitch && selectedPitchY !== null ? (
+        <ellipse
+          className="selected-notehead-overlay"
+          cx={x}
+          cy={selectedPitchY}
+          data-pitch-index={selectedPitchIndex ?? 0}
+          data-testid="selected-notehead"
+          rx={8.4}
+          ry={5.8}
+        />
+      ) : null}
       {selectedEventId === event.id ? (
         <g
-          aria-label={`Delete ${label}`}
+          aria-label={deleteLabel}
           className="score-event-delete"
           data-testid="score-event-delete"
           role="button"
@@ -204,7 +320,7 @@ function EventHitTarget({
           onClick={(deleteClick) => {
             deleteClick.preventDefault();
             deleteClick.stopPropagation();
-            onDeleteEvent?.(event.id);
+            deleteSelectedTarget();
           }}
           onMouseEnter={(deleteMouseEnter) => {
             deleteMouseEnter.stopPropagation();
@@ -221,7 +337,7 @@ function EventHitTarget({
             if (deleteKey.key === 'Enter' || deleteKey.key === ' ') {
               deleteKey.preventDefault();
               deleteKey.stopPropagation();
-              onDeleteEvent?.(event.id);
+              deleteSelectedTarget();
             }
           }}
         >
@@ -656,11 +772,13 @@ export function NotationOverlay({
   placementMode = 'place',
   score,
   selectedEventId,
+  selectedPitchIndex,
   svgHeight,
 }: NotationOverlayProps) {
   const [dragState, setDragState] = useState<{
     eventId: string;
     hasMoved: boolean;
+    pitchIndex: number | null;
     previewPosition: MusicPosition | null;
     startClientX: number;
     startClientY: number;
@@ -747,7 +865,11 @@ export function NotationOverlay({
 
         if (dragState.hasMoved && position) {
           suppressNextPlaceRef.current = true;
-          onMoveEvent?.(dragState.eventId, position);
+          if (dragState.pitchIndex !== null) {
+            onMoveEvent?.(dragState.eventId, position, dragState.pitchIndex);
+          } else {
+            onMoveEvent?.(dragState.eventId, position);
+          }
         }
 
         setDragState(null);
@@ -861,10 +983,11 @@ export function NotationOverlay({
                 measureIndex={measure.index}
                 onDeleteEvent={onDeleteEvent}
                 onDeleteHoverChange={setDeleteHoverEventId}
-                onStartDrag={(eventId, dragEvent) =>
+                onStartDrag={(eventId, pitchIndex, dragEvent) =>
                   setDragState({
                     eventId,
                     hasMoved: false,
+                    pitchIndex,
                     previewPosition: null,
                     startClientX: dragEvent.clientX,
                     startClientY: dragEvent.clientY,
@@ -873,6 +996,7 @@ export function NotationOverlay({
                 onSelectEvent={onSelectEvent}
                 placementMode={placementMode}
                 selectedEventId={selectedEventId}
+                selectedPitchIndex={selectedPitchIndex}
                 staff={staff}
                 staffGap={staffGap}
                 staffIndex={staffIndex}

@@ -527,6 +527,15 @@ button {
   pointer-events: none;
 }
 
+.selected-notehead-overlay {
+  fill: var(--accent-strong);
+  opacity: 0.88;
+  pointer-events: none;
+  stroke: var(--accent-strong);
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+
 .score-event-visual {
   pointer-events: none;
 }

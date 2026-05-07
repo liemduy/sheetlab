@@ -48,6 +48,7 @@ export interface UpdateScoreEventRequest {
   duration?: DurationValue;
   measureIndex?: number;
   pitch?: Pitch;
+  pitchIndex?: number;
   staffId?: StaffId;
   dots?: number;
 }
@@ -160,8 +161,9 @@ function createUpdatedScoreEvent(
   }
 
   if (event.kind === 'chord') {
+    const targetPitchIndex = update.pitchIndex ?? 0;
     const nextPitches = event.pitches.map((pitch, index) =>
-      index === 0 ? applyPitchUpdate(pitch, update) : pitch,
+      index === targetPitchIndex ? applyPitchUpdate(pitch, update) : pitch,
     );
 
     return {
@@ -720,6 +722,92 @@ export function deleteScoreEvent(score: Score, eventId: string): Score {
                 )
               : voice.events,
           })),
+        })),
+      })),
+    })),
+  };
+}
+
+function removePitchFromEvent(event: ScoreEvent, pitchIndex: number): ScoreEvent | null {
+  if (event.kind === 'note') {
+    return pitchIndex === 0 ? null : event;
+  }
+
+  if (event.kind !== 'chord') {
+    return event;
+  }
+
+  const remainingPitches = event.pitches.filter((_, index) => index !== pitchIndex);
+
+  if (remainingPitches.length === event.pitches.length) {
+    return event;
+  }
+
+  if (remainingPitches.length === 0) {
+    return null;
+  }
+
+  if (remainingPitches.length === 1) {
+    const remainingPitch = remainingPitches[0];
+
+    if (!remainingPitch) {
+      return null;
+    }
+
+    return {
+      id: event.id,
+      kind: 'note',
+      beat: event.beat,
+      duration: event.duration,
+      dots: event.dots,
+      pitch: remainingPitch,
+    };
+  }
+
+  return {
+    ...event,
+    pitches: remainingPitches,
+  };
+}
+
+export function deleteScoreEventPitch(
+  score: Score,
+  eventId: string,
+  pitchIndex: number,
+): Score {
+  return {
+    ...score,
+    parts: score.parts.map((part) => ({
+      ...part,
+      staves: part.staves.map((staff) => ({
+        ...staff,
+        measures: staff.measures.map((measure) => ({
+          ...measure,
+          voices: measure.voices.map((voice) => {
+            if (!voice.events.some((event) => event.id === eventId)) {
+              return voice;
+            }
+
+            const nextEvents = voice.events.flatMap((event) => {
+              if (event.id !== eventId) {
+                return [event];
+              }
+
+              const nextEvent = removePitchFromEvent(event, pitchIndex);
+
+              return nextEvent ? [nextEvent] : [];
+            });
+
+            return {
+              ...voice,
+              events: materializeMeasureEvents(
+                nextEvents,
+                score,
+                staff.id,
+                measure.index,
+              ),
+            };
+          }),
         })),
       })),
     })),

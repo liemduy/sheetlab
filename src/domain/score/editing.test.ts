@@ -4,6 +4,7 @@ import {
   addMeasure,
   countScoreEvents,
   deleteScoreEvent,
+  deleteScoreEventPitch,
   findScoreEvent,
   placeScoreEvent,
   tryPlaceScoreEvent,
@@ -426,6 +427,74 @@ describe('score editing', () => {
     ]);
   });
 
+  it('deletes only the requested pitch from a chord column', () => {
+    const cScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'event-c',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const eScore = placeScoreEvent(cScore, {
+      eventId: 'event-e',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+    const score = placeScoreEvent(eScore, {
+      eventId: 'event-g',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'G', octave: 4 },
+    });
+    const nextScore = deleteScoreEventPitch(score, 'event-g', 1);
+
+    expect(findScoreEvent(nextScore, 'event-g')?.event).toMatchObject({
+      kind: 'chord',
+      pitches: [
+        { step: 'C', octave: 4 },
+        { step: 'G', octave: 4 },
+      ],
+    });
+    expectMeasureEventsFillMeasure(nextScore);
+  });
+
+  it('collapses a two-note chord to a single note when one pitch is deleted', () => {
+    const cScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'event-c',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const score = placeScoreEvent(cScore, {
+      eventId: 'event-e',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+    const nextScore = deleteScoreEventPitch(score, 'event-e', 0);
+
+    expect(findScoreEvent(nextScore, 'event-e')?.event).toMatchObject({
+      kind: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+    expectMeasureEventsFillMeasure(nextScore);
+  });
+
   it('updates duration and accidental on an existing note', () => {
     const score = placeScoreEvent(createEmptyScore('treble'), {
       eventId: 'event-update-me',
@@ -481,6 +550,50 @@ describe('score editing', () => {
       ],
     });
     expectMeasureEventsFillMeasure(result.score);
+  });
+
+  it('updates only the selected pitch in a chord column', () => {
+    const cScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'event-c',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const eScore = placeScoreEvent(cScore, {
+      eventId: 'event-e',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+    const score = placeScoreEvent(eScore, {
+      eventId: 'event-g',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'G', octave: 4 },
+    });
+    const result = tryUpdateScoreEvent(score, 'event-g', {
+      accidental: 'sharp',
+      pitchIndex: 1,
+    });
+
+    expect(result.updated).toBe(true);
+    expect(findScoreEvent(result.score, 'event-g')?.event).toMatchObject({
+      kind: 'chord',
+      pitches: [
+        { step: 'C', octave: 4 },
+        { step: 'E', octave: 4, accidental: 'sharp' },
+        { step: 'G', octave: 4 },
+      ],
+    });
   });
 
   it('moves a chord column without losing its pitches', () => {

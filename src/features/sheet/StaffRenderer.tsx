@@ -15,10 +15,15 @@ export interface StaffRendererProps {
   onHoverPositionChange?: (position: MusicPosition | null) => void;
   onPlaceAtPosition?: (position: MusicPosition) => void;
   onClearInteraction?: () => void;
-  onSelectEvent?: (eventId: string) => void;
-  onDeleteEvent?: (eventId: string) => void;
-  onMoveEvent?: (eventId: string, position: MusicPosition) => void;
+  onSelectEvent?: (eventId: string, pitchIndex?: number | null) => void;
+  onDeleteEvent?: (eventId: string, pitchIndex?: number | null) => void;
+  onMoveEvent?: (
+    eventId: string,
+    position: MusicPosition,
+    pitchIndex?: number | null,
+  ) => void;
   selectedEventId?: string | null;
+  selectedPitchIndex?: number | null;
   activeEventId?: string | null;
   playbackBeat?: number | null;
   placementMode?: PlacementMode;

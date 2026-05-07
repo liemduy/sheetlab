@@ -133,6 +133,7 @@ function drawVexFlowMeasureEvents({
     svgElement.setAttribute('data-event-id', event.id);
     svgElement.setAttribute('data-duration', event.duration);
     svgElement.setAttribute('data-measure-index', String(measureIndex));
+    svgElement.setAttribute('data-pitch-count', String(getEventPitches(event).length));
     svgElement.setAttribute('data-staff-id', staff.id);
 
     if (!isGeneratedRestEvent(event)) {
@@ -257,6 +258,7 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
 function syncVexFlowSelection(
   container: HTMLDivElement,
   selectedEventId?: string | null,
+  selectedPitchIndex?: number | null,
   activeEventId?: string | null,
   invalidMeasureKeys: readonly string[] = [],
 ) {
@@ -264,6 +266,7 @@ function syncVexFlowSelection(
 
   container.querySelectorAll('.vf-user-event').forEach((element) => {
     const eventId = element.getAttribute('data-event-id');
+    const pitchCount = Number(element.getAttribute('data-pitch-count'));
     const staffId = element.getAttribute('data-staff-id');
     const measureIndex = Number(element.getAttribute('data-measure-index'));
     const isInvalidMeasure =
@@ -271,7 +274,13 @@ function syncVexFlowSelection(
       Number.isFinite(measureIndex) &&
       invalidMeasureKeySet.has(getMeasureKey(staffId, measureIndex));
 
-    element.classList.toggle('is-selected', eventId === selectedEventId);
+    element.classList.toggle(
+      'is-selected',
+      eventId === selectedEventId &&
+        (selectedPitchIndex === null ||
+          selectedPitchIndex === undefined ||
+          pitchCount <= 1),
+    );
     element.classList.toggle('is-playing', eventId === activeEventId);
     element.classList.toggle('is-invalid-measure', isInvalidMeasure);
   });
@@ -291,22 +300,36 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
       syncVexFlowSelection(
         containerRef.current,
         props.selectedEventId,
+        props.selectedPitchIndex,
         props.activeEventId,
         props.invalidMeasureKeys,
       );
     }
-  }, [props.activeEventId, props.invalidMeasureKeys, props.score, props.selectedEventId]);
+  }, [
+    props.activeEventId,
+    props.invalidMeasureKeys,
+    props.score,
+    props.selectedEventId,
+    props.selectedPitchIndex,
+  ]);
 
   useEffect(() => {
     if (containerRef.current) {
       syncVexFlowSelection(
         containerRef.current,
         props.selectedEventId,
+        props.selectedPitchIndex,
         props.activeEventId,
         props.invalidMeasureKeys,
       );
     }
-  }, [eventLayouts, props.activeEventId, props.invalidMeasureKeys, props.selectedEventId]);
+  }, [
+    eventLayouts,
+    props.activeEventId,
+    props.invalidMeasureKeys,
+    props.selectedEventId,
+    props.selectedPitchIndex,
+  ]);
 
   return (
     <div
@@ -340,6 +363,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         placementMode={props.placementMode}
         score={props.score}
         selectedEventId={props.selectedEventId}
+        selectedPitchIndex={props.selectedPitchIndex}
         svgHeight={height}
       />
     </div>
