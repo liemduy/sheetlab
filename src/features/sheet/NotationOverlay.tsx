@@ -11,10 +11,7 @@ import {
 } from '../../domain/score/events';
 import type { EntryMode, PlacementMode } from '../editor/editorState';
 import type { InputCursor } from '../editor/inputCursor';
-import {
-  createInputCursorFromPosition,
-  getInputSlotBeats,
-} from '../editor/inputCursor';
+import { createInputCursorFromPosition } from '../editor/inputCursor';
 import { formatPitch, mapPointToMusicPosition } from './interaction';
 import type { MusicPosition } from './interaction';
 import {
@@ -114,62 +111,9 @@ function EventHitTarget({
         }`;
   const targetWidth = placementMode === 'insert' ? 16 : 28;
   const targetHeight = placementMode === 'insert' ? 30 : 40;
-  const visual = (
-    <g
-      className="score-event-visual"
-      data-event-id={event.id}
-      data-testid="score-event-visual"
-    >
-      {eventPitches.length > 1 ? (
-        <ChordGlyph
-          duration={event.duration}
-          dots={getEventDots(event)}
-          notes={eventPitches.map((pitch) => ({
-            pitch,
-            y: getPitchY(pitch, staff.clef, staffIndex, staffGap),
-          }))}
-          staffGap={staffGap}
-          staffIndex={staffIndex}
-          variant="placed"
-          x={x}
-        />
-      ) : eventPitches.length === 1 ? (
-        <NoteGlyph
-          duration={event.duration}
-          dots={getEventDots(event)}
-          pitch={eventPitches[0]}
-          staffGap={staffGap}
-          staffIndex={staffIndex}
-          variant="placed"
-          x={x}
-          y={getPitchY(eventPitches[0], staff.clef, staffIndex, staffGap)}
-        />
-      ) : (
-        <RestGlyph
-          duration={event.duration}
-          dots={getEventDots(event)}
-          staffGap={staffGap}
-          staffIndex={staffIndex}
-          variant="placed"
-          x={x}
-          y={y}
-        />
-      )}
-    </g>
-  );
 
   if (isGeneratedRestEvent(event)) {
-    return (
-      <g
-        aria-label={label}
-        className="score-filler-rest"
-        data-duration={event.duration}
-        data-event-id={event.id}
-        data-testid="score-filler-rest"
-      >
-        {visual}
-      </g>
-    );
+    return null;
   }
 
   return (
@@ -200,7 +144,6 @@ function EventHitTarget({
           }
         }}
       >
-        {visual}
         <rect
           className="score-event-target"
           data-testid="score-event-target"
@@ -422,84 +365,58 @@ function StaffHoverGuide({
 }
 
 function RhythmSlots({
-dots,
-  duration,
   inputCursor,
   isInputArmed,
   score,
 }: {
-  dots: number;
-  duration: DurationValue;
   inputCursor?: InputCursor | null;
   isInputArmed?: boolean;
   score: Score;
 }) {
-  if (!isInputArmed) {
+  if (!isInputArmed || !inputCursor) {
     return null;
   }
 
-  const beats = getInputSlotBeats(duration, score.timeSignature.beats, dots);
   const staves = score.parts[0]?.staves ?? [];
   const shouldRenderSharedColumns = score.type === 'grand' && staves.length > 1;
   const staffGap = getScoreStaffGap(score);
   const sharedColumnRange = getTimelineYRange(score, 0, staffGap);
+  const x = getBeatX(
+    inputCursor.measureIndex,
+    inputCursor.beat,
+    score.timeSignature.beats,
+  );
+  const y =
+    getStaffTop(inputCursor.staffIndex, staffGap) + STAFF_LINE_SPACING * 2;
 
   return (
     <g className="rhythm-slots" data-testid="rhythm-slots">
       {shouldRenderSharedColumns ? (
         <g className="timeline-columns" data-testid="timeline-columns">
-          {staves[0]?.measures.flatMap((measure) =>
-            beats.map((beat) => {
-              const isActive =
-                inputCursor?.measureIndex === measure.index &&
-                inputCursor.beat === beat;
-              const x = getBeatX(measure.index, beat, score.timeSignature.beats);
-
-              return (
-                <line
-                  key={`timeline-${measure.index}-${beat}`}
-                  className={`timeline-column${isActive ? ' is-active' : ''}`}
-                  data-beat={beat}
-                  data-measure-index={measure.index}
-                  data-testid="timeline-column"
-                  x1={x}
-                  x2={x}
-                  y1={sharedColumnRange.y1}
-                  y2={sharedColumnRange.y2}
-                />
-              );
-            }),
-          )}
+          <line
+            className="timeline-column is-active"
+            data-beat={inputCursor.beat}
+            data-measure-index={inputCursor.measureIndex}
+            data-testid="timeline-column"
+            x1={x}
+            x2={x}
+            y1={sharedColumnRange.y1}
+            y2={sharedColumnRange.y2}
+          />
         </g>
       ) : null}
-      {staves.flatMap((staff, staffIndex) =>
-        staff.measures.flatMap((measure) =>
-          beats.map((beat) => {
-            const isActive =
-              inputCursor?.staffId === staff.id &&
-              inputCursor.measureIndex === measure.index &&
-              inputCursor.beat === beat;
-            const x = getBeatX(measure.index, beat, score.timeSignature.beats);
-            const y = getStaffTop(staffIndex, staffGap) + STAFF_LINE_SPACING * 2;
-
-            return (
-              <rect
-                key={`${staff.id}-${measure.index}-${beat}`}
-                className={`rhythm-slot${isActive ? ' is-active' : ''}`}
-                data-beat={beat}
-                data-measure-index={measure.index}
-                data-staff-id={staff.id}
-                data-testid="rhythm-slot"
-                height={3}
-                rx={1.5}
-                width={10}
-                x={x - 5}
-                y={y - 1.5}
-              />
-            );
-          }),
-        ),
-      )}
+      <rect
+        className="rhythm-slot is-active"
+        data-beat={inputCursor.beat}
+        data-measure-index={inputCursor.measureIndex}
+        data-staff-id={inputCursor.staffId}
+        data-testid="rhythm-slot"
+        height={3}
+        rx={1.5}
+        width={10}
+        x={x - 5}
+        y={y - 1.5}
+      />
     </g>
   );
 }
@@ -733,8 +650,6 @@ export function NotationOverlay({
     >
       <rect className="staff-page-bg" x={0} y={0} width={SVG_WIDTH} height={svgHeight} />
       <RhythmSlots
-        dots={dots}
-        duration={duration}
         inputCursor={inputCursor}
         isInputArmed={isInputArmed}
         score={score}

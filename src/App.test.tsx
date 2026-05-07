@@ -337,21 +337,13 @@ describe('App editor state', () => {
     expect(screen.getByTestId('score-event')).toBeInTheDocument();
     await waitFor(() => {
       expect(
-        container.querySelector('[data-event-id="event-1"] .score-event-notehead'),
+        container.querySelector('.vexflow-output .vf-user-event[data-event-id="event-1"]'),
       ).not.toBeNull();
     });
-    const placedNoteHead = container.querySelector(
-      '[data-event-id="event-1"] .score-event-notehead',
-    );
+    const hitTarget = screen.getByTestId('score-event-target');
 
-    expect(Number(placedNoteHead?.getAttribute('cx'))).toBeCloseTo(
-      ghostX,
-      2,
-    );
-    expect(Number(placedNoteHead?.getAttribute('cy'))).toBeCloseTo(
-      ghostY,
-      2,
-    );
+    expect(Number(hitTarget.getAttribute('x')) + 14).toBeCloseTo(ghostX, 2);
+    expect(Number(hitTarget.getAttribute('y')) + 20).toBeCloseTo(ghostY, 2);
   });
 
   it('adds a measure from the toolbar', () => {
@@ -456,7 +448,9 @@ describe('App editor state', () => {
     });
 
     expect(screen.getByLabelText('Note E#4 measure 1 beat 1')).toBeInTheDocument();
-    expect(container.querySelector('[data-event-id="event-1"] .notation-dot')).not.toBeNull();
+    expect(
+      container.querySelector('.vexflow-output .vf-user-event[data-event-id="event-1"]'),
+    ).not.toBeNull();
     expect(screen.getByTestId('active-input-cursor')).toHaveAttribute(
       'data-beat',
       '1.5',

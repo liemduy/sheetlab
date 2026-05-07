@@ -347,6 +347,15 @@ button {
   height: 100% !important;
 }
 
+.vexflow-output .vf-score-event {
+  pointer-events: none;
+}
+
+.vexflow-output .vf-generated-rest {
+  opacity: 0;
+  visibility: hidden;
+}
+
 .notation-overlay {
   z-index: 2;
 }

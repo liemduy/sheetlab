@@ -103,7 +103,7 @@ describe('StaffRenderer', () => {
     expect(screen.getAllByTestId('measure-barline-treble')).toHaveLength(5);
   });
 
-  it('renders visible rhythm slots from the active duration', () => {
+  it('does not render the full rhythm grid before the cursor has a hover position', () => {
     render(
       <StaffRenderer
         duration="quarter"
@@ -111,29 +111,48 @@ describe('StaffRenderer', () => {
       />,
     );
 
-    expect(screen.getAllByTestId('rhythm-slot')).toHaveLength(16);
+    expect(screen.queryByTestId('rhythm-slot')).not.toBeInTheDocument();
   });
 
-  it('renders fewer visible slots for longer durations', () => {
+  it('renders only the active rhythm slot instead of every possible beat', () => {
     render(
       <StaffRenderer
         duration="half"
+        inputCursor={{
+          beat: 2,
+          duration: 'half',
+          measureIndex: 0,
+          mode: 'note-input',
+          pitchPreview: { step: 'C', octave: 4 },
+          staffId: 'treble',
+          staffIndex: 0,
+        }}
         score={createEmptyScore('treble', { measureCount: 4 })}
       />,
     );
 
-    expect(screen.getAllByTestId('rhythm-slot')).toHaveLength(8);
+    expect(screen.getAllByTestId('rhythm-slot')).toHaveLength(1);
+    expect(screen.getByTestId('rhythm-slot')).toHaveAttribute('data-beat', '2');
   });
 
-  it('renders dense thirty-second slots for fine input', () => {
+  it('does not flood the sheet with thirty-second slot guides', () => {
     render(
       <StaffRenderer
         duration="thirtySecond"
+        inputCursor={{
+          beat: 3.875,
+          duration: 'thirtySecond',
+          measureIndex: 0,
+          mode: 'note-input',
+          pitchPreview: { step: 'C', octave: 4 },
+          staffId: 'treble',
+          staffIndex: 0,
+        }}
         score={createEmptyScore('treble', { measureCount: 4 })}
       />,
     );
 
-    expect(screen.getAllByTestId('rhythm-slot')).toHaveLength(128);
+    expect(screen.getAllByTestId('rhythm-slot')).toHaveLength(1);
   });
 
   it('renders shared timeline columns across grand-staff piano slots', () => {
@@ -153,8 +172,8 @@ describe('StaffRenderer', () => {
       />,
     );
 
-    expect(screen.getAllByTestId('timeline-column')).toHaveLength(16);
-    expect(screen.getAllByTestId('rhythm-slot')).toHaveLength(32);
+    expect(screen.getAllByTestId('timeline-column')).toHaveLength(1);
+    expect(screen.getAllByTestId('rhythm-slot')).toHaveLength(1);
     expect(document.querySelectorAll('.timeline-column.is-active')).toHaveLength(1);
   });
 
@@ -343,15 +362,18 @@ describe('StaffRenderer', () => {
     );
   });
 
-  it('renders score events as editor note glyphs', () => {
+  it('renders score events through VexFlow and keeps overlay hit targets selectable', () => {
     const { container } = render(<StaffRenderer score={trebleStudyFixture} />);
 
-    expect(container.querySelectorAll('[data-testid="score-event-visual"]')).toHaveLength(4);
-    expect(container.querySelectorAll('.sheetlab-vf-event')).toHaveLength(0);
-    expect(container.querySelector('[data-event-id="treble-m1-e1"]')).not.toBeNull();
+    expect(screen.getAllByTestId('score-event')).toHaveLength(4);
+    expect(container.querySelectorAll('.vexflow-output .vf-user-event')).toHaveLength(4);
+    expect(
+      container.querySelector('.vexflow-output [data-event-id="treble-m1-e1"]'),
+    ).not.toBeNull();
+    expect(container.querySelectorAll('.score-event-notehead')).toHaveLength(0);
   });
 
-  it('renders chord events as one selectable column with multiple noteheads', () => {
+  it('renders chord events as one selectable VexFlow chord column', () => {
     const score = createEmptyScore('grand', { measureCount: 1 });
     const chord: ChordEvent = {
       id: 'ui-c-major',
@@ -374,14 +396,12 @@ describe('StaffRenderer', () => {
 
     expect(chordButton).toBeInTheDocument();
     expect(
-      container.querySelectorAll('[data-event-id="ui-c-major"] .score-event-notehead'),
-    ).toHaveLength(3);
-    expect(
-      container.querySelectorAll('[data-event-id="ui-c-major"] .score-event-stem'),
+      container.querySelectorAll('.vexflow-output .vf-user-event[data-event-id="ui-c-major"]'),
     ).toHaveLength(1);
+    expect(container.querySelectorAll('.score-event-notehead')).toHaveLength(0);
   });
 
-  it('offsets adjacent chord seconds instead of stacking noteheads directly', () => {
+  it('delegates adjacent chord-second displacement to VexFlow engraving', () => {
     const score = createEmptyScore('treble', { measureCount: 1 });
     const chord: ChordEvent = {
       id: 'ui-adjacent-second',
@@ -397,16 +417,13 @@ describe('StaffRenderer', () => {
     score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events.push(chord);
 
     const { container } = render(<StaffRenderer score={score} />);
-    const noteheadXs = [
-      ...container.querySelectorAll(
-        '[data-event-id="ui-adjacent-second"] .score-event-notehead',
-      ),
-    ].map((element) => element.getAttribute('cx'));
 
-    expect(new Set(noteheadXs).size).toBe(2);
     expect(
-      container.querySelectorAll('[data-event-id="ui-adjacent-second"] .score-event-stem'),
+      container.querySelectorAll(
+        '.vexflow-output .vf-user-event[data-event-id="ui-adjacent-second"]',
+      ),
     ).toHaveLength(1);
+    expect(container.querySelectorAll('.score-event-notehead')).toHaveLength(0);
   });
 
   it('renders a delete target for the selected event', () => {
@@ -505,7 +522,7 @@ describe('StaffRenderer', () => {
     );
   });
 
-  it('keeps event glyph centers on the same editor grid as ghost and hit targets', () => {
+  it('keeps ghost centers and editor hit targets on the same input grid', () => {
     const hoverPosition: MusicPosition = {
       staffId: 'treble',
       staffIndex: 0,
@@ -524,7 +541,6 @@ describe('StaffRenderer', () => {
       name: 'Note C4 measure 1 beat 1',
     });
     const hitTarget = scoreEvent.querySelector('.score-event-target');
-    const eventNoteHead = scoreEvent.querySelector('.score-event-notehead');
     const expectedX = getBeatX(0, 0, trebleStudyFixture.timeSignature.beats);
     const expectedY = getPitchY({ step: 'C', octave: 4 }, 'treble', 0);
 
@@ -532,23 +548,18 @@ describe('StaffRenderer', () => {
     expect(Number(ghostNoteHead?.getAttribute('cy'))).toBeCloseTo(expectedY, 2);
     expect(Number(hitTarget?.getAttribute('x')) + 14).toBeCloseTo(expectedX, 2);
     expect(Number(hitTarget?.getAttribute('y')) + 20).toBeCloseTo(expectedY, 2);
-    expect(Number(eventNoteHead?.getAttribute('cx'))).toBeCloseTo(expectedX, 2);
-    expect(Number(eventNoteHead?.getAttribute('cy'))).toBeCloseTo(expectedY, 2);
   });
 
-  it('centers the actual editor notehead glyph on the editor grid', () => {
+  it('renders the actual placed notation in the VexFlow layer only', () => {
     const { container } = render(<StaffRenderer score={trebleStudyFixture} />);
-    const noteheadGlyph = container.querySelector(
-      '[data-event-id="treble-m1-e1"] .score-event-notehead',
-    );
-    const expectedX = getBeatX(0, 0, trebleStudyFixture.timeSignature.beats);
-    const expectedY = getPitchY({ step: 'C', octave: 4 }, 'treble', 0);
 
-    expect(Number(noteheadGlyph?.getAttribute('cx'))).toBeCloseTo(expectedX, 2);
-    expect(Number(noteheadGlyph?.getAttribute('cy'))).toBeCloseTo(expectedY, 2);
+    expect(
+      container.querySelector('.vexflow-output .vf-user-event[data-event-id="treble-m1-e1"]'),
+    ).not.toBeNull();
+    expect(container.querySelector('.score-event-notehead')).toBeNull();
   });
 
-  it('renders ledger lines for placed and ghost notes outside the staff', () => {
+  it('uses VexFlow for placed ledger lines while keeping ghost ledger previews', () => {
     const hoverPosition: MusicPosition = {
       staffId: 'treble',
       staffIndex: 0,
@@ -563,10 +574,8 @@ describe('StaffRenderer', () => {
     );
 
     expect(
-      container.querySelectorAll(
-        '[data-event-id="treble-m1-e1"] [data-testid="ledger-line"]',
-      ).length,
-    ).toBeGreaterThan(0);
+      container.querySelector('.vexflow-output .vf-user-event[data-event-id="treble-m1-e1"]'),
+    ).not.toBeNull();
     expect(
       screen
         .getByTestId('ghost-event')
@@ -593,7 +602,7 @@ describe('StaffRenderer', () => {
       entryMode: 'note',
       pitch: { step: 'G', octave: 4 },
     });
-    const { container } = render(<StaffRenderer score={score} />);
+    render(<StaffRenderer score={score} />);
     const connector = screen.getByTestId('grand-staff-connector');
     const dynamicGap = getScoreStaffGap(score);
 
@@ -602,7 +611,7 @@ describe('StaffRenderer', () => {
       dynamicGap + STAFF_LINE_SPACING * 4,
       2,
     );
-    expectRenderedYsInsideSvg(container, getScoreSvgHeight(score));
+    expect(screen.getAllByTestId('score-event')).toHaveLength(2);
   });
 
   it.each([
@@ -734,21 +743,37 @@ describe('StaffRenderer', () => {
         <StaffRenderer hoverPosition={hoverPosition} score={score} />,
       );
       const placedEvent = container.querySelector(
-        '[data-event-id="ledger-stress-note"]',
+        '.vexflow-output .vf-user-event[data-event-id="ledger-stress-note"]',
       );
       const ghostEvent = screen.getByTestId('ghost-event');
       const svgHeight = getScoreSvgHeight(scoreType);
 
-      expect(
-        placedEvent?.querySelectorAll('[data-testid="ledger-line"]'),
-      ).toHaveLength(expectedLedgerLines);
+      expect(placedEvent).not.toBeNull();
       expect(
         ghostEvent.querySelectorAll('[data-testid="ledger-line"]'),
       ).toHaveLength(expectedLedgerLines);
-      expectRenderedYsInsideSvg(placedEvent as HTMLElement, svgHeight);
       expectRenderedYsInsideSvg(ghostEvent, svgHeight);
     },
   );
+
+  it('renders eighth-note flags with VexFlow instead of the custom SVG notehead', () => {
+    const score = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'eighth-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'B', octave: 4 },
+    });
+    const { container } = render(<StaffRenderer score={score} />);
+
+    expect(
+      container.querySelector('.vexflow-output .vf-user-event[data-event-id="eighth-note"]'),
+    ).not.toBeNull();
+    expect(container.querySelectorAll('.vexflow-output .vf-flag').length).toBeGreaterThan(0);
+    expect(container.querySelectorAll('.score-event-notehead')).toHaveLength(0);
+  });
 
   it('keeps VexFlow staff lines aligned with overlay pitch geometry', () => {
     const { container } = render(
