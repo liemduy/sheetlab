@@ -31,9 +31,10 @@ export function createInputCursorFromPosition(
   position: MusicPosition,
   duration: DurationValue,
   mode: InputCursorMode = 'note-input',
+  beatsPerMeasure = 4,
 ): InputCursor {
   return {
-    beat: position.beat,
+    beat: snapBeatToInputSlot(position.beat, duration, beatsPerMeasure),
     duration,
     measureIndex: position.measureIndex,
     mode,
@@ -70,8 +71,39 @@ export function advanceInputCursor(score: Score, cursor: InputCursor): InputCurs
 export function updateInputCursorDuration(
   cursor: InputCursor | null,
   duration: DurationValue,
+  beatsPerMeasure = 4,
 ) {
-  return cursor ? { ...cursor, duration } : null;
+  return cursor
+    ? {
+        ...cursor,
+        beat: snapBeatToInputSlot(cursor.beat, duration, beatsPerMeasure),
+        duration,
+      }
+    : null;
+}
+
+export function getInputSlotBeats(
+  duration: DurationValue,
+  beatsPerMeasure: number,
+) {
+  const durationBeats = getDurationBeats(duration);
+  const slotCount = Math.max(1, Math.floor(beatsPerMeasure / durationBeats));
+
+  return Array.from({ length: slotCount }, (_, slotIndex) =>
+    roundBeat(slotIndex * durationBeats),
+  );
+}
+
+export function snapBeatToInputSlot(
+  beat: number,
+  duration: DurationValue,
+  beatsPerMeasure: number,
+) {
+  const durationBeats = getDurationBeats(duration);
+  const maxBeat = Math.max(0, beatsPerMeasure - durationBeats);
+  const snappedBeat = Math.round(beat / durationBeats) * durationBeats;
+
+  return roundBeat(Math.min(maxBeat, Math.max(0, snappedBeat)));
 }
 
 export function formatInputCursor(cursor: InputCursor | null) {

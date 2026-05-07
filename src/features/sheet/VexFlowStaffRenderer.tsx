@@ -90,6 +90,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         duration={props.duration ?? 'quarter'}
         entryMode={props.entryMode ?? 'note'}
         hoverPosition={props.hoverPosition}
+        inputCursor={props.inputCursor}
         onDeleteEvent={props.onDeleteEvent}
         onHoverPositionChange={props.onHoverPositionChange}
         onMoveEvent={props.onMoveEvent}

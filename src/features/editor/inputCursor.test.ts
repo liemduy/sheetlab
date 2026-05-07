@@ -5,6 +5,7 @@ import {
   advanceInputCursor,
   createInputCursorFromPosition,
   formatInputCursor,
+  getInputSlotBeats,
   updateInputCursorDuration,
 } from './inputCursor';
 
@@ -37,6 +38,18 @@ describe('input cursor', () => {
       staffId: 'treble',
     });
     expect(formatInputCursor(cursor)).toBe('treble M1 B2 B4');
+  });
+
+  it('snaps cursor beats to the active duration slots', () => {
+    expect(
+      createInputCursorFromPosition(createPosition(1.5), 'quarter'),
+    ).toMatchObject({ beat: 2 });
+    expect(
+      createInputCursorFromPosition(createPosition(3.5), 'half'),
+    ).toMatchObject({ beat: 2 });
+    expect(
+      createInputCursorFromPosition(createPosition(3.5), 'whole'),
+    ).toMatchObject({ beat: 0 });
   });
 
   it('advances by the active duration inside the current measure', () => {
@@ -92,5 +105,22 @@ describe('input cursor', () => {
       duration: 'eighth',
       measureIndex: 0,
     });
+  });
+
+  it('snaps the cursor when the selected duration changes', () => {
+    const cursor = createInputCursorFromPosition(createPosition(3), 'quarter');
+
+    expect(updateInputCursorDuration(cursor, 'half')).toMatchObject({
+      beat: 2,
+      duration: 'half',
+    });
+  });
+
+  it('creates visible slot beats from the active duration', () => {
+    expect(getInputSlotBeats('quarter', 4)).toEqual([0, 1, 2, 3]);
+    expect(getInputSlotBeats('half', 4)).toEqual([0, 2]);
+    expect(getInputSlotBeats('eighth', 4)).toEqual([
+      0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5,
+    ]);
   });
 });

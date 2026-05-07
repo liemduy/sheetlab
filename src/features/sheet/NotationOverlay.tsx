@@ -3,6 +3,8 @@ import type { MouseEvent } from 'react';
 import type { Score, ScoreEvent, Staff } from '../../domain/score/types';
 import type { DurationValue } from '../../domain/score/types';
 import type { EntryMode, PlacementMode } from '../editor/editorState';
+import type { InputCursor } from '../editor/inputCursor';
+import { getInputSlotBeats } from '../editor/inputCursor';
 import { formatPitch, mapPointToMusicPosition } from './interaction';
 import type { MusicPosition } from './interaction';
 import {
@@ -22,6 +24,7 @@ interface NotationOverlayProps {
   duration: DurationValue;
   entryMode: EntryMode;
   hoverPosition?: MusicPosition | null;
+  inputCursor?: InputCursor | null;
   onHoverPositionChange?: (position: MusicPosition | null) => void;
   onPlaceAtPosition?: (position: MusicPosition) => void;
   onSelectEvent?: (eventId: string) => void;
@@ -304,11 +307,112 @@ function StaffHoverGuide({
   );
 }
 
+function RhythmSlots({
+  duration,
+  inputCursor,
+  score,
+}: {
+  duration: DurationValue;
+  inputCursor?: InputCursor | null;
+  score: Score;
+}) {
+  const beats = getInputSlotBeats(duration, score.timeSignature.beats);
+  const staves = score.parts[0]?.staves ?? [];
+
+  return (
+    <g className="rhythm-slots" data-testid="rhythm-slots">
+      {staves.flatMap((staff, staffIndex) =>
+        staff.measures.flatMap((measure) =>
+          beats.map((beat) => {
+            const isActive =
+              inputCursor?.staffId === staff.id &&
+              inputCursor.measureIndex === measure.index &&
+              inputCursor.beat === beat;
+            const x = getBeatX(measure.index, beat, score.timeSignature.beats);
+            const y = getStaffTop(staffIndex) + STAFF_LINE_SPACING * 2;
+
+            return (
+              <rect
+                key={`${staff.id}-${measure.index}-${beat}`}
+                className={`rhythm-slot${isActive ? ' is-active' : ''}`}
+                data-beat={beat}
+                data-measure-index={measure.index}
+                data-staff-id={staff.id}
+                data-testid="rhythm-slot"
+                height={4}
+                rx={1.6}
+                width={12}
+                x={x - 6}
+                y={y - 2}
+              />
+            );
+          }),
+        ),
+      )}
+    </g>
+  );
+}
+
+function ActiveInputCursor({
+  cursor,
+  score,
+}: {
+  cursor?: InputCursor | null;
+  score: Score;
+}) {
+  if (!cursor) {
+    return null;
+  }
+
+  const staff = score.parts[0]?.staves[cursor.staffIndex];
+
+  if (!staff) {
+    return null;
+  }
+
+  const x = getBeatX(
+    cursor.measureIndex,
+    cursor.beat,
+    score.timeSignature.beats,
+  );
+  const staffTop = getStaffTop(cursor.staffIndex);
+  const pitchY = getPitchY(cursor.pitchPreview, staff.clef, cursor.staffIndex);
+
+  return (
+    <g
+      className={`active-input-cursor active-input-cursor-${cursor.mode}`}
+      data-beat={cursor.beat}
+      data-measure-index={cursor.measureIndex}
+      data-staff-id={cursor.staffId}
+      data-testid="active-input-cursor"
+    >
+      <line
+        className="active-input-cursor-line"
+        data-testid="active-input-cursor-line"
+        x1={x}
+        x2={x}
+        y1={staffTop - 36}
+        y2={staffTop + STAFF_LINE_SPACING * 4 + 36}
+      />
+      <rect
+        className="active-input-cursor-note-box"
+        data-testid="active-input-cursor-note-box"
+        height={28}
+        rx={7}
+        width={32}
+        x={x - 16}
+        y={pitchY - 14}
+      />
+    </g>
+  );
+}
+
 export function NotationOverlay({
   activeEventId,
   duration,
   entryMode,
   hoverPosition,
+  inputCursor,
   onHoverPositionChange,
   onMoveEvent,
   onPlaceAtPosition,
@@ -408,6 +512,7 @@ export function NotationOverlay({
       }}
     >
       <rect className="staff-page-bg" x={0} y={0} width={SVG_WIDTH} height={svgHeight} />
+      <RhythmSlots duration={duration} inputCursor={inputCursor} score={score} />
       {!dragState && displayHoverPosition ? (
         <StaffHoverGuide position={displayHoverPosition} score={score} />
       ) : null}
@@ -483,6 +588,7 @@ export function NotationOverlay({
           y2={getStaffTop(staves.length - 1) + STAFF_LINE_SPACING * 4 + 24}
         />
       ) : null}
+      {!dragState ? <ActiveInputCursor cursor={inputCursor} score={score} /> : null}
       {!dragState && displayHoverPosition ? (
         <>
           {placementMode === 'insert' ? (

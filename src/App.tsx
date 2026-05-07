@@ -127,7 +127,7 @@ function App() {
   function handleDurationChange(duration: DurationValue) {
     updateToolState({ duration });
     setInputCursor((currentCursor) =>
-      updateInputCursorDuration(currentCursor, duration),
+      updateInputCursorDuration(currentCursor, duration, score.timeSignature.beats),
     );
     updateSelectedEvent({ duration }, 'Event duration updated');
   }
@@ -137,7 +137,12 @@ function App() {
 
     if (position) {
       setInputCursor(
-        createInputCursorFromPosition(position, toolState.duration, 'note-input'),
+        createInputCursorFromPosition(
+          position,
+          toolState.duration,
+          'note-input',
+          score.timeSignature.beats,
+        ),
       );
     }
   }
@@ -242,6 +247,7 @@ function App() {
             placementPosition,
             toolState.duration,
             'note-input',
+            result.score.timeSignature.beats,
           ),
         ),
       );
@@ -795,6 +801,7 @@ function App() {
                 entryMode={toolState.entryMode}
                 activeEventId={activePlaybackEvent?.id ?? null}
                 hoverPosition={hoverPosition}
+                inputCursor={inputCursor}
                 playbackBeat={playbackBeat}
                 placementMode={toolState.placementMode}
                 selectedEventId={selectedEventId}

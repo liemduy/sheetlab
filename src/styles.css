@@ -366,6 +366,34 @@ button {
   text-anchor: start;
 }
 
+.rhythm-slots,
+.active-input-cursor {
+  pointer-events: none;
+}
+
+.rhythm-slot {
+  fill: rgb(43 103 255 / 16%);
+  stroke: transparent;
+}
+
+.rhythm-slot.is-active {
+  fill: rgb(43 103 255 / 34%);
+}
+
+.active-input-cursor-line {
+  stroke: #2b67ff;
+  stroke-linecap: round;
+  stroke-width: 2.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.active-input-cursor-note-box {
+  fill: rgb(43 103 255 / 7%);
+  stroke: rgb(43 103 255 / 62%);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
 .measure-guide {
   stroke: transparent;
   pointer-events: none;

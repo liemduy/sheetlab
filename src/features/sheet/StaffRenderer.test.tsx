@@ -90,6 +90,55 @@ describe('StaffRenderer', () => {
     expect(screen.getAllByTestId('measure-barline-treble')).toHaveLength(5);
   });
 
+  it('renders visible rhythm slots from the active duration', () => {
+    render(
+      <StaffRenderer
+        duration="quarter"
+        score={createEmptyScore('treble', { measureCount: 4 })}
+      />,
+    );
+
+    expect(screen.getAllByTestId('rhythm-slot')).toHaveLength(16);
+  });
+
+  it('renders fewer visible slots for longer durations', () => {
+    render(
+      <StaffRenderer
+        duration="half"
+        score={createEmptyScore('treble', { measureCount: 4 })}
+      />,
+    );
+
+    expect(screen.getAllByTestId('rhythm-slot')).toHaveLength(8);
+  });
+
+  it('renders the active blue input cursor at the current slot', () => {
+    render(
+      <StaffRenderer
+        duration="quarter"
+        inputCursor={{
+          beat: 2,
+          duration: 'quarter',
+          measureIndex: 1,
+          mode: 'note-input',
+          pitchPreview: { step: 'G', octave: 4 },
+          staffId: 'treble',
+          staffIndex: 0,
+        }}
+        score={createEmptyScore('treble', { measureCount: 4 })}
+      />,
+    );
+
+    expect(screen.getByTestId('active-input-cursor')).toHaveAttribute(
+      'data-staff-id',
+      'treble',
+    );
+    expect(
+      Number(screen.getByTestId('active-input-cursor-line').getAttribute('x1')),
+    ).toBeCloseTo(getBeatX(1, 2, 4), 2);
+    expect(document.querySelectorAll('.rhythm-slot.is-active')).toHaveLength(1);
+  });
+
   it('renders an empty grand staff system', () => {
     render(<StaffRenderer score={createEmptyScore('grand', { measureCount: 4 })} />);
 
