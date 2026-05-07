@@ -430,6 +430,28 @@ button {
   pointer-events: none;
 }
 
+.measure-hit {
+  cursor: pointer;
+  outline: none;
+}
+
+.measure-hit-target {
+  fill: transparent;
+  pointer-events: all;
+}
+
+.measure-hit.is-input-armed,
+.measure-hit.is-input-armed .measure-hit-target {
+  pointer-events: none;
+}
+
+.measure-selection {
+  fill: rgb(43 103 255 / 10%);
+  stroke: #2b67ff;
+  stroke-width: 1.7;
+  vector-effect: non-scaling-stroke;
+}
+
 .invalid-measure-warning {
   pointer-events: none;
 }

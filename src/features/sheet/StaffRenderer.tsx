@@ -1,4 +1,4 @@
-import type { Score } from '../../domain/score/types';
+import type { Score, StaffId } from '../../domain/score/types';
 import type { DurationValue } from '../../domain/score/types';
 import type { InputCursor } from '../editor/inputCursor';
 import type { EntryMode, PlacementMode } from '../editor/editorState';
@@ -22,8 +22,10 @@ export interface StaffRendererProps {
     position: MusicPosition,
     pitchIndex?: number | null,
   ) => void;
+  onSelectMeasure?: (staffId: StaffId, measureIndex: number) => void;
   selectedEventId?: string | null;
   selectedPitchIndex?: number | null;
+  selectedMeasure?: { staffId: StaffId; measureIndex: number } | null;
   activeEventId?: string | null;
   playbackBeat?: number | null;
   placementMode?: PlacementMode;

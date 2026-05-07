@@ -293,6 +293,42 @@ describe('StaffRenderer', () => {
     ).toBeGreaterThan(Number(barlines[0]?.getAttribute('y1')));
   });
 
+  it('selects empty measures with a MuseScore-style measure box in select mode', () => {
+    const onSelectMeasure = vi.fn();
+
+    render(
+      <StaffRenderer
+        isInputArmed={false}
+        onSelectMeasure={onSelectMeasure}
+        score={createEmptyScore('treble', { measureCount: 4 })}
+        selectedMeasure={{ staffId: 'treble', measureIndex: 1 }}
+      />,
+    );
+
+    expect(screen.getByTestId('selected-measure')).toHaveAttribute(
+      'data-measure-key',
+      'treble:1',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Measure 2 treble' }));
+
+    expect(onSelectMeasure).toHaveBeenLastCalledWith('treble', 1);
+  });
+
+  it('disables measure hit targets while note input is armed', () => {
+    render(
+      <StaffRenderer
+        isInputArmed
+        score={createEmptyScore('treble', { measureCount: 4 })}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Measure 1 treble' })).toHaveAttribute(
+      'pointer-events',
+      'none',
+    );
+  });
+
   it('keeps the active input slot inside the current grand-staff stave', () => {
     render(
       <StaffRenderer

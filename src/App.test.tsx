@@ -136,6 +136,26 @@ describe('App editor state', () => {
     ).toBeInTheDocument();
   });
 
+  it('selects an empty measure in select mode without placing a note', () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Measure 1 treble' }));
+
+    expect(screen.getByTestId('selected-measure')).toHaveAttribute(
+      'data-measure-key',
+      'treble:0',
+    );
+    expect(screen.queryByTestId('score-event')).not.toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText('treble M1'),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'Measure selected',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('clears write mode when the user clicks a blank area on the sheet page', () => {
     render(<App />);
 

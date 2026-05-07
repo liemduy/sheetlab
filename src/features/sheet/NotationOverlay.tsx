@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { getDurationBeats } from '../../domain/score/durations';
 import type { Score, ScoreEvent, Staff } from '../../domain/score/types';
-import type { DurationValue } from '../../domain/score/types';
+import type { DurationValue, StaffId } from '../../domain/score/types';
 import { clampPitchToClefRange } from '../../domain/score/pitchRange';
 import {
   formatEventPitchList,
@@ -24,6 +24,7 @@ import {
   STAFF_LEFT,
   STAFF_LINE_SPACING,
   MEASURES_PER_SYSTEM,
+  MEASURE_WIDTH,
   SVG_WIDTH,
   getLocalMeasureIndex,
   getScoreStaffGap,
@@ -77,10 +78,12 @@ interface NotationOverlayProps {
     position: MusicPosition,
     pitchIndex?: number | null,
   ) => void;
+  onSelectMeasure?: (staffId: StaffId, measureIndex: number) => void;
   playbackBeat?: number | null;
   placementMode?: PlacementMode;
   score: Score;
   selectedEventId?: string | null;
+  selectedMeasure?: { staffId: StaffId; measureIndex: number } | null;
   selectedPitchIndex?: number | null;
   svgHeight: number;
 }
@@ -694,6 +697,82 @@ function InvalidMeasureWarning({
   );
 }
 
+function MeasureHitTarget({
+  isInputArmed,
+  isSelected,
+  measureIndex,
+  onSelectMeasure,
+  staff,
+  staffGap,
+  staffIndex,
+  systemGap,
+}: {
+  isInputArmed?: boolean;
+  isSelected: boolean;
+  measureIndex: number;
+  onSelectMeasure?: (staffId: StaffId, measureIndex: number) => void;
+  staff: Staff;
+  staffGap: number;
+  staffIndex: number;
+  systemGap: number;
+}) {
+  const x = getMeasureX(measureIndex);
+  const y = getStaffTop(staffIndex, staffGap, measureIndex, systemGap) - 7;
+  const height = STAFF_LINE_SPACING * 4 + 14;
+  const label = `Measure ${measureIndex + 1} ${staff.id}`;
+
+  function selectMeasure() {
+    onSelectMeasure?.(staff.id, measureIndex);
+  }
+
+  return (
+    <g
+      aria-label={label}
+      className={`measure-hit${isSelected ? ' is-selected' : ''}${
+        isInputArmed ? ' is-input-armed' : ''
+      }`}
+      data-measure-index={measureIndex}
+      data-staff-id={staff.id}
+      data-testid="measure-hit-target"
+      pointerEvents={isInputArmed ? 'none' : undefined}
+      role="button"
+      tabIndex={0}
+      onClick={(eventClick) => {
+        eventClick.stopPropagation();
+        selectMeasure();
+      }}
+      onKeyDown={(eventKey) => {
+        if (eventKey.key === 'Enter' || eventKey.key === ' ') {
+          eventKey.preventDefault();
+          eventKey.stopPropagation();
+          selectMeasure();
+        }
+      }}
+    >
+      {isSelected ? (
+        <rect
+          className="measure-selection"
+          data-measure-key={getMeasureKey(staff.id, measureIndex)}
+          data-testid="selected-measure"
+          height={height}
+          rx={4}
+          width={MEASURE_WIDTH}
+          x={x}
+          y={y}
+        />
+      ) : null}
+      <rect
+        className="measure-hit-target"
+        height={height}
+        rx={4}
+        width={MEASURE_WIDTH}
+        x={x}
+        y={y}
+      />
+    </g>
+  );
+}
+
 function RhythmSlots({
   eventLayouts,
   inputCursor,
@@ -887,11 +966,13 @@ export function NotationOverlay({
   onMoveEvent,
   onPlaceAtPosition,
   onDeleteEvent,
+  onSelectMeasure,
   onSelectEvent,
   playbackBeat,
   placementMode = 'place',
   score,
   selectedEventId,
+  selectedMeasure,
   selectedPitchIndex,
   svgHeight,
 }: NotationOverlayProps) {
@@ -1161,6 +1242,22 @@ export function NotationOverlay({
       ) : null}
       {staves.map((staff, staffIndex) => (
         <g key={staff.id} data-testid={`staff-${staff.id}`}>
+          {staff.measures.map((measure) => (
+            <MeasureHitTarget
+              key={`measure-hit-${staff.id}-${measure.index}`}
+              isInputArmed={isInputArmed}
+              isSelected={
+                selectedMeasure?.staffId === staff.id &&
+                selectedMeasure.measureIndex === measure.index
+              }
+              measureIndex={measure.index}
+              onSelectMeasure={onSelectMeasure}
+              staff={staff}
+              staffGap={staffGap}
+              staffIndex={staffIndex}
+              systemGap={systemGap}
+            />
+          ))}
           {staff.measures.map((measure) =>
             invalidMeasureKeySet.has(getMeasureKey(staff.id, measure.index)) ? (
               <InvalidMeasureWarning

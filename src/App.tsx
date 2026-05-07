@@ -160,6 +160,10 @@ function App() {
   const [futureScores, setFutureScores] = useState<Score[]>([]);
   const [editorMessage, setEditorMessage] = useState('Ready');
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [selectedMeasure, setSelectedMeasure] = useState<{
+    staffId: StaffId;
+    measureIndex: number;
+  } | null>(null);
   const [selectedPitchIndex, setSelectedPitchIndex] = useState<number | null>(null);
   const [selectedEventSource, setSelectedEventSource] =
     useState<SelectionSource | null>(null);
@@ -253,6 +257,7 @@ function App() {
     setCursorSequenceLocked(false);
     setHoverPosition(null);
     setInputCursor(null);
+    setSelectedMeasure(null);
     updateSelectedEvent({ duration }, 'Event duration updated');
   }
 
@@ -263,6 +268,7 @@ function App() {
     setCursorSequenceLocked(false);
     setHoverPosition(null);
     setInputCursor(null);
+    setSelectedMeasure(null);
     updateSelectedEvent({ dots }, dotted ? 'Dotted note enabled' : 'Dotted note disabled');
   }
 
@@ -272,6 +278,7 @@ function App() {
     setInputCursor(null);
     setCursorSequenceLocked(false);
     setSelectedEventId(null);
+    setSelectedMeasure(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     setEditorMessage('Select mode');
@@ -342,6 +349,7 @@ function App() {
     setInputCursor(null);
     setCursorSequenceLocked(false);
     setSelectedEventId(null);
+    setSelectedMeasure(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     scrollNotationIntoView();
@@ -360,6 +368,7 @@ function App() {
     setInputCursor(null);
     setCursorSequenceLocked(false);
     setSelectedEventId(null);
+    setSelectedMeasure(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     scrollNotationIntoView();
@@ -452,6 +461,7 @@ function App() {
       );
       setCursorSequenceLocked(true);
       setSelectedEventId(null);
+      setSelectedMeasure(null);
       setSelectedPitchIndex(null);
       setSelectedEventSource(null);
     } else {
@@ -475,8 +485,21 @@ function App() {
       'Event deleted',
     );
     setSelectedEventId(null);
+    setSelectedMeasure(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
+  }
+
+  function handleSelectMeasure(staffId: StaffId, measureIndex: number) {
+    updateToolState({ isInputArmed: false });
+    setHoverPosition(null);
+    setInputCursor(null);
+    setCursorSequenceLocked(false);
+    setSelectedEventId(null);
+    setSelectedMeasure({ staffId, measureIndex });
+    setSelectedPitchIndex(null);
+    setSelectedEventSource(null);
+    setEditorMessage('Measure selected');
   }
 
   function handleDeleteEvent(eventId: string, pitchIndex = selectedPitchIndex) {
@@ -488,6 +511,7 @@ function App() {
     );
     if (selectedEventId === eventId) {
       setSelectedEventId(null);
+      setSelectedMeasure(null);
       setSelectedPitchIndex(null);
       setSelectedEventSource(null);
     }
@@ -539,6 +563,7 @@ function App() {
           : null;
 
       setSelectedEventId(eventId);
+      setSelectedMeasure(null);
       setSelectedPitchIndex(
         typeof movedPitchIndex === 'number' && movedPitchIndex >= 0
           ? movedPitchIndex
@@ -565,6 +590,7 @@ function App() {
     setFutureScores((currentFuture) => [score, ...currentFuture]);
     setScore(previousScore);
     setSelectedEventId(null);
+    setSelectedMeasure(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     setInputCursor(null);
@@ -585,6 +611,7 @@ function App() {
     setFutureScores(remainingFuture);
     setScore(nextScore);
     setSelectedEventId(null);
+    setSelectedMeasure(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     setInputCursor(null);
@@ -615,6 +642,7 @@ function App() {
       isInputArmed: false,
     }));
     setSelectedEventId(null);
+    setSelectedMeasure(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     setInputCursor(null);
@@ -640,6 +668,7 @@ function App() {
         isInputArmed: false,
       }));
       setSelectedEventId(null);
+      setSelectedMeasure(null);
       setSelectedPitchIndex(null);
       setSelectedEventSource(null);
       setInputCursor(null);
@@ -1108,6 +1137,8 @@ function App() {
                     {findScoreEvent(score, selectedEventId)?.event.id ?? 'None'}
                     {selectedPitchIndex !== null ? ` pitch ${selectedPitchIndex + 1}` : ''}
                   </>
+                ) : selectedMeasure ? (
+                  `${selectedMeasure.staffId} M${selectedMeasure.measureIndex + 1}`
                 ) : (
                   'None'
                 )}
@@ -1173,12 +1204,14 @@ function App() {
                 onPlaceAtPosition={handlePlaceAtPosition}
                 onDeleteEvent={handleDeleteEvent}
                 onMoveEvent={handleMoveEvent}
+                onSelectMeasure={handleSelectMeasure}
                 onSelectEvent={(eventId, pitchIndex) => {
                   updateToolState({ isInputArmed: false });
                   setHoverPosition(null);
                   setInputCursor(null);
                   setCursorSequenceLocked(false);
                   setSelectedEventId(eventId);
+                  setSelectedMeasure(null);
                   setSelectedPitchIndex(pitchIndex ?? null);
                   setSelectedEventSource('manual');
                   setEditorMessage(
@@ -1187,6 +1220,7 @@ function App() {
                       : 'Event selected',
                   );
                 }}
+                selectedMeasure={selectedMeasure}
               />
             </div>
           </div>
