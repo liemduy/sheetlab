@@ -356,6 +356,18 @@ button {
   visibility: hidden;
 }
 
+.vexflow-output .vf-user-event.is-selected,
+.vexflow-output .vf-user-event.is-selected * {
+  fill: var(--accent-strong) !important;
+  stroke: var(--accent-strong) !important;
+}
+
+.vexflow-output .vf-user-event.is-playing,
+.vexflow-output .vf-user-event.is-playing * {
+  fill: var(--accent) !important;
+  stroke: var(--accent) !important;
+}
+
 .notation-overlay {
   z-index: 2;
 }
@@ -489,6 +501,11 @@ button {
   pointer-events: all;
 }
 
+.score-event-hit.is-input-armed,
+.score-event-hit.is-input-armed .score-event-target {
+  pointer-events: none;
+}
+
 .score-event-visual {
   pointer-events: none;
 }
@@ -543,13 +560,6 @@ button {
   stroke: #111111;
   stroke-width: 1.25;
   stroke-linecap: round;
-  vector-effect: non-scaling-stroke;
-}
-
-.score-event-ring {
-  fill: transparent;
-  stroke: var(--accent-strong);
-  stroke-width: 2;
   vector-effect: non-scaling-stroke;
 }
 

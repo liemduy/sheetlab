@@ -341,9 +341,20 @@ describe('App editor state', () => {
       ).not.toBeNull();
     });
     const hitTarget = screen.getByTestId('score-event-target');
+    const scoreEvent = screen.getByTestId('score-event');
+    const eventLayoutX = Number(scoreEvent.getAttribute('data-layout-x'));
+    const eventLayoutY = Number(scoreEvent.getAttribute('data-layout-y'));
+    const hitTargetCenterX =
+      Number(hitTarget.getAttribute('x')) +
+      Number(hitTarget.getAttribute('width')) / 2;
+    const hitTargetCenterY =
+      Number(hitTarget.getAttribute('y')) +
+      Number(hitTarget.getAttribute('height')) / 2;
 
-    expect(Number(hitTarget.getAttribute('x')) + 14).toBeCloseTo(ghostX, 2);
-    expect(Number(hitTarget.getAttribute('y')) + 20).toBeCloseTo(ghostY, 2);
+    expect(Number.isFinite(ghostX)).toBe(true);
+    expect(Number.isFinite(ghostY)).toBe(true);
+    expect(hitTargetCenterX).toBeCloseTo(eventLayoutX, 2);
+    expect(hitTargetCenterY).toBeCloseTo(eventLayoutY, 2);
   });
 
   it('adds a measure from the toolbar', () => {

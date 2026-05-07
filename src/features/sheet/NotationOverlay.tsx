@@ -27,11 +27,27 @@ import { snapInsertPositionToEventBoundary } from './insertPosition';
 import { getBeatX, getPitchY } from './notationGeometry';
 import { ChordGlyph, NoteGlyph, RestGlyph } from './notationGlyph';
 
+export interface RenderedEventLayout {
+  beat: number;
+  maxX: number;
+  maxY: number;
+  measureIndex: number;
+  minX: number;
+  minY: number;
+  staffId: string;
+  x: number;
+  y: number;
+}
+
+const RENDERED_COLUMN_SNAP_RADIUS = 34;
+const BEAT_MATCH_EPSILON = 0.0001;
+
 interface NotationOverlayProps {
   activeEventId?: string | null;
   dots: number;
   duration: DurationValue;
   entryMode: EntryMode;
+  eventLayouts?: Record<string, RenderedEventLayout>;
   hoverPosition?: MusicPosition | null;
   inputCursor?: InputCursor | null;
   isInputArmed?: boolean;
@@ -68,6 +84,8 @@ function EventHitTarget({
   activeEventId,
   beatsPerMeasure,
   event,
+  eventLayout,
+  isInputArmed,
   measureIndex,
   onDeleteEvent,
   onDeleteHoverChange,
@@ -82,6 +100,8 @@ function EventHitTarget({
   activeEventId?: string | null;
   beatsPerMeasure: number;
   event: ScoreEvent;
+  eventLayout?: RenderedEventLayout;
+  isInputArmed?: boolean;
   measureIndex: number;
   onDeleteEvent?: (eventId: string) => void;
   onDeleteHoverChange: (eventId: string | null) => void;
@@ -93,13 +113,14 @@ function EventHitTarget({
   staffGap: number;
   staffIndex: number;
 }) {
-  const x = getBeatX(measureIndex, event.beat, beatsPerMeasure);
   const eventPitches = getEventPitches(event);
   const primaryPitch = getPrimaryEventPitch(event);
-  const y =
+  const fallbackY =
     primaryPitch
       ? getPitchY(primaryPitch, staff.clef, staffIndex, staffGap)
       : getStaffTop(staffIndex, staffGap) + STAFF_LINE_SPACING * 2;
+  const x = eventLayout?.x ?? getBeatX(measureIndex, event.beat, beatsPerMeasure);
+  const y = eventLayout?.y ?? fallbackY;
   const label =
     event.kind === 'rest'
       ? `Rest measure ${measureIndex + 1} beat ${event.beat + 1}`
@@ -109,8 +130,16 @@ function EventHitTarget({
         )} measure ${measureIndex + 1} beat ${
           event.beat + 1
         }`;
-  const targetWidth = placementMode === 'insert' ? 16 : 28;
-  const targetHeight = placementMode === 'insert' ? 30 : 40;
+  const targetWidth =
+    placementMode === 'insert'
+      ? 16
+      : Math.max(34, (eventLayout?.maxX ?? x + 10) - (eventLayout?.minX ?? x - 10) + 28);
+  const targetHeight =
+    placementMode === 'insert'
+      ? 30
+      : Math.max(42, (eventLayout?.maxY ?? y + 10) - (eventLayout?.minY ?? y - 10) + 30);
+  const deleteX = (eventLayout?.maxX ?? x) + 22;
+  const deleteY = (eventLayout?.minY ?? y) - 24;
 
   if (isGeneratedRestEvent(event)) {
     return null;
@@ -122,10 +151,15 @@ function EventHitTarget({
         aria-label={label}
         className={`score-event-hit${
           selectedEventId === event.id ? ' is-selected' : ''
-        }${activeEventId === event.id ? ' is-playing' : ''}`}
+        }${activeEventId === event.id ? ' is-playing' : ''}${
+          isInputArmed ? ' is-input-armed' : ''
+        }`}
         data-duration={event.duration}
         data-event-id={event.id}
+        data-layout-x={x.toFixed(2)}
+        data-layout-y={y.toFixed(2)}
         data-testid="score-event"
+        pointerEvents={isInputArmed ? 'none' : undefined}
         role="button"
         tabIndex={0}
         onClick={(eventClick) => {
@@ -153,9 +187,6 @@ function EventHitTarget({
           x={x - targetWidth / 2}
           y={y - targetHeight / 2}
         />
-        {selectedEventId === event.id || activeEventId === event.id ? (
-          <ellipse className="score-event-ring" cx={x} cy={y} rx={14} ry={11} />
-        ) : null}
       </g>
       {selectedEventId === event.id ? (
         <g
@@ -194,16 +225,18 @@ function EventHitTarget({
         >
           <circle
             className="score-event-delete-target"
-            cx={x + 22}
-            cy={y - 24}
+            cx={deleteX}
+            cy={deleteY}
             r={18}
           />
-          <circle className="score-event-delete-bg" cx={x + 22} cy={y - 24} r={9} />
+          <circle className="score-event-delete-bg" cx={deleteX} cy={deleteY} r={9} />
           <path
             className="score-event-delete-mark"
-            d={`M ${x + 18} ${y - 28} L ${x + 26} ${y - 20} M ${x + 26} ${
-              y - 28
-            } L ${x + 18} ${y - 20}`}
+            d={`M ${deleteX - 4} ${deleteY - 4} L ${deleteX + 4} ${
+              deleteY + 4
+            } M ${deleteX + 4} ${deleteY - 4} L ${deleteX - 4} ${
+              deleteY + 4
+            }`}
           />
         </g>
       ) : null}
@@ -232,11 +265,7 @@ function GhostEvent({
     return null;
   }
 
-  const x = getBeatX(
-    position.measureIndex,
-    position.beat,
-    score.timeSignature.beats,
-  );
+  const x = position.x;
   const noteY = getPitchY(
     position.pitch,
     staff.clef,
@@ -508,8 +537,9 @@ function snapPositionToInputGrid(
   dots: number,
   score: Score,
   staffGap: number,
+  eventLayouts: Record<string, RenderedEventLayout> = {},
 ) {
-  return (
+  const snappedPosition =
     inputCursorToMusicPosition(
       createInputCursorFromPosition(
         position,
@@ -520,8 +550,32 @@ function snapPositionToInputGrid(
       ),
       score,
       staffGap,
-    ) ?? position
-  );
+    ) ?? position;
+  const nearbyEventLayout = Object.values(eventLayouts)
+    .filter(
+      (layout) =>
+        layout.measureIndex === snappedPosition.measureIndex &&
+        Math.abs(layout.beat - snappedPosition.beat) <= BEAT_MATCH_EPSILON &&
+        Math.abs(layout.x - position.x) <= RENDERED_COLUMN_SNAP_RADIUS,
+    )
+    .sort((a, b) => {
+      const staffPriority =
+        Number(b.staffId === position.staffId) -
+        Number(a.staffId === position.staffId);
+
+      if (staffPriority !== 0) {
+        return staffPriority;
+      }
+
+      return Math.abs(a.x - position.x) - Math.abs(b.x - position.x);
+    })[0];
+
+  return nearbyEventLayout
+    ? {
+        ...snappedPosition,
+        x: nearbyEventLayout.x,
+      }
+    : snappedPosition;
 }
 
 export function NotationOverlay({
@@ -529,6 +583,7 @@ export function NotationOverlay({
   dots,
   duration,
   entryMode,
+  eventLayouts = {},
   hoverPosition,
   inputCursor,
   isInputArmed = false,
@@ -568,7 +623,14 @@ export function NotationOverlay({
           .flatMap((voice) => voice.events)
           .find((event) => event.id === dragState.eventId) ?? null;
   const snappedHoverPosition = hoverPosition
-    ? snapPositionToInputGrid(hoverPosition, duration, dots, score, staffGap)
+    ? snapPositionToInputGrid(
+        hoverPosition,
+        duration,
+        dots,
+        score,
+        staffGap,
+        eventLayouts,
+      )
     : null;
   const shouldShowInputPreview =
     isInputArmed && !dragState && !deleteHoverEventId && !selectedEventId;
@@ -638,7 +700,14 @@ export function NotationOverlay({
 
         const position = getEventMusicPosition(event);
         const placementPosition = position
-          ? snapPositionToInputGrid(position, duration, dots, score, staffGap)
+          ? snapPositionToInputGrid(
+              position,
+              duration,
+              dots,
+              score,
+              staffGap,
+              eventLayouts,
+            )
           : null;
 
         if (isInputArmed && placementPosition) {
@@ -716,6 +785,8 @@ export function NotationOverlay({
                 activeEventId={activeEventId}
                 beatsPerMeasure={score.timeSignature.beats}
                 event={event}
+                eventLayout={eventLayouts[event.id]}
+                isInputArmed={isInputArmed}
                 measureIndex={measure.index}
                 onDeleteEvent={onDeleteEvent}
                 onDeleteHoverChange={setDeleteHoverEventId}

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Accidental as VexFlowAccidental,
   Dot,
@@ -16,8 +16,10 @@ import {
 } from '../../domain/score/events';
 import type { StaffRendererProps } from './StaffRenderer';
 import { NotationOverlay } from './NotationOverlay';
+import type { RenderedEventLayout } from './NotationOverlay';
 import {
   MEASURE_WIDTH,
+  STAFF_LINE_SPACING,
   SVG_WIDTH,
   VEXFLOW_STAVE_TOP_LINE_OFFSET,
   getMeasureX,
@@ -30,6 +32,7 @@ import {
   durationToVexFlowDuration,
   pitchToVexFlowKey,
 } from './vexflowAdapter';
+import { getBeatX, getPitchY } from './notationGeometry';
 
 const REST_KEY_BY_CLEF = {
   treble: 'b/4',
@@ -85,14 +88,20 @@ function createVexFlowNote(event: ScoreEvent, staff: Staff) {
 }
 
 function drawVexFlowMeasureEvents({
+  beatsPerMeasure,
   context,
   measureIndex,
   staff,
+  staffGap,
+  staffIndex,
   stave,
 }: {
+  beatsPerMeasure: number;
   context: ReturnType<Renderer['getContext']>;
   measureIndex: number;
   staff: Staff;
+  staffGap: number;
+  staffIndex: number;
   stave: Stave;
 }) {
   const measure = staff.measures.find((candidate) => candidate.index === measureIndex);
@@ -100,10 +109,11 @@ function drawVexFlowMeasureEvents({
   const hasUserEvents = events.some((event) => !isGeneratedRestEvent(event));
 
   if (!hasUserEvents) {
-    return;
+    return {};
   }
 
   const notes = events.map((event) => createVexFlowNote(event, staff));
+  const eventLayouts: Record<string, RenderedEventLayout> = {};
 
   Formatter.FormatAndDraw(context, stave, notes, {
     alignRests: true,
@@ -121,7 +131,43 @@ function drawVexFlowMeasureEvents({
     svgElement.classList.add(...getVexFlowEventClasses(event).split(' '));
     svgElement.setAttribute('data-event-id', event.id);
     svgElement.setAttribute('data-duration', event.duration);
+
+    if (!isGeneratedRestEvent(event)) {
+      const eventPitches = getEventPitches(event);
+      const fallbackX = getBeatX(measureIndex, event.beat, beatsPerMeasure);
+      const minX = note.getNoteHeadBeginX();
+      const maxX = note.getNoteHeadEndX();
+      const renderedX =
+        Number.isFinite(minX) && Number.isFinite(maxX)
+          ? (minX + maxX) / 2
+          : fallbackX;
+      const pitchYs =
+        eventPitches.length > 0
+          ? eventPitches.map((pitch) =>
+              getPitchY(pitch, staff.clef, staffIndex, staffGap),
+            )
+          : [
+              getStaffTop(staffIndex, staffGap) +
+                STAFF_LINE_SPACING * 2,
+            ];
+      const minY = Math.min(...pitchYs);
+      const maxY = Math.max(...pitchYs);
+
+      eventLayouts[event.id] = {
+        beat: event.beat,
+        maxX: Number.isFinite(maxX) ? maxX : renderedX + 10,
+        maxY,
+        measureIndex,
+        minX: Number.isFinite(minX) ? minX : renderedX - 10,
+        minY,
+        staffId: staff.id,
+        x: renderedX,
+        y: (minY + maxY) / 2,
+      };
+    }
   });
+
+  return eventLayouts;
 }
 
 function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps['score']) {
@@ -134,6 +180,7 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
   const renderer = new Renderer(container, Renderer.Backends.SVG);
   renderer.resize(SVG_WIDTH, height);
   const context = renderer.getContext();
+  const eventLayouts: Record<string, RenderedEventLayout> = {};
   const renderedStaves = staves.map((staff, staffIndex) =>
     staff.measures.map((measure) => {
       const stave = new Stave(
@@ -185,20 +232,65 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
     }
 
     staffStaves.forEach((stave, measureIndex) => {
-      drawVexFlowMeasureEvents({ context, measureIndex, staff, stave });
+      Object.assign(
+        eventLayouts,
+        drawVexFlowMeasureEvents({
+          beatsPerMeasure: score.timeSignature.beats,
+          context,
+          measureIndex,
+          staff,
+          staffGap,
+          staffIndex,
+          stave,
+        }),
+      );
     });
+  });
+
+  return eventLayouts;
+}
+
+function syncVexFlowSelection(
+  container: HTMLDivElement,
+  selectedEventId?: string | null,
+  activeEventId?: string | null,
+) {
+  container.querySelectorAll('.vf-user-event').forEach((element) => {
+    const eventId = element.getAttribute('data-event-id');
+
+    element.classList.toggle('is-selected', eventId === selectedEventId);
+    element.classList.toggle('is-playing', eventId === activeEventId);
   });
 }
 
 export function VexFlowStaffRenderer(props: StaffRendererProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const [eventLayouts, setEventLayouts] = useState<
+    Record<string, RenderedEventLayout>
+  >({});
   const height = getScoreSvgHeight(props.score);
 
   useEffect(() => {
     if (containerRef.current) {
-      drawVexFlowStaves(containerRef.current, props.score);
+      const nextEventLayouts = drawVexFlowStaves(containerRef.current, props.score);
+      setEventLayouts(nextEventLayouts);
+      syncVexFlowSelection(
+        containerRef.current,
+        props.selectedEventId,
+        props.activeEventId,
+      );
     }
-  }, [props.score]);
+  }, [props.activeEventId, props.score, props.selectedEventId]);
+
+  useEffect(() => {
+    if (containerRef.current) {
+      syncVexFlowSelection(
+        containerRef.current,
+        props.selectedEventId,
+        props.activeEventId,
+      );
+    }
+  }, [eventLayouts, props.activeEventId, props.selectedEventId]);
 
   return (
     <div
@@ -217,6 +309,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         duration={props.duration ?? 'quarter'}
         dots={props.dots ?? 0}
         entryMode={props.entryMode ?? 'note'}
+        eventLayouts={eventLayouts}
         hoverPosition={props.hoverPosition}
         inputCursor={props.inputCursor}
         isInputArmed={props.isInputArmed ?? true}

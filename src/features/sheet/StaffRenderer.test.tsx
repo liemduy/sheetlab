@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { placeScoreEvent } from '../../domain/score/editing';
 import { createEmptyScore } from '../../domain/score/factories';
@@ -398,6 +398,9 @@ describe('StaffRenderer', () => {
     expect(
       container.querySelectorAll('.vexflow-output .vf-user-event[data-event-id="ui-c-major"]'),
     ).toHaveLength(1);
+    expect(
+      Number(chordButton.querySelector('.score-event-target')?.getAttribute('height')),
+    ).toBeGreaterThan(42);
     expect(container.querySelectorAll('.score-event-notehead')).toHaveLength(0);
   });
 
@@ -429,7 +432,7 @@ describe('StaffRenderer', () => {
   it('renders a delete target for the selected event', () => {
     const onDeleteEvent = vi.fn();
 
-    render(
+    const { container } = render(
       <StaffRenderer
         onDeleteEvent={onDeleteEvent}
         score={trebleStudyFixture}
@@ -441,6 +444,12 @@ describe('StaffRenderer', () => {
       'aria-label',
       'Delete Note C4 measure 1 beat 1',
     );
+    expect(container.querySelector('.score-event-ring')).toBeNull();
+    expect(
+      container.querySelector(
+        '.vexflow-output .vf-user-event[data-event-id="treble-m1-e1"].is-selected',
+      ),
+    ).not.toBeNull();
     expect(
       screen
         .getByTestId('score-event-delete')
@@ -522,7 +531,7 @@ describe('StaffRenderer', () => {
     );
   });
 
-  it('keeps ghost centers and editor hit targets on the same input grid', () => {
+  it('snaps chord-entry ghost and hit targets to the VexFlow-rendered column', () => {
     const hoverPosition: MusicPosition = {
       staffId: 'treble',
       staffIndex: 0,
@@ -541,13 +550,85 @@ describe('StaffRenderer', () => {
       name: 'Note C4 measure 1 beat 1',
     });
     const hitTarget = scoreEvent.querySelector('.score-event-target');
-    const expectedX = getBeatX(0, 0, trebleStudyFixture.timeSignature.beats);
+    const eventLayoutX = Number(scoreEvent.getAttribute('data-layout-x'));
+    const eventLayoutY = Number(scoreEvent.getAttribute('data-layout-y'));
     const expectedY = getPitchY({ step: 'C', octave: 4 }, 'treble', 0);
+    const hitTargetCenterX =
+      Number(hitTarget?.getAttribute('x')) +
+      Number(hitTarget?.getAttribute('width')) / 2;
+    const hitTargetCenterY =
+      Number(hitTarget?.getAttribute('y')) +
+      Number(hitTarget?.getAttribute('height')) / 2;
 
-    expect(Number(ghostNoteHead?.getAttribute('cx'))).toBeCloseTo(expectedX, 2);
+    expect(Number.isFinite(Number(ghostNoteHead?.getAttribute('cx')))).toBe(true);
     expect(Number(ghostNoteHead?.getAttribute('cy'))).toBeCloseTo(expectedY, 2);
-    expect(Number(hitTarget?.getAttribute('x')) + 14).toBeCloseTo(expectedX, 2);
-    expect(Number(hitTarget?.getAttribute('y')) + 20).toBeCloseTo(expectedY, 2);
+    expect(hitTargetCenterX).toBeCloseTo(eventLayoutX, 2);
+    expect(hitTargetCenterY).toBeCloseTo(eventLayoutY, 2);
+  });
+
+  it('keeps far-interval chord entry on the same rendered column', async () => {
+    const { rerender } = render(<StaffRenderer score={trebleStudyFixture} />);
+    const scoreEvent = screen.getByRole('button', {
+      name: 'Note C4 measure 1 beat 1',
+    });
+    const eventLayoutX = Number(scoreEvent.getAttribute('data-layout-x'));
+    const highPitch: Pitch = { step: 'A', octave: 5 };
+
+    rerender(
+      <StaffRenderer
+        hoverPosition={{
+          staffId: 'treble',
+          staffIndex: 0,
+          measureIndex: 0,
+          beat: 0,
+          pitch: highPitch,
+          x: eventLayoutX,
+          y: getPitchY(highPitch, 'treble', 0),
+        }}
+        score={trebleStudyFixture}
+      />,
+    );
+
+    await waitFor(() => {
+      const ghostNoteHead = screen
+        .getByTestId('ghost-event')
+        .querySelector('ellipse');
+
+      expect(Number(ghostNoteHead?.getAttribute('cx'))).toBeCloseTo(
+        eventLayoutX,
+        2,
+      );
+      expect(Number(ghostNoteHead?.getAttribute('cy'))).toBeCloseTo(
+        getPitchY(highPitch, 'treble', 0),
+        2,
+      );
+    });
+  });
+
+  it('keeps rendered-column snapping inside the active duration slot', () => {
+    const onPlaceAtPosition = vi.fn();
+
+    render(
+      <StaffRenderer
+        duration="whole"
+        onPlaceAtPosition={onPlaceAtPosition}
+        score={trebleStudyFixture}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('staff-renderer'), {
+      clientX: getBeatX(0, 0, trebleStudyFixture.timeSignature.beats),
+      clientY: getPitchY({ step: 'A', octave: 5 }, 'treble', 0),
+    });
+
+    expect(onPlaceAtPosition).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        beat: 0,
+        measureIndex: 0,
+        pitch: { step: 'A', octave: 5 },
+        staffId: 'treble',
+      }),
+    );
   });
 
   it('renders the actual placed notation in the VexFlow layer only', () => {
