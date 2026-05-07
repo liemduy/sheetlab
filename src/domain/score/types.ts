@@ -33,6 +33,7 @@ export interface BaseScoreEvent {
   id: string;
   duration: DurationValue;
   beat: number;
+  dots?: number;
 }
 
 export interface NoteEvent extends BaseScoreEvent {

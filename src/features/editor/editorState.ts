@@ -14,9 +14,11 @@ export type AccidentalChoice = Accidental | 'none';
 export interface EditorToolState {
   scoreType: ScoreType;
   duration: DurationValue;
+  dots: number;
   entryMode: EntryMode;
   placementMode: PlacementMode;
   accidental: AccidentalChoice;
+  isInputArmed: boolean;
   tempo: number;
 }
 
@@ -30,11 +32,13 @@ export const DURATION_OPTIONS: DurationValue[] = [
 ];
 
 export const DEFAULT_EDITOR_TOOL_STATE: EditorToolState = {
-  scoreType: 'treble',
+  scoreType: 'grand',
   duration: 'quarter',
+  dots: 0,
   entryMode: 'note',
   placementMode: 'place',
   accidental: 'none',
+  isInputArmed: false,
   tempo: 96,
 };
 
@@ -48,12 +52,12 @@ export const DURATION_LABEL: Record<DurationValue, string> = {
 };
 
 export const DURATION_SYMBOL: Record<DurationValue, string> = {
-  whole: '𝅝',
-  half: '𝅗𝅥',
-  quarter: '♩',
-  eighth: '♪',
-  sixteenth: '𝅘𝅥𝅯',
-  thirtySecond: '𝅘𝅥𝅰',
+  whole: String.fromCodePoint(0x1d15d),
+  half: String.fromCodePoint(0x1d15e),
+  quarter: '\u2669',
+  eighth: '\u266a',
+  sixteenth: String.fromCodePoint(0x1d161),
+  thirtySecond: String.fromCodePoint(0x1d162),
 };
 
 export const SCORE_TYPE_LABEL: Record<ScoreType, string> = {
@@ -76,4 +80,11 @@ export const ACCIDENTAL_LABEL: Record<AccidentalChoice, string> = {
   natural: 'Natural',
   sharp: 'Sharp',
   flat: 'Flat',
+};
+
+export const ACCIDENTAL_SYMBOL: Record<AccidentalChoice, string> = {
+  none: '\u00d8',
+  natural: '\u266e',
+  sharp: '\u266f',
+  flat: '\u266d',
 };

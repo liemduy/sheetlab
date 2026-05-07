@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import { createEmptyScore, deserializeScore } from './domain/score/factories';
 import {
   addMeasure,
@@ -17,6 +18,7 @@ import type {
 } from './features/editor/editorState';
 import {
   ACCIDENTAL_LABEL,
+  ACCIDENTAL_SYMBOL,
   DEFAULT_EDITOR_TOOL_STATE,
   DURATION_LABEL,
   DURATION_OPTIONS,
@@ -126,30 +128,79 @@ function App() {
   }
 
   function handleDurationChange(duration: DurationValue) {
-    updateToolState({ duration });
+    updateToolState({ duration, isInputArmed: true });
     setInputCursor((currentCursor) =>
-      updateInputCursorDuration(currentCursor, duration, score.timeSignature.beats),
+      updateInputCursorDuration(
+        currentCursor,
+        duration,
+        score.timeSignature.beats,
+        toolState.dots,
+      ),
     );
     updateSelectedEvent({ duration }, 'Event duration updated');
   }
 
-  function handleHoverPositionChange(position: MusicPosition | null) {
-    setHoverPosition(position);
+  function handleDottedChange(dotted: boolean) {
+    const dots = dotted ? 1 : 0;
 
-    if (position) {
+    updateToolState({ dots });
+    setInputCursor((currentCursor) =>
+      updateInputCursorDuration(
+        currentCursor,
+        toolState.duration,
+        score.timeSignature.beats,
+        dots,
+      ),
+    );
+    updateSelectedEvent({ dots }, dotted ? 'Dotted note enabled' : 'Dotted note disabled');
+  }
+
+  function handleClearInteraction() {
+    updateToolState({ isInputArmed: false });
+    setHoverPosition(null);
+    setInputCursor(null);
+    setSelectedEventId(null);
+    setSelectedEventSource(null);
+    setEditorMessage('Select mode');
+  }
+
+  function handleSheetStageClick(event: ReactMouseEvent<HTMLElement>) {
+    const target = event.target;
+
+    if (!(target instanceof Element)) {
+      return;
+    }
+
+    if (
+      target.closest('[data-testid="staff-renderer"]') ||
+      target.closest('button, input, select, textarea, a')
+    ) {
+      return;
+    }
+
+    handleClearInteraction();
+  }
+
+  function handleHoverPositionChange(position: MusicPosition | null) {
+    const nextHoverPosition = toolState.isInputArmed ? position : null;
+
+    setHoverPosition(nextHoverPosition);
+
+    if (nextHoverPosition) {
       setInputCursor(
         createInputCursorFromPosition(
-          position,
+          nextHoverPosition,
           toolState.duration,
           'note-input',
           score.timeSignature.beats,
+          toolState.dots,
         ),
       );
     }
   }
 
   function handleScoreTypeChange(scoreType: ScoreType) {
-    updateToolState({ scoreType });
+    updateToolState({ scoreType, isInputArmed: false });
     commitScoreChange(
       createEmptyScore(scoreType, {
         pageSize: score.pageSize,
@@ -165,7 +216,7 @@ function App() {
   }
 
   function handleResetScore() {
-    updateToolState({ placementMode: 'place' });
+    updateToolState({ placementMode: 'place', isInputArmed: false });
     commitScoreChange(
       createEmptyScore(toolState.scoreType, {
         pageSize: score.pageSize,
@@ -213,6 +264,11 @@ function App() {
   }
 
   function handlePlaceAtPosition(position: MusicPosition) {
+    if (!toolState.isInputArmed) {
+      handleClearInteraction();
+      return;
+    }
+
     const placementPosition =
       toolState.placementMode === 'insert'
         ? snapInsertPositionToEventBoundary(score, position)
@@ -227,6 +283,7 @@ function App() {
       measureIndex: placementPosition.measureIndex,
       beat: placementPosition.beat,
       duration: toolState.duration,
+      dots: toolState.dots,
       entryMode: toolState.entryMode,
       pitch: placementPosition.pitch,
       accidental,
@@ -250,6 +307,7 @@ function App() {
             toolState.duration,
             'note-input',
             result.score.timeSignature.beats,
+            toolState.dots,
           ),
         ),
       );
@@ -308,6 +366,7 @@ function App() {
     setSelectedEventId(null);
     setSelectedEventSource(null);
     setInputCursor(null);
+    updateToolState({ isInputArmed: false });
     setEditorMessage('Undo');
   }
 
@@ -324,6 +383,7 @@ function App() {
     setSelectedEventId(null);
     setSelectedEventSource(null);
     setInputCursor(null);
+    updateToolState({ isInputArmed: false });
     setEditorMessage('Redo');
   }
 
@@ -345,6 +405,7 @@ function App() {
       ...current,
       scoreType: storedScore.type,
       tempo: storedScore.tempo,
+      isInputArmed: false,
     }));
     setSelectedEventId(null);
     setSelectedEventSource(null);
@@ -367,6 +428,7 @@ function App() {
         ...current,
         scoreType: importedScore.type,
         tempo: importedScore.tempo,
+        isInputArmed: false,
       }));
       setSelectedEventId(null);
       setSelectedEventSource(null);
@@ -536,15 +598,29 @@ function App() {
         <nav className="toolbar" aria-label="Editor toolbar">
           <div className="toolbar-group" aria-label="Duration tools">
             <span className="toolbar-group-label">Duration</span>
+            <button
+              type="button"
+              aria-label="Select tool"
+              className={`tool-button${!toolState.isInputArmed ? ' is-active' : ''}`}
+              aria-pressed={!toolState.isInputArmed}
+              title="Normal cursor: select, drag, or delete existing notes"
+              onClick={handleClearInteraction}
+            >
+              <span className="tool-symbol" aria-hidden="true">
+                {'\u2196'}
+              </span>
+            </button>
             {DURATION_OPTIONS.map((duration) => (
               <button
                 key={duration}
                 type="button"
                 aria-label={DURATION_LABEL[duration]}
                 className={`tool-button${
-                  toolState.duration === duration ? ' is-active' : ''
+                  toolState.isInputArmed && toolState.duration === duration
+                    ? ' is-active'
+                    : ''
                 }`}
-                aria-pressed={toolState.duration === duration}
+                aria-pressed={toolState.isInputArmed && toolState.duration === duration}
                 title={DURATION_LABEL[duration]}
                 onClick={() => {
                   handleDurationChange(duration);
@@ -556,6 +632,40 @@ function App() {
                 </span>
               </button>
             ))}
+          </div>
+          <div className="toolbar-group" aria-label="Modifier tools">
+            <span className="toolbar-group-label">Modifiers</span>
+            <button
+              type="button"
+              aria-label="Dotted note"
+              className={`tool-button${toolState.dots > 0 ? ' is-active' : ''}`}
+              aria-pressed={toolState.dots > 0}
+              title="Add one augmentation dot to the selected duration"
+              onClick={() => handleDottedChange(toolState.dots === 0)}
+            >
+              <span className="tool-symbol" aria-hidden="true">
+                .
+              </span>
+            </button>
+            {(['none', 'natural', 'sharp', 'flat'] satisfies AccidentalChoice[]).map(
+              (accidental) => (
+                <button
+                  key={accidental}
+                  type="button"
+                  aria-label={ACCIDENTAL_LABEL[accidental]}
+                  className={`tool-button${
+                    toolState.accidental === accidental ? ' is-active' : ''
+                  }`}
+                  aria-pressed={toolState.accidental === accidental}
+                  title={ACCIDENTAL_LABEL[accidental]}
+                  onClick={() => handleAccidentalChange(accidental)}
+                >
+                  <span className="tool-symbol" aria-hidden="true">
+                    {ACCIDENTAL_SYMBOL[accidental]}
+                  </span>
+                </button>
+              ),
+            )}
           </div>
           <div className="toolbar-group" aria-label="Entry tools">
             <span className="toolbar-group-label">Entry</span>
@@ -575,7 +685,7 @@ function App() {
                 }}
               >
                 <span className="tool-symbol" aria-hidden="true">
-                  {entryMode === 'note' ? '♩' : '𝄽'}
+                  {entryMode === 'note' ? '\u2669' : String.fromCodePoint(0x1d13d)}
                 </span>
               </button>
             ))}
@@ -616,7 +726,7 @@ function App() {
               onClick={handlePlaybackToggle}
             >
               <span className="tool-symbol" aria-hidden="true">
-                {isPlaying ? '■' : '▶'}
+                {isPlaying ? '\u25a0' : '\u25b6'}
               </span>
             </button>
             <button
@@ -626,7 +736,7 @@ function App() {
               disabled={pastScores.length === 0}
               onClick={handleUndo}
             >
-              ↶
+              {'\u21b6'}
             </button>
             <button
               type="button"
@@ -635,7 +745,7 @@ function App() {
               disabled={futureScores.length === 0}
               onClick={handleRedo}
             >
-              ↷
+              {'\u21b7'}
             </button>
             <button
               type="button"
@@ -721,20 +831,6 @@ function App() {
             </select>
           </label>
           <label>
-            Accidental
-            <select
-              value={toolState.accidental}
-              onChange={(event) =>
-                handleAccidentalChange(event.target.value as AccidentalChoice)
-              }
-            >
-              <option value="none">None</option>
-              <option value="natural">Natural</option>
-              <option value="sharp">Sharp</option>
-              <option value="flat">Flat</option>
-            </select>
-          </label>
-          <label>
             Tempo
             <input
               type="number"
@@ -754,8 +850,15 @@ function App() {
               <dd>{PAGE_SIZE_LABEL[score.pageSize]}</dd>
             </div>
             <div>
+              <dt>Input</dt>
+              <dd>{toolState.isInputArmed ? 'Write' : 'Select'}</dd>
+            </div>
+            <div>
               <dt>Duration</dt>
-              <dd>{DURATION_LABEL[toolState.duration]}</dd>
+              <dd>
+                {DURATION_LABEL[toolState.duration]}
+                {toolState.dots > 0 ? ' dotted' : ''}
+              </dd>
             </div>
             <div>
               <dt>Mode</dt>
@@ -816,7 +919,11 @@ function App() {
           </dl>
         </aside>
 
-        <section className="sheet-stage" aria-label="Sheet surface">
+        <section
+          className="sheet-stage"
+          aria-label="Sheet surface"
+          onClick={handleSheetStageClick}
+        >
           <div className={`paper paper-${score.pageSize}`}>
             <div className="paper-heading">
               <h2>{score.title}</h2>
@@ -832,19 +939,25 @@ function App() {
             >
               <StaffRenderer
                 duration={toolState.duration}
+                dots={toolState.dots}
                 entryMode={toolState.entryMode}
                 activeEventId={activePlaybackEvent?.id ?? null}
                 hoverPosition={hoverPosition}
                 inputCursor={inputCursor}
+                isInputArmed={toolState.isInputArmed}
                 playbackBeat={playbackBeat}
                 placementMode={toolState.placementMode}
                 selectedEventId={selectedEventId}
                 score={score}
+                onClearInteraction={handleClearInteraction}
                 onHoverPositionChange={handleHoverPositionChange}
                 onPlaceAtPosition={handlePlaceAtPosition}
                 onDeleteEvent={handleDeleteEvent}
                 onMoveEvent={handleMoveEvent}
                 onSelectEvent={(eventId) => {
+                  updateToolState({ isInputArmed: false });
+                  setHoverPosition(null);
+                  setInputCursor(null);
                   setSelectedEventId(eventId);
                   setSelectedEventSource('manual');
                   setEditorMessage('Event selected');

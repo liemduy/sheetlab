@@ -4,6 +4,7 @@ import type { Score, ScoreEvent, Staff } from '../../domain/score/types';
 import type { DurationValue } from '../../domain/score/types';
 import {
   formatEventPitchList,
+  getEventDots,
   getEventPitches,
   getPrimaryEventPitch,
   isGeneratedRestEvent,
@@ -20,6 +21,7 @@ import {
   STAFF_LEFT,
   STAFF_LINE_SPACING,
   SVG_WIDTH,
+  getScoreStaffGap,
   getMeasureX,
   getStaffRight,
   getStaffTop,
@@ -30,10 +32,13 @@ import { ChordGlyph, NoteGlyph, RestGlyph } from './notationGlyph';
 
 interface NotationOverlayProps {
   activeEventId?: string | null;
+  dots: number;
   duration: DurationValue;
   entryMode: EntryMode;
   hoverPosition?: MusicPosition | null;
   inputCursor?: InputCursor | null;
+  isInputArmed?: boolean;
+  onClearInteraction?: () => void;
   onHoverPositionChange?: (position: MusicPosition | null) => void;
   onPlaceAtPosition?: (position: MusicPosition) => void;
   onSelectEvent?: (eventId: string) => void;
@@ -74,6 +79,7 @@ function EventHitTarget({
   placementMode,
   selectedEventId,
   staff,
+  staffGap,
   staffIndex,
 }: {
   activeEventId?: string | null;
@@ -87,6 +93,7 @@ function EventHitTarget({
   placementMode: PlacementMode;
   selectedEventId?: string | null;
   staff: Staff;
+  staffGap: number;
   staffIndex: number;
 }) {
   const x = getBeatX(measureIndex, event.beat, beatsPerMeasure);
@@ -94,8 +101,8 @@ function EventHitTarget({
   const primaryPitch = getPrimaryEventPitch(event);
   const y =
     primaryPitch
-      ? getPitchY(primaryPitch, staff.clef, staffIndex)
-      : getStaffTop(staffIndex) + STAFF_LINE_SPACING * 2;
+      ? getPitchY(primaryPitch, staff.clef, staffIndex, staffGap)
+      : getStaffTop(staffIndex, staffGap) + STAFF_LINE_SPACING * 2;
   const label =
     event.kind === 'rest'
       ? `Rest measure ${measureIndex + 1} beat ${event.beat + 1}`
@@ -116,10 +123,12 @@ function EventHitTarget({
       {eventPitches.length > 1 ? (
         <ChordGlyph
           duration={event.duration}
+          dots={getEventDots(event)}
           notes={eventPitches.map((pitch) => ({
             pitch,
-            y: getPitchY(pitch, staff.clef, staffIndex),
+            y: getPitchY(pitch, staff.clef, staffIndex, staffGap),
           }))}
+          staffGap={staffGap}
           staffIndex={staffIndex}
           variant="placed"
           x={x}
@@ -127,14 +136,24 @@ function EventHitTarget({
       ) : eventPitches.length === 1 ? (
         <NoteGlyph
           duration={event.duration}
+          dots={getEventDots(event)}
           pitch={eventPitches[0]}
+          staffGap={staffGap}
           staffIndex={staffIndex}
           variant="placed"
           x={x}
-          y={getPitchY(eventPitches[0], staff.clef, staffIndex)}
+          y={getPitchY(eventPitches[0], staff.clef, staffIndex, staffGap)}
         />
       ) : (
-        <RestGlyph duration={event.duration} variant="placed" x={x} y={y} />
+        <RestGlyph
+          duration={event.duration}
+          dots={getEventDots(event)}
+          staffGap={staffGap}
+          staffIndex={staffIndex}
+          variant="placed"
+          x={x}
+          y={y}
+        />
       )}
     </g>
   );
@@ -250,15 +269,19 @@ function EventHitTarget({
 }
 
 function GhostEvent({
+  dots,
   duration,
   entryMode,
   position,
   score,
+  staffGap,
 }: {
+  dots: number;
   duration: DurationValue;
   entryMode: EntryMode;
   position: MusicPosition;
   score: Score;
+  staffGap: number;
 }) {
   const staff = score.parts[0]?.staves[position.staffIndex];
 
@@ -271,8 +294,13 @@ function GhostEvent({
     position.beat,
     score.timeSignature.beats,
   );
-  const noteY = getPitchY(position.pitch, staff.clef, position.staffIndex);
-  const restY = getStaffTop(position.staffIndex) + STAFF_LINE_SPACING * 2;
+  const noteY = getPitchY(
+    position.pitch,
+    staff.clef,
+    position.staffIndex,
+    staffGap,
+  );
+  const restY = getStaffTop(position.staffIndex, staffGap) + STAFF_LINE_SPACING * 2;
 
   return (
     <g
@@ -285,14 +313,24 @@ function GhostEvent({
       {entryMode === 'note' ? (
         <NoteGlyph
           duration={duration}
+          dots={dots}
           pitch={position.pitch}
+          staffGap={staffGap}
           staffIndex={position.staffIndex}
           variant="ghost"
           x={x}
           y={noteY}
         />
       ) : (
-        <RestGlyph duration={duration} variant="ghost" x={x} y={restY} />
+        <RestGlyph
+          duration={duration}
+          dots={dots}
+          staffGap={staffGap}
+          staffIndex={position.staffIndex}
+          variant="ghost"
+          x={x}
+          y={restY}
+        />
       )}
     </g>
   );
@@ -301,9 +339,11 @@ function GhostEvent({
 function InsertionCursor({
   position,
   score,
+  staffGap,
 }: {
   position: MusicPosition;
   score: Score;
+  staffGap: number;
 }) {
   const staff = score.parts[0]?.staves[position.staffIndex];
 
@@ -316,7 +356,7 @@ function InsertionCursor({
     position.beat,
     score.timeSignature.beats,
   );
-  const yRange = getTimelineYRange(score, position.staffIndex);
+  const yRange = getTimelineYRange(score, position.staffIndex, staffGap);
 
   return (
     <line
@@ -330,28 +370,30 @@ function InsertionCursor({
   );
 }
 
-function getTimelineYRange(score: Score, staffIndex: number) {
+function getTimelineYRange(score: Score, staffIndex: number, staffGap: number) {
   const staves = score.parts[0]?.staves ?? [];
 
   if (score.type === 'grand' && staves.length > 1) {
     return {
-      y1: getStaffTop(0) - 36,
-      y2: getStaffTop(staves.length - 1) + STAFF_LINE_SPACING * 4 + 36,
+      y1: getStaffTop(0, staffGap) - 36,
+      y2: getStaffTop(staves.length - 1, staffGap) + STAFF_LINE_SPACING * 4 + 36,
     };
   }
 
   return {
-    y1: getStaffTop(staffIndex) - 36,
-    y2: getStaffTop(staffIndex) + STAFF_LINE_SPACING * 4 + 36,
+    y1: getStaffTop(staffIndex, staffGap) - 36,
+    y2: getStaffTop(staffIndex, staffGap) + STAFF_LINE_SPACING * 4 + 36,
   };
 }
 
 function StaffHoverGuide({
   position,
   score,
+  staffGap,
 }: {
   position: MusicPosition;
   score: Score;
+  staffGap: number;
 }) {
   const staff = score.parts[0]?.staves[position.staffIndex];
 
@@ -359,7 +401,7 @@ function StaffHoverGuide({
     return null;
   }
 
-  const staffTop = getStaffTop(position.staffIndex);
+  const staffTop = getStaffTop(position.staffIndex, staffGap);
   const measureCount = staff.measures.length;
 
   return (
@@ -380,18 +422,27 @@ function StaffHoverGuide({
 }
 
 function RhythmSlots({
+dots,
   duration,
   inputCursor,
+  isInputArmed,
   score,
 }: {
+  dots: number;
   duration: DurationValue;
   inputCursor?: InputCursor | null;
+  isInputArmed?: boolean;
   score: Score;
 }) {
-  const beats = getInputSlotBeats(duration, score.timeSignature.beats);
+  if (!isInputArmed) {
+    return null;
+  }
+
+  const beats = getInputSlotBeats(duration, score.timeSignature.beats, dots);
   const staves = score.parts[0]?.staves ?? [];
   const shouldRenderSharedColumns = score.type === 'grand' && staves.length > 1;
-  const sharedColumnRange = getTimelineYRange(score, 0);
+  const staffGap = getScoreStaffGap(score);
+  const sharedColumnRange = getTimelineYRange(score, 0, staffGap);
 
   return (
     <g className="rhythm-slots" data-testid="rhythm-slots">
@@ -429,7 +480,7 @@ function RhythmSlots({
               inputCursor.measureIndex === measure.index &&
               inputCursor.beat === beat;
             const x = getBeatX(measure.index, beat, score.timeSignature.beats);
-            const y = getStaffTop(staffIndex) + STAFF_LINE_SPACING * 2;
+            const y = getStaffTop(staffIndex, staffGap) + STAFF_LINE_SPACING * 2;
 
             return (
               <rect
@@ -456,9 +507,11 @@ function RhythmSlots({
 function ActiveInputCursor({
   cursor,
   score,
+  staffGap,
 }: {
   cursor?: InputCursor | null;
   score: Score;
+  staffGap: number;
 }) {
   if (!cursor) {
     return null;
@@ -475,7 +528,7 @@ function ActiveInputCursor({
     cursor.beat,
     score.timeSignature.beats,
   );
-  const yRange = getTimelineYRange(score, cursor.staffIndex);
+  const yRange = getTimelineYRange(score, cursor.staffIndex, staffGap);
   return (
     <g
       className={`active-input-cursor active-input-cursor-${cursor.mode}`}
@@ -499,6 +552,7 @@ function ActiveInputCursor({
 function inputCursorToMusicPosition(
   cursor: InputCursor | null | undefined,
   score: Score,
+  staffGap: number,
 ): MusicPosition | null {
   if (!cursor) {
     return null;
@@ -517,8 +571,8 @@ function inputCursorToMusicPosition(
   );
   const y =
     cursor.mode === 'note-input'
-      ? getPitchY(cursor.pitchPreview, staff.clef, cursor.staffIndex)
-      : getStaffTop(cursor.staffIndex) + STAFF_LINE_SPACING * 2;
+      ? getPitchY(cursor.pitchPreview, staff.clef, cursor.staffIndex, staffGap)
+      : getStaffTop(cursor.staffIndex, staffGap) + STAFF_LINE_SPACING * 2;
 
   return {
     beat: cursor.beat,
@@ -534,7 +588,9 @@ function inputCursorToMusicPosition(
 function snapPositionToInputGrid(
   position: MusicPosition,
   duration: DurationValue,
+  dots: number,
   score: Score,
+  staffGap: number,
 ) {
   return (
     inputCursorToMusicPosition(
@@ -543,18 +599,23 @@ function snapPositionToInputGrid(
         duration,
         'note-input',
         score.timeSignature.beats,
+        dots,
       ),
       score,
+      staffGap,
     ) ?? position
   );
 }
 
 export function NotationOverlay({
   activeEventId,
+  dots,
   duration,
   entryMode,
   hoverPosition,
   inputCursor,
+  isInputArmed = false,
+  onClearInteraction,
   onHoverPositionChange,
   onMoveEvent,
   onPlaceAtPosition,
@@ -578,6 +639,7 @@ export function NotationOverlay({
   );
   const suppressNextPlaceRef = useRef(false);
   const staves = score.parts[0]?.staves ?? [];
+  const staffGap = getScoreStaffGap(score);
   const ariaLabel =
     score.type === 'grand' ? 'Grand staff notation system' : 'Treble staff notation system';
   const draggedEvent =
@@ -589,9 +651,10 @@ export function NotationOverlay({
           .flatMap((voice) => voice.events)
           .find((event) => event.id === dragState.eventId) ?? null;
   const snappedHoverPosition = hoverPosition
-    ? snapPositionToInputGrid(hoverPosition, duration, score)
+    ? snapPositionToInputGrid(hoverPosition, duration, dots, score, staffGap)
     : null;
-  const shouldShowInputPreview = !dragState && !deleteHoverEventId && !selectedEventId;
+  const shouldShowInputPreview =
+    isInputArmed && !dragState && !deleteHoverEventId && !selectedEventId;
   const displayHoverPosition =
     shouldShowInputPreview && placementMode === 'insert' && snappedHoverPosition
       ? snapInsertPositionToEventBoundary(score, snappedHoverPosition)
@@ -629,7 +692,7 @@ export function NotationOverlay({
           return;
         }
 
-        onHoverPositionChange?.(position);
+        onHoverPositionChange?.(isInputArmed ? position : null);
       }}
       onMouseLeave={() => {
         setDragState(null);
@@ -658,18 +721,30 @@ export function NotationOverlay({
 
         const position = getEventMusicPosition(event);
         const placementPosition = position
-          ? snapPositionToInputGrid(position, duration, score)
+          ? snapPositionToInputGrid(position, duration, dots, score, staffGap)
           : null;
 
-        if (placementPosition) {
+        if (isInputArmed && placementPosition) {
           onPlaceAtPosition?.(placementPosition);
+        } else {
+          onClearInteraction?.();
         }
       }}
     >
       <rect className="staff-page-bg" x={0} y={0} width={SVG_WIDTH} height={svgHeight} />
-      <RhythmSlots duration={duration} inputCursor={inputCursor} score={score} />
+      <RhythmSlots
+        dots={dots}
+        duration={duration}
+        inputCursor={inputCursor}
+        isInputArmed={isInputArmed}
+        score={score}
+      />
       {!dragState && displayHoverPosition ? (
-        <StaffHoverGuide position={displayHoverPosition} score={score} />
+        <StaffHoverGuide
+          position={displayHoverPosition}
+          score={score}
+          staffGap={staffGap}
+        />
       ) : null}
       {score.type === 'grand' && staves.length > 1 ? (
         <line
@@ -677,23 +752,29 @@ export function NotationOverlay({
           data-testid="grand-staff-connector"
           x1={STAFF_LEFT}
           x2={STAFF_LEFT}
-          y1={getStaffTop(0)}
-          y2={getStaffTop(staves.length - 1) + STAFF_LINE_SPACING * 4}
+          y1={getStaffTop(0, staffGap)}
+          y2={getStaffTop(staves.length - 1, staffGap) + STAFF_LINE_SPACING * 4}
         />
       ) : null}
       {shouldShowInputPreview ? (
-        <ActiveInputCursor cursor={inputCursor} score={score} />
+        <ActiveInputCursor cursor={inputCursor} score={score} staffGap={staffGap} />
       ) : null}
       {displayHoverPosition ? (
         <>
           {placementMode === 'insert' ? (
-            <InsertionCursor position={displayHoverPosition} score={score} />
+            <InsertionCursor
+              position={displayHoverPosition}
+              score={score}
+              staffGap={staffGap}
+            />
           ) : null}
           <GhostEvent
+            dots={dots}
             duration={duration}
             entryMode={entryMode}
             position={displayHoverPosition}
             score={score}
+            staffGap={staffGap}
           />
         </>
       ) : null}
@@ -708,8 +789,8 @@ export function NotationOverlay({
                 data-testid={`measure-barline-${staff.id}`}
                 x1={getMeasureX(barlineIndex)}
                 x2={getMeasureX(barlineIndex)}
-                y1={getStaffTop(staffIndex)}
-                y2={getStaffTop(staffIndex) + STAFF_LINE_SPACING * 4}
+                y1={getStaffTop(staffIndex, staffGap)}
+                y2={getStaffTop(staffIndex, staffGap) + STAFF_LINE_SPACING * 4}
               />
             ),
           )}
@@ -736,6 +817,7 @@ export function NotationOverlay({
                 placementMode={placementMode}
                 selectedEventId={selectedEventId}
                 staff={staff}
+                staffGap={staffGap}
                 staffIndex={staffIndex}
               />
             )),
@@ -756,16 +838,18 @@ export function NotationOverlay({
             playbackBeat % score.timeSignature.beats,
             score.timeSignature.beats,
           )}
-          y1={getStaffTop(0) - 24}
-          y2={getStaffTop(staves.length - 1) + STAFF_LINE_SPACING * 4 + 24}
+          y1={getStaffTop(0, staffGap) - 24}
+          y2={getStaffTop(staves.length - 1, staffGap) + STAFF_LINE_SPACING * 4 + 24}
         />
       ) : null}
       {dragState?.previewPosition && draggedEvent ? (
         <GhostEvent
+          dots={getEventDots(draggedEvent)}
           duration={draggedEvent.duration}
           entryMode={draggedEvent.kind === 'rest' ? 'rest' : 'note'}
           position={dragState.previewPosition}
           score={score}
+          staffGap={staffGap}
         />
       ) : null}
     </svg>

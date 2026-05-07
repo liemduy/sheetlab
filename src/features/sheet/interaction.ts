@@ -5,6 +5,7 @@ import {
   STAFF_LINE_SPACING,
   getMeasureContentLeft,
   getMeasureContentWidth,
+  getScoreStaffGap,
   getStaffRight,
   getStaffTop,
 } from './layout';
@@ -55,10 +56,10 @@ export function formatPitch(pitch: Pitch) {
   return `${pitch.step}${accidental}${pitch.octave}`;
 }
 
-function findStaffAtY(staves: Staff[], y: number) {
+function findStaffAtY(staves: Staff[], y: number, staffGap: number) {
   const candidates = staves
     .map((staff, staffIndex) => {
-      const staffTop = getStaffTop(staffIndex);
+      const staffTop = getStaffTop(staffIndex, staffGap);
       const staffBottom = staffTop + STAFF_LINE_SPACING * 4;
       const staffCenter = staffTop + STAFF_LINE_SPACING * 2;
 
@@ -81,7 +82,8 @@ export function mapPointToMusicPosition(
   score: Score,
 ): MusicPosition | null {
   const staves = score.parts[0]?.staves ?? [];
-  const staff = findStaffAtY(staves, point.y);
+  const staffGap = getScoreStaffGap(score);
+  const staff = findStaffAtY(staves, point.y, staffGap);
   const measureCount = staff?.measures.length ?? 0;
 
   if (!staff || point.x < STAFF_LEFT || point.x > getStaffRight(measureCount)) {
@@ -106,7 +108,7 @@ export function mapPointToMusicPosition(
     score.timeSignature.beats - SNAP_BEAT,
     Math.max(0, Math.round(rawBeat / SNAP_BEAT) * SNAP_BEAT),
   );
-  const staffTop = getStaffTop(staffIndex);
+  const staffTop = getStaffTop(staffIndex, staffGap);
   const diatonicOffset = Math.round(
     (staffTop - point.y) / (STAFF_LINE_SPACING / 2),
   );

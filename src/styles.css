@@ -463,6 +463,11 @@ button {
   stroke: var(--accent);
 }
 
+.ghost-event .notation-accidental,
+.ghost-event .notation-dot {
+  fill: var(--accent);
+}
+
 .score-event,
 .score-event-hit {
   fill: transparent;
@@ -501,6 +506,27 @@ button {
 }
 
 .score-event-rest {
+  fill: #111111;
+}
+
+.score-filler-rest {
+  opacity: 0.18;
+  pointer-events: none;
+}
+
+.score-filler-rest .score-event-rest {
+  fill: #526478;
+}
+
+.notation-accidental {
+  fill: #111111;
+  font-family: Bravura, "Noto Music", "Segoe UI Symbol", "Apple Symbols", serif;
+  font-size: 1.15rem;
+  font-weight: 400;
+  text-anchor: middle;
+}
+
+.notation-dot {
   fill: #111111;
 }
 

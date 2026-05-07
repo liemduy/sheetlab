@@ -12,8 +12,8 @@ const DURATION_VALUES_DESC: DurationValue[] = [
   'thirtySecond',
 ];
 
-export function getDurationTicks(duration: DurationValue) {
-  return getDurationBeats(duration) * TICKS_PER_QUARTER;
+export function getDurationTicks(duration: DurationValue, dots = 0) {
+  return getDurationBeats(duration, dots) * TICKS_PER_QUARTER;
 }
 
 export function getMeasureTicks(timeSignature: TimeSignature) {

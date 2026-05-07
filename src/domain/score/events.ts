@@ -28,6 +28,10 @@ export function getPrimaryEventPitch(event: ScoreEvent): Pitch | null {
   return getEventPitches(event)[0] ?? null;
 }
 
+export function getEventDots(event: ScoreEvent) {
+  return event.dots ?? 0;
+}
+
 export function formatEventPitchList(
   event: ScoreEvent,
   formatPitch: (pitch: Pitch) => string,

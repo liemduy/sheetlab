@@ -7,13 +7,15 @@ import {
   SVG_WIDTH,
   VEXFLOW_STAVE_TOP_LINE_OFFSET,
   getMeasureX,
+  getScoreStaffGap,
   getScoreSvgHeight,
   getStaffTop,
 } from './layout';
 
 function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps['score']) {
   const staves = score.parts[0]?.staves ?? [];
-  const height = getScoreSvgHeight(score.type);
+  const height = getScoreSvgHeight(score);
+  const staffGap = getScoreStaffGap(score);
 
   container.innerHTML = '';
 
@@ -24,7 +26,7 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
     staff.measures.map((measure) => {
       const stave = new Stave(
         getMeasureX(measure.index),
-        getStaffTop(staffIndex) - VEXFLOW_STAVE_TOP_LINE_OFFSET,
+        getStaffTop(staffIndex, staffGap) - VEXFLOW_STAVE_TOP_LINE_OFFSET,
         MEASURE_WIDTH,
         {
           spacingBetweenLinesPx: 11,
@@ -65,7 +67,7 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
 
 export function VexFlowStaffRenderer(props: StaffRendererProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const height = getScoreSvgHeight(props.score.type);
+  const height = getScoreSvgHeight(props.score);
 
   useEffect(() => {
     if (containerRef.current) {
@@ -88,9 +90,12 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
       <NotationOverlay
         activeEventId={props.activeEventId}
         duration={props.duration ?? 'quarter'}
+        dots={props.dots ?? 0}
         entryMode={props.entryMode ?? 'note'}
         hoverPosition={props.hoverPosition}
         inputCursor={props.inputCursor}
+        isInputArmed={props.isInputArmed ?? true}
+        onClearInteraction={props.onClearInteraction}
         onDeleteEvent={props.onDeleteEvent}
         onHoverPositionChange={props.onHoverPositionChange}
         onMoveEvent={props.onMoveEvent}

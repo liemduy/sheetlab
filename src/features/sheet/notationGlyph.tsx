@@ -1,30 +1,37 @@
 import type { DurationValue, Pitch } from '../../domain/score/types';
-import { STAFF_LINE_SPACING, getStaffTop } from './layout';
+import { STAFF_GAP, STAFF_LINE_SPACING, getStaffTop } from './layout';
 
 type NotationGlyphVariant = 'ghost' | 'placed';
 
 interface NoteGlyphProps {
+  dots?: number;
   duration: DurationValue;
   pitch: Pitch;
   staffIndex: number;
+  staffGap?: number;
   variant: NotationGlyphVariant;
   x: number;
   y: number;
 }
 
 interface ChordGlyphProps {
+  dots?: number;
   duration: DurationValue;
   notes: Array<{
     pitch: Pitch;
     y: number;
   }>;
   staffIndex: number;
+  staffGap?: number;
   variant: NotationGlyphVariant;
   x: number;
 }
 
 interface RestGlyphProps {
+  dots?: number;
   duration: DurationValue;
+  staffGap?: number;
+  staffIndex?: number;
   variant: NotationGlyphVariant;
   x: number;
   y: number;
@@ -36,9 +43,20 @@ const STEM_LENGTH = 38;
 const LEDGER_HALF_WIDTH = 14;
 const LEDGER_EPSILON = 0.01;
 const ADJACENT_NOTE_OFFSET_X = NOTEHEAD_RX * 1.45;
+const DOT_RADIUS = 2.2;
 
-export function getLedgerLineYs(y: number, staffIndex: number) {
-  const staffTop = getStaffTop(staffIndex);
+const ACCIDENTAL_SYMBOL = {
+  flat: '\u266d',
+  natural: '\u266e',
+  sharp: '\u266f',
+} satisfies Record<NonNullable<Pitch['accidental']>, string>;
+
+export function getLedgerLineYs(
+  y: number,
+  staffIndex: number,
+  staffGap = STAFF_GAP,
+) {
+  const staffTop = getStaffTop(staffIndex, staffGap);
   const staffBottom = staffTop + STAFF_LINE_SPACING * 4;
   const ledgerLineYs: number[] = [];
 
@@ -61,17 +79,21 @@ export function getLedgerLineYs(y: number, staffIndex: number) {
   return ledgerLineYs;
 }
 
-function getStemDirection(y: number, staffIndex: number) {
-  const middleLineY = getStaffTop(staffIndex) + STAFF_LINE_SPACING * 2;
+function getStemDirection(y: number, staffIndex: number, staffGap = STAFF_GAP) {
+  const middleLineY = getStaffTop(staffIndex, staffGap) + STAFF_LINE_SPACING * 2;
 
   return y <= middleLineY ? 'down' : 'up';
 }
 
-function getChordStemDirection(notes: ChordGlyphProps['notes'], staffIndex: number) {
+function getChordStemDirection(
+  notes: ChordGlyphProps['notes'],
+  staffIndex: number,
+  staffGap = STAFF_GAP,
+) {
   const averageY =
     notes.reduce((total, note) => total + note.y, 0) / Math.max(1, notes.length);
 
-  return getStemDirection(averageY, staffIndex);
+  return getStemDirection(averageY, staffIndex, staffGap);
 }
 
 function getChordHeadOffsetX(
@@ -129,16 +151,79 @@ function getRestPath(duration: DurationValue, x: number, y: number) {
   ].join(' ');
 }
 
+function getDotY(y: number, staffIndex: number, staffGap = STAFF_GAP) {
+  const staffTop = getStaffTop(staffIndex, staffGap);
+  const relativeHalfSteps = Math.round(
+    ((y - staffTop) / STAFF_LINE_SPACING) * 2,
+  );
+  const isOnLine = relativeHalfSteps % 2 === 0;
+
+  return isOnLine ? y - STAFF_LINE_SPACING / 2 : y;
+}
+
+function DotMarks({
+  dots = 0,
+  staffGap = STAFF_GAP,
+  staffIndex,
+  x,
+  y,
+}: {
+  dots?: number;
+  staffGap?: number;
+  staffIndex: number;
+  x: number;
+  y: number;
+}) {
+  if (dots <= 0) {
+    return null;
+  }
+
+  const dotY = getDotY(y, staffIndex, staffGap);
+
+  return (
+    <>
+      {Array.from({ length: dots }, (_, dotIndex) => (
+        <circle
+          key={dotIndex}
+          className="notation-dot"
+          cx={x + NOTEHEAD_RX + 7 + dotIndex * 6}
+          cy={dotY}
+          r={DOT_RADIUS}
+        />
+      ))}
+    </>
+  );
+}
+
+function AccidentalGlyph({ pitch, x, y }: { pitch: Pitch; x: number; y: number }) {
+  if (!pitch.accidental) {
+    return null;
+  }
+
+  return (
+    <text
+      aria-hidden="true"
+      className="notation-accidental"
+      x={x - 22}
+      y={y + 5}
+    >
+      {ACCIDENTAL_SYMBOL[pitch.accidental]}
+    </text>
+  );
+}
+
 export function NoteGlyph({
+  dots = 0,
   duration,
   pitch,
   staffIndex,
+  staffGap = STAFF_GAP,
   variant,
   x,
   y,
 }: NoteGlyphProps) {
   const isOpenNote = duration === 'whole' || duration === 'half';
-  const stemDirection = getStemDirection(y, staffIndex);
+  const stemDirection = getStemDirection(y, staffIndex, staffGap);
   const stemX = stemDirection === 'up' ? x + NOTEHEAD_RX : x - NOTEHEAD_RX;
   const stemEndY = stemDirection === 'up' ? y - STEM_LENGTH : y + STEM_LENGTH;
 
@@ -149,7 +234,7 @@ export function NoteGlyph({
       data-visual-x={x.toFixed(2)}
       data-visual-y={y.toFixed(2)}
     >
-      {getLedgerLineYs(y, staffIndex).map((lineY) => (
+      {getLedgerLineYs(y, staffIndex, staffGap).map((lineY) => (
         <line
           key={lineY}
           className="notation-ledger-line"
@@ -160,6 +245,7 @@ export function NoteGlyph({
           y2={lineY}
         />
       ))}
+      <AccidentalGlyph pitch={pitch} x={x} y={y} />
       <ellipse
         className={`score-event-notehead${isOpenNote ? ' is-open' : ''}`}
         cx={x}
@@ -176,20 +262,23 @@ export function NoteGlyph({
           y2={stemEndY}
         />
       ) : null}
+      <DotMarks dots={dots} staffGap={staffGap} staffIndex={staffIndex} x={x} y={y} />
     </g>
   );
 }
 
 export function ChordGlyph({
+  dots = 0,
   duration,
   notes,
   staffIndex,
+  staffGap = STAFF_GAP,
   variant,
   x,
 }: ChordGlyphProps) {
   const isOpenNote = duration === 'whole' || duration === 'half';
   const sortedNotes = [...notes].sort((a, b) => a.y - b.y);
-  const stemDirection = getChordStemDirection(sortedNotes, staffIndex);
+  const stemDirection = getChordStemDirection(sortedNotes, staffIndex, staffGap);
   const noteYs = sortedNotes.map((note) => note.y);
   const stemX = stemDirection === 'up' ? x + NOTEHEAD_RX : x - NOTEHEAD_RX;
   const stemStartY =
@@ -216,7 +305,7 @@ export function ChordGlyph({
             }`}
             data-pitch={`${note.pitch.step}${note.pitch.octave}`}
           >
-            {getLedgerLineYs(note.y, staffIndex).map((lineY) => (
+            {getLedgerLineYs(note.y, staffIndex, staffGap).map((lineY) => (
               <line
                 key={lineY}
                 className="notation-ledger-line"
@@ -227,12 +316,20 @@ export function ChordGlyph({
                 y2={lineY}
               />
             ))}
+            <AccidentalGlyph pitch={note.pitch} x={headX} y={note.y} />
             <ellipse
               className={`score-event-notehead${isOpenNote ? ' is-open' : ''}`}
               cx={headX}
               cy={note.y}
               rx={NOTEHEAD_RX}
               ry={NOTEHEAD_RY}
+            />
+            <DotMarks
+              dots={dots}
+              staffGap={staffGap}
+              staffIndex={staffIndex}
+              x={headX}
+              y={note.y}
             />
           </g>
         );
@@ -251,7 +348,15 @@ export function ChordGlyph({
   );
 }
 
-export function RestGlyph({ duration, variant, x, y }: RestGlyphProps) {
+export function RestGlyph({
+  dots = 0,
+  duration,
+  staffGap = STAFF_GAP,
+  staffIndex = 0,
+  variant,
+  x,
+  y,
+}: RestGlyphProps) {
   return (
     <g
       className={`notation-glyph notation-glyph-${variant}`}
@@ -259,6 +364,7 @@ export function RestGlyph({ duration, variant, x, y }: RestGlyphProps) {
       data-visual-y={y.toFixed(2)}
     >
       <path className="score-event-rest" d={getRestPath(duration, x, y)} />
+      <DotMarks dots={dots} staffGap={staffGap} staffIndex={staffIndex} x={x} y={y} />
     </g>
   );
 }

@@ -30,8 +30,12 @@ function setVisibleSheetBounds(element: Element) {
 function svgToClientPoint(bounds: DOMRect, x: number, y: number) {
   return {
     clientX: bounds.left + (x / SVG_WIDTH) * bounds.width,
-    clientY: bounds.top + (y / getScoreSvgHeight('treble')) * bounds.height,
+    clientY: bounds.top + (y / getScoreSvgHeight('grand')) * bounds.height,
   };
+}
+
+function startWriting(duration = 'Quarter') {
+  fireEvent.click(screen.getByRole('button', { name: duration }));
 }
 
 describe('App editor state', () => {
@@ -42,13 +46,18 @@ describe('App editor state', () => {
       screen.getByRole('main', { name: 'SheetLab music editor' }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText('Duration tools')).toBeInTheDocument();
+    expect(screen.getByLabelText('Modifier tools')).toBeInTheDocument();
     expect(screen.getByLabelText('Entry tools')).toBeInTheDocument();
     expect(screen.getByLabelText('Placement tools')).toBeInTheDocument();
     expect(screen.getByLabelText('Transport and history')).toBeInTheDocument();
     expect(screen.getByLabelText('Project tools')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Quarter' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Select tool' })).toHaveAttribute(
       'aria-pressed',
       'true',
+    );
+    expect(screen.getByRole('button', { name: 'Quarter' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
     );
     expect(screen.getByRole('button', { name: 'Quarter' })).toHaveTextContent(
       '♩',
@@ -62,9 +71,81 @@ describe('App editor state', () => {
     expect(
       within(screen.getByLabelText('Current editor state')).getByText('A4'),
     ).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'Grand staff piano',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText('Select'),
+    ).toBeInTheDocument();
     expect(document.querySelector('.paper-a4')).not.toBeNull();
     expect(screen.queryByText(/notation surface/i)).not.toBeInTheDocument();
     expect(screen.getByText('96 BPM')).toBeInTheDocument();
+  });
+
+  it('keeps the cursor in select mode until a duration is chosen and clears write mode outside the staff', () => {
+    render(<App />);
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    fireEvent.mouseMove(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.queryByTestId('ghost-event')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('active-input-cursor')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('rhythm-slot')).not.toBeInTheDocument();
+
+    startWriting();
+    fireEvent.mouseMove(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.getByTestId('ghost-event')).toBeInTheDocument();
+    expect(screen.getByTestId('active-input-cursor')).toBeInTheDocument();
+    expect(screen.getAllByTestId('rhythm-slot').length).toBeGreaterThan(0);
+
+    fireEvent.click(overlay, {
+      clientX: 0,
+      clientY: 0,
+    });
+
+    expect(screen.getByRole('button', { name: 'Select tool' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.queryByTestId('ghost-event')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('active-input-cursor')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('rhythm-slot')).not.toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText('Select'),
+    ).toBeInTheDocument();
+  });
+
+  it('clears write mode when the user clicks a blank area on the sheet page', () => {
+    render(<App />);
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    startWriting();
+    fireEvent.mouseMove(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.getByTestId('ghost-event')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('heading', { name: 'Untitled Piano Exercise' }));
+
+    expect(screen.getByRole('button', { name: 'Select tool' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.queryByTestId('ghost-event')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('active-input-cursor')).not.toBeInTheDocument();
   });
 
   it('updates duration, entry mode, and placement mode from the toolbar', () => {
@@ -108,18 +189,16 @@ describe('App editor state', () => {
     ).toBeInTheDocument();
   });
 
-  it('updates score type, page size, accidental, and tempo from the left panel', () => {
+  it('updates score type, page size, accidental, and tempo from controls', () => {
     render(<App />);
 
     fireEvent.change(screen.getByLabelText('Score type'), {
-      target: { value: 'grand' },
+      target: { value: 'treble' },
     });
     fireEvent.change(screen.getByLabelText('Page size'), {
       target: { value: 'letter' },
     });
-    fireEvent.change(screen.getByLabelText('Accidental'), {
-      target: { value: 'sharp' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Sharp' }));
     fireEvent.change(screen.getByLabelText('Tempo'), {
       target: { value: '120' },
     });
@@ -137,6 +216,7 @@ describe('App editor state', () => {
 
   it('places a score event when the user clicks the sheet', () => {
     render(<App />);
+    startWriting();
 
     fireEvent.click(screen.getByTestId('staff-renderer'), {
       clientX: STAFF_LEFT,
@@ -151,6 +231,7 @@ describe('App editor state', () => {
 
   it('adds a second pitch at the same slot as a chord column', () => {
     render(<App />);
+    startWriting();
 
     const overlay = screen.getByTestId('staff-renderer');
 
@@ -171,6 +252,7 @@ describe('App editor state', () => {
 
   it('places notes on the snapped visible slot when the user clicks between slots', () => {
     render(<App />);
+    startWriting();
 
     fireEvent.click(screen.getByTestId('staff-renderer'), {
       clientX: getBeatX(0, 1.5, 4),
@@ -187,6 +269,7 @@ describe('App editor state', () => {
 
   it('advances the input cursor after placing notes by the active duration', () => {
     render(<App />);
+    startWriting();
 
     const overlay = screen.getByTestId('staff-renderer');
 
@@ -216,6 +299,7 @@ describe('App editor state', () => {
 
   it('previews and places the note the user points at on a real-sized sheet', async () => {
     const { container } = render(<App />);
+    startWriting();
 
     const overlay = screen.getByTestId('staff-renderer');
     const bounds = setVisibleSheetBounds(overlay);
@@ -282,6 +366,7 @@ describe('App editor state', () => {
 
   it('selects and deletes a placed score event', () => {
     render(<App />);
+    startWriting();
 
     fireEvent.click(screen.getByTestId('staff-renderer'), {
       clientX: STAFF_LEFT,
@@ -303,6 +388,7 @@ describe('App editor state', () => {
 
   it('deletes a selected score event from the small x target', () => {
     render(<App />);
+    startWriting();
 
     fireEvent.click(screen.getByTestId('staff-renderer'), {
       clientX: STAFF_LEFT,
@@ -324,6 +410,7 @@ describe('App editor state', () => {
 
   it('deletes a selected score event with the Delete key', () => {
     render(<App />);
+    startWriting();
 
     fireEvent.click(screen.getByTestId('staff-renderer'), {
       clientX: STAFF_LEFT,
@@ -340,6 +427,7 @@ describe('App editor state', () => {
 
   it('updates the selected score event from toolbar controls', () => {
     render(<App />);
+    startWriting();
 
     fireEvent.click(screen.getByTestId('staff-renderer'), {
       clientX: STAFF_LEFT,
@@ -347,9 +435,7 @@ describe('App editor state', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Note E4 measure 1 beat 1' }));
     fireEvent.click(screen.getByRole('button', { name: 'Half' }));
-    fireEvent.change(screen.getByLabelText('Accidental'), {
-      target: { value: 'sharp' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Sharp' }));
 
     expect(screen.getByTestId('score-event')).toHaveAttribute(
       'data-duration',
@@ -358,8 +444,28 @@ describe('App editor state', () => {
     expect(screen.getByLabelText('Note E#4 measure 1 beat 1')).toBeInTheDocument();
   });
 
+  it('combines duration, dotted, and accidental modifiers when writing notes', () => {
+    const { container } = render(<App />);
+
+    startWriting();
+    fireEvent.click(screen.getByRole('button', { name: 'Dotted note' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sharp' }));
+    fireEvent.click(screen.getByTestId('staff-renderer'), {
+      clientX: STAFF_LEFT,
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.getByLabelText('Note E#4 measure 1 beat 1')).toBeInTheDocument();
+    expect(container.querySelector('[data-event-id="event-1"] .notation-dot')).not.toBeNull();
+    expect(screen.getByTestId('active-input-cursor')).toHaveAttribute(
+      'data-beat',
+      '1.5',
+    );
+  });
+
   it('does not change the auto-selected previous note when choosing the next duration', () => {
     render(<App />);
+    startWriting();
 
     const overlay = screen.getByTestId('staff-renderer');
 
@@ -389,6 +495,7 @@ describe('App editor state', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Score type' }), {
       target: { value: 'grand' },
     });
+    startWriting();
     const overlay = screen.getByTestId('staff-renderer');
 
     fireEvent.click(overlay, {
@@ -413,6 +520,7 @@ describe('App editor state', () => {
 
   it('inserts a missing note and shifts later notes to the right', () => {
     render(<App />);
+    startWriting();
 
     const overlay = screen.getByTestId('staff-renderer');
 
@@ -447,6 +555,7 @@ describe('App editor state', () => {
 
   it('moves a placed note when the user drags it to another pitch and beat', () => {
     render(<App />);
+    startWriting();
 
     const overlay = screen.getByTestId('staff-renderer');
     const bounds = setVisibleSheetBounds(overlay);
@@ -478,6 +587,7 @@ describe('App editor state', () => {
 
   it('undoes and redoes a placed score event', () => {
     render(<App />);
+    startWriting();
 
     fireEvent.click(screen.getByTestId('staff-renderer'), {
       clientX: STAFF_LEFT,
@@ -495,6 +605,7 @@ describe('App editor state', () => {
 
   it('toggles playback state when the score has events', async () => {
     render(<App />);
+    startWriting();
 
     fireEvent.click(screen.getByTestId('staff-renderer'), {
       clientX: STAFF_LEFT,
@@ -516,6 +627,7 @@ describe('App editor state', () => {
   it('saves and loads the current score from JSON storage', () => {
     localStorage.clear();
     render(<App />);
+    startWriting();
 
     fireEvent.click(screen.getByTestId('staff-renderer'), {
       clientX: STAFF_LEFT,
@@ -534,6 +646,7 @@ describe('App editor state', () => {
   it('imports a downloaded JSON project file', async () => {
     localStorage.clear();
     render(<App />);
+    startWriting();
 
     fireEvent.click(screen.getByTestId('staff-renderer'), {
       clientX: STAFF_LEFT,

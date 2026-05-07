@@ -55,7 +55,9 @@ function isScoreEvent(value: unknown): value is ScoreEvent {
   const baseIsValid =
     isString(value.id) &&
     DURATIONS.has(value.duration as DurationValue) &&
-    isNumber(value.beat);
+    isNumber(value.beat) &&
+    (value.dots === undefined ||
+      (isNumber(value.dots) && value.dots >= 0 && value.dots <= 1));
 
   if (!baseIsValid) {
     return false;

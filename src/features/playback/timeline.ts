@@ -1,6 +1,6 @@
 import type { Pitch, Score, ScoreEvent, StaffId } from '../../domain/score/types';
 import { getDurationBeats } from '../../domain/score/durations';
-import { getEventPitches } from '../../domain/score/events';
+import { getEventDots, getEventPitches } from '../../domain/score/events';
 
 export interface PlaybackTimelineEvent {
   id: string;
@@ -30,7 +30,10 @@ export function buildPlaybackTimeline(score: Score): PlaybackTimelineEvent[] {
         staff.measures.flatMap((measure) =>
           measure.voices.flatMap((voice) =>
             voice.events.filter((event) => event.kind !== 'rest').map((event) => {
-              const durationBeats = getDurationBeats(event.duration);
+              const durationBeats = getDurationBeats(
+                event.duration,
+                getEventDots(event),
+              );
               const startBeat = measure.index * beatsPerMeasure + event.beat;
 
               const pitches = getEventPitches(event);

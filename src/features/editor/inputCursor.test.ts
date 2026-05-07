@@ -127,4 +127,22 @@ describe('input cursor', () => {
       0, 0.125, 0.25, 0.375,
     ]);
   });
+
+  it('uses dotted duration width for snapping and cursor advancement', () => {
+    const score = createEmptyScore('treble', { measureCount: 4 });
+    const cursor = createInputCursorFromPosition(
+      createPosition(0),
+      'quarter',
+      'note-input',
+      4,
+      1,
+    );
+
+    expect(getInputSlotBeats('quarter', 4, 1)).toEqual([0, 1.5]);
+    expect(advanceInputCursor(score, cursor)).toMatchObject({
+      beat: 1.5,
+      dots: 1,
+      measureIndex: 0,
+    });
+  });
 });

@@ -58,6 +58,10 @@ describe('user acceptance song flows', () => {
   it('creates the treble melody with insert, drag repair, and delete correction', () => {
     render(<App />);
 
+    fireEvent.change(screen.getByRole('combobox', { name: 'Score type' }), {
+      target: { value: 'treble' },
+    });
+    clickDuration('Quarter');
     const overlay = screen.getByTestId('staff-renderer');
 
     clickScoreNote(overlay, 0, 0, { step: 'E', octave: 4 });
@@ -75,9 +79,11 @@ describe('user acceptance song flows', () => {
       { beat: 0, measureIndex: 1, pitch: { step: 'E', octave: 4 } },
     );
 
+    clickDuration('Quarter');
     clickScoreNote(overlay, 1, 1, { step: 'A', octave: 4 });
     fireEvent.click(screen.getByRole('button', { name: 'Note A4 measure 2 beat 2' }));
     fireEvent.click(screen.getByTestId('score-event-delete'));
+    clickDuration('Quarter');
     clickScoreNote(overlay, 1, 1, { step: 'E', octave: 4 });
     clickDuration('Half');
     clickScoreNote(overlay, 1, 2, { step: 'E', octave: 4 });
@@ -115,6 +121,7 @@ describe('user acceptance song flows', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Score type' }), {
       target: { value: 'grand' },
     });
+    clickDuration('Quarter');
     const overlay = screen.getByTestId('staff-renderer');
 
     clickScoreNote(overlay, 0, 0, { step: 'C', octave: 5 });
@@ -127,6 +134,7 @@ describe('user acceptance song flows', () => {
     clickScoreNote(overlay, 0, 4 - 1, { step: 'A', octave: 5 });
     fireEvent.click(screen.getByRole('button', { name: 'Chord G5 A5 measure 1 beat 4' }));
     fireEvent.click(screen.getByTestId('score-event-delete'));
+    clickDuration('Quarter');
     clickScoreNote(overlay, 0, 3, { step: 'G', octave: 5 });
 
     clickDuration('Half');
@@ -162,6 +170,7 @@ describe('user acceptance song flows', () => {
         staffIndex: 1,
       },
     );
+    clickDuration('Whole');
     clickScoreNote(overlay, 1, 0, { step: 'G', octave: 2 }, 'bass', 1);
     clickScoreNote(overlay, 2, 0, { step: 'F', octave: 2 }, 'bass', 1);
     clickScoreNote(overlay, 3, 0, { step: 'C', octave: 3 }, 'bass', 1);
@@ -215,6 +224,7 @@ describe('user acceptance song flows', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Score type' }), {
       target: { value: 'grand' },
     });
+    clickDuration('Quarter');
     const overlay = screen.getByTestId('staff-renderer');
 
     clickScoreNote(overlay, 0, 0, { step: 'C', octave: 5 });

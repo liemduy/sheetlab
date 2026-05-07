@@ -1,5 +1,6 @@
 import type { Clef, Pitch } from '../../domain/score/types';
 import {
+  STAFF_GAP,
   STAFF_LINE_SPACING,
   getMeasureContentLeft,
   getMeasureContentWidth,
@@ -16,12 +17,17 @@ function pitchToDiatonicValue(pitch: Pitch) {
   return pitch.octave * NOTE_STEPS.length + NOTE_STEPS.indexOf(pitch.step);
 }
 
-export function getPitchY(pitch: Pitch, clef: Clef, staffIndex: number) {
+export function getPitchY(
+  pitch: Pitch,
+  clef: Clef,
+  staffIndex: number,
+  staffGap = STAFF_GAP,
+) {
   const topLineValue = pitchToDiatonicValue(TOP_LINE_BY_CLEF[clef]);
   const pitchValue = pitchToDiatonicValue(pitch);
   const diatonicOffset = pitchValue - topLineValue;
 
-  return getStaffTop(staffIndex) - diatonicOffset * (STAFF_LINE_SPACING / 2);
+  return getStaffTop(staffIndex, staffGap) - diatonicOffset * (STAFF_LINE_SPACING / 2);
 }
 
 export function getBeatX(

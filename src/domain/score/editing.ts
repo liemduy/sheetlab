@@ -11,6 +11,7 @@ import type {
 import { getDurationBeats } from './durations';
 import {
   getEventPitches,
+  getEventDots,
   getPrimaryEventPitch,
   isGeneratedRestEvent,
   isPitchedScoreEvent,
@@ -32,6 +33,7 @@ export interface PlaceScoreEventRequest {
   entryMode: 'note' | 'rest';
   pitch: Pitch;
   accidental?: Accidental;
+  dots?: number;
 }
 
 export interface PlaceScoreEventResult {
@@ -47,6 +49,7 @@ export interface UpdateScoreEventRequest {
   measureIndex?: number;
   pitch?: Pitch;
   staffId?: StaffId;
+  dots?: number;
 }
 
 export interface UpdateScoreEventResult {
@@ -62,6 +65,7 @@ function createScoreEvent(request: PlaceScoreEventRequest): ScoreEvent {
       kind: 'rest',
       beat: request.beat,
       duration: request.duration,
+      dots: request.dots || undefined,
     };
   }
 
@@ -70,6 +74,7 @@ function createScoreEvent(request: PlaceScoreEventRequest): ScoreEvent {
     kind: 'note',
     beat: request.beat,
     duration: request.duration,
+    dots: request.dots || undefined,
     pitch: {
       ...request.pitch,
       accidental: request.accidental,
@@ -118,6 +123,7 @@ function mergePitchedEventWithNote(
     kind: 'chord',
     beat: noteEvent.beat,
     duration: noteEvent.duration,
+    dots: noteEvent.dots,
     pitches,
   };
 }
@@ -149,6 +155,7 @@ function createUpdatedScoreEvent(
       kind: 'rest',
       beat,
       duration,
+      dots: update.dots ?? event.dots,
     };
   }
 
@@ -162,6 +169,7 @@ function createUpdatedScoreEvent(
       kind: 'chord',
       beat,
       duration,
+      dots: update.dots ?? event.dots,
       pitches: nextPitches.sort(comparePitches),
     };
   }
@@ -171,12 +179,13 @@ function createUpdatedScoreEvent(
     kind: 'note',
     beat,
     duration,
+    dots: update.dots ?? event.dots,
     pitch: applyPitchUpdate(event.pitch, update),
   };
 }
 
 function getEventEnd(event: ScoreEvent) {
-  return event.beat + getDurationBeats(event.duration);
+  return event.beat + getDurationBeats(event.duration, getEventDots(event));
 }
 
 function overlaps(candidate: ScoreEvent, existing: ScoreEvent) {
@@ -188,7 +197,7 @@ function getEventStartTick(event: ScoreEvent) {
 }
 
 function getEventEndTick(event: ScoreEvent) {
-  return getEventStartTick(event) + getDurationTicks(event.duration);
+  return getEventStartTick(event) + getDurationTicks(event.duration, getEventDots(event));
 }
 
 function eventsOverlapByTick(candidate: ScoreEvent, existing: ScoreEvent) {
@@ -474,7 +483,8 @@ export function tryPlaceScoreEvent(
       isPitchedScoreEvent(event) &&
       eventsOverlapByTick(candidateEvent, event) &&
       getEventStartTick(event) === getEventStartTick(candidateEvent) &&
-      event.duration === candidateEvent.duration,
+      event.duration === candidateEvent.duration &&
+      getEventDots(event) === getEventDots(candidateEvent),
   );
   const nextEvent =
     candidateEvent.kind === 'note' && sameSlotPitchedEvent
@@ -577,7 +587,7 @@ export function tryInsertScoreEvent(
 
   const beatsPerMeasure = score.timeSignature.beats;
   const insertGlobalBeat = request.measureIndex * beatsPerMeasure + request.beat;
-  const insertDuration = getDurationBeats(request.duration);
+  const insertDuration = getDurationBeats(request.duration, request.dots ?? 0);
   const flatEvents = targetStaff.measures.flatMap((measure) =>
     measure.voices[0]?.events.map((event) => ({
       event,
@@ -585,7 +595,8 @@ export function tryInsertScoreEvent(
     })) ?? [],
   ).filter(({ event }) => isPitchedScoreEvent(event));
   const insertionSplitsExistingEvent = flatEvents.some(({ event, globalBeat }) => {
-    const eventEnd = globalBeat + getDurationBeats(event.duration);
+    const eventEnd =
+      globalBeat + getDurationBeats(event.duration, getEventDots(event));
 
     return globalBeat < insertGlobalBeat && eventEnd > insertGlobalBeat;
   });
@@ -611,7 +622,10 @@ export function tryInsertScoreEvent(
   ].sort((a, b) => a.globalBeat - b.globalBeat);
   const maxEndBeat = reflowedEvents.reduce(
     (maxEnd, { event, globalBeat }) =>
-      Math.max(maxEnd, globalBeat + getDurationBeats(event.duration)),
+      Math.max(
+        maxEnd,
+        globalBeat + getDurationBeats(event.duration, getEventDots(event)),
+      ),
     insertGlobalBeat + insertDuration,
   );
   const requiredMeasureCount = Math.max(

@@ -12,7 +12,9 @@ import type {
 } from '../../domain/score/types';
 import type { MusicPosition } from './interaction';
 import {
+  STAFF_GAP,
   STAFF_LINE_SPACING,
+  getScoreStaffGap,
   getScoreSvgHeight,
   getStaffTop,
   SVG_WIDTH,
@@ -570,6 +572,37 @@ describe('StaffRenderer', () => {
         .getByTestId('ghost-event')
         .querySelectorAll('[data-testid="ledger-line"]').length,
     ).toBeGreaterThan(0);
+  });
+
+  it('expands the grand staff gap when ledger lines from both staves need more room', () => {
+    const trebleLowScore = placeScoreEvent(createEmptyScore('grand'), {
+      eventId: 'treble-low-ledger',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'F', octave: 3 },
+    });
+    const score = placeScoreEvent(trebleLowScore, {
+      eventId: 'bass-high-ledger',
+      staffId: 'bass',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'G', octave: 4 },
+    });
+    const { container } = render(<StaffRenderer score={score} />);
+    const connector = screen.getByTestId('grand-staff-connector');
+    const dynamicGap = getScoreStaffGap(score);
+
+    expect(dynamicGap).toBeGreaterThan(STAFF_GAP);
+    expect(Number(connector.getAttribute('y2')) - Number(connector.getAttribute('y1'))).toBeCloseTo(
+      dynamicGap + STAFF_LINE_SPACING * 4,
+      2,
+    );
+    expectRenderedYsInsideSvg(container, getScoreSvgHeight(score));
   });
 
   it.each([

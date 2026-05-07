@@ -10,8 +10,11 @@ export interface StaffRendererProps {
   hoverPosition?: MusicPosition | null;
   entryMode?: EntryMode;
   duration?: DurationValue;
+  dots?: number;
+  isInputArmed?: boolean;
   onHoverPositionChange?: (position: MusicPosition | null) => void;
   onPlaceAtPosition?: (position: MusicPosition) => void;
+  onClearInteraction?: () => void;
   onSelectEvent?: (eventId: string) => void;
   onDeleteEvent?: (eventId: string) => void;
   onMoveEvent?: (eventId: string, position: MusicPosition) => void;

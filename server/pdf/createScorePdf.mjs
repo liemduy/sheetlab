@@ -16,6 +16,7 @@ const NOTEHEAD_RX = 5.4;
 const NOTEHEAD_RY = 3.7;
 const STEM_LENGTH = 28;
 const LEDGER_HALF_WIDTH = 10;
+const STAFF_DYNAMIC_PADDING = 22;
 
 function getPageSize(score) {
   return PAGE_SIZES[score.pageSize] ?? PAGE_SIZES.a4;
@@ -60,6 +61,66 @@ function getEventPitches(event) {
   return [];
 }
 
+function getEventDots(event) {
+  return event.dots ?? 0;
+}
+
+function getAccidentalSymbol(accidental) {
+  if (accidental === 'sharp') {
+    return '#';
+  }
+
+  if (accidental === 'flat') {
+    return 'b';
+  }
+
+  if (accidental === 'natural') {
+    return '\u266e';
+  }
+
+  return '';
+}
+
+function getStaffPitchBounds(score, staffIndex) {
+  const staff = score.parts[0]?.staves[staffIndex];
+  const eventPitches =
+    staff?.measures.flatMap((measure) =>
+      measure.voices.flatMap((voice) =>
+        voice.events.flatMap((event) => getEventPitches(event)),
+      ),
+    ) ?? [];
+
+  if (!staff || eventPitches.length === 0) {
+    return {
+      maxY: STAFF_LINE_SPACING * 4,
+      minY: 0,
+    };
+  }
+
+  const pitchYs = eventPitches.map((pitch) =>
+    getPitchY(pitch, staff.clef, 0),
+  );
+
+  return {
+    maxY: Math.max(STAFF_LINE_SPACING * 4, ...pitchYs),
+    minY: Math.min(0, ...pitchYs),
+  };
+}
+
+function getStaffGap(score) {
+  if (score.type !== 'grand') {
+    return STAFF_GAP;
+  }
+
+  const trebleBounds = getStaffPitchBounds(score, 0);
+  const bassBounds = getStaffPitchBounds(score, 1);
+  const extraGap =
+    Math.max(0, trebleBounds.maxY - STAFF_LINE_SPACING * 4) +
+    Math.max(0, -bassBounds.minY);
+
+  return extraGap === 0 ? STAFF_GAP : STAFF_GAP + extraGap + STAFF_DYNAMIC_PADDING;
+}
+
 function getMeasureCount(score) {
   return Math.max(
     1,
@@ -80,6 +141,7 @@ function createLayout(score) {
     pageWidth,
     staffLeft,
     staffRight,
+    staffGap: getStaffGap(score),
     staffWidth: staffRight - staffLeft,
     systemTop: 218,
     timeSignature: score.timeSignature,
@@ -93,7 +155,7 @@ function getEventDrawing(event, staff, staffIndex, measureIndex, layout) {
   const x =
     contentLeft +
     (event.beat / layout.timeSignature.beats) * Math.max(1, contentWidth);
-  const staffTop = layout.systemTop + staffIndex * STAFF_GAP;
+  const staffTop = layout.systemTop + staffIndex * layout.staffGap;
   const eventPitches = getEventPitches(event);
   const primaryPitch = eventPitches[0];
   const y = primaryPitch
@@ -172,16 +234,16 @@ export function createScorePdfLayout(score) {
     pageSize: [layout.pageWidth, layout.pageHeight],
     staves: staves.map((staff, staffIndex) => ({
       bottom:
-        layout.systemTop + staffIndex * STAFF_GAP + STAFF_LINE_SPACING * 4,
+        layout.systemTop + staffIndex * layout.staffGap + STAFF_LINE_SPACING * 4,
       clef: staff.clef,
       id: staff.id,
-      top: layout.systemTop + staffIndex * STAFF_GAP,
+      top: layout.systemTop + staffIndex * layout.staffGap,
     })),
   };
 }
 
 function drawStaff(doc, staff, staffIndex, layout) {
-  const staffTop = layout.systemTop + staffIndex * STAFF_GAP;
+  const staffTop = layout.systemTop + staffIndex * layout.staffGap;
   const measureWidth = layout.staffWidth / layout.measureCount;
 
   doc.lineWidth(0.55).strokeColor('#111111');
@@ -222,7 +284,7 @@ function drawGrandConnectors(doc, layout, staffCount) {
 
   const top = layout.systemTop;
   const bottom =
-    layout.systemTop + (staffCount - 1) * STAFF_GAP + STAFF_LINE_SPACING * 4;
+    layout.systemTop + (staffCount - 1) * layout.staffGap + STAFF_LINE_SPACING * 4;
 
   doc
     .lineWidth(1)
@@ -246,6 +308,9 @@ function drawNote(doc, event, staff, staffIndex, measureIndex, layout) {
 
   if (event.kind === 'rest') {
     doc.rect(x - 5, y - 3, 10, 4).fill('#111111');
+    if (getEventDots(event) > 0) {
+      doc.circle(x + 9, y - 1, 1.35).fill('#111111');
+    }
     return;
   }
 
@@ -253,6 +318,7 @@ function drawNote(doc, event, staff, staffIndex, measureIndex, layout) {
 
   getEventPitches(event).forEach((pitch) => {
     const pitchY = getPitchY(pitch, staff.clef, staffTop);
+    const accidental = getAccidentalSymbol(pitch.accidental);
 
     for (const ledgerY of getLedgerLineYs(pitchY, staffTop)) {
       doc
@@ -261,10 +327,22 @@ function drawNote(doc, event, staff, staffIndex, measureIndex, layout) {
         .stroke();
     }
 
+    if (accidental) {
+      doc
+        .font('Times-Roman')
+        .fontSize(10)
+        .fillColor('#111111')
+        .text(accidental, x - 15, pitchY - 5, { width: 8, align: 'center' });
+    }
+
     if (event.duration === 'whole' || event.duration === 'half') {
       doc.save().ellipse(x, pitchY, NOTEHEAD_RX, NOTEHEAD_RY).stroke().restore();
     } else {
       doc.ellipse(x, pitchY, NOTEHEAD_RX, NOTEHEAD_RY).fill('#111111');
+    }
+
+    if (getEventDots(event) > 0) {
+      doc.circle(x + NOTEHEAD_RX + 5, pitchY, 1.35).fill('#111111');
     }
   });
 

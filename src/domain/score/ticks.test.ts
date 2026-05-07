@@ -17,6 +17,7 @@ describe('score ticks', () => {
     expect(getDurationTicks('eighth')).toBe(240);
     expect(getDurationTicks('sixteenth')).toBe(120);
     expect(getDurationTicks('thirtySecond')).toBe(60);
+    expect(getDurationTicks('quarter', 1)).toBe(720);
   });
 
   it('derives measure ticks from the time signature beats', () => {
