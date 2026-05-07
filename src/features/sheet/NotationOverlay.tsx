@@ -308,7 +308,7 @@ function InsertionCursor({
     position.beat,
     score.timeSignature.beats,
   );
-  const staffTop = getStaffTop(position.staffIndex);
+  const yRange = getTimelineYRange(score, position.staffIndex);
 
   return (
     <line
@@ -316,10 +316,26 @@ function InsertionCursor({
       data-testid="insertion-cursor"
       x1={x}
       x2={x}
-      y1={staffTop - 28}
-      y2={staffTop + STAFF_LINE_SPACING * 4 + 28}
+      y1={yRange.y1}
+      y2={yRange.y2}
     />
   );
+}
+
+function getTimelineYRange(score: Score, staffIndex: number) {
+  const staves = score.parts[0]?.staves ?? [];
+
+  if (score.type === 'grand' && staves.length > 1) {
+    return {
+      y1: getStaffTop(0) - 36,
+      y2: getStaffTop(staves.length - 1) + STAFF_LINE_SPACING * 4 + 36,
+    };
+  }
+
+  return {
+    y1: getStaffTop(staffIndex) - 36,
+    y2: getStaffTop(staffIndex) + STAFF_LINE_SPACING * 4 + 36,
+  };
 }
 
 function StaffHoverGuide({
@@ -366,9 +382,37 @@ function RhythmSlots({
 }) {
   const beats = getInputSlotBeats(duration, score.timeSignature.beats);
   const staves = score.parts[0]?.staves ?? [];
+  const shouldRenderSharedColumns = score.type === 'grand' && staves.length > 1;
+  const sharedColumnRange = getTimelineYRange(score, 0);
 
   return (
     <g className="rhythm-slots" data-testid="rhythm-slots">
+      {shouldRenderSharedColumns ? (
+        <g className="timeline-columns" data-testid="timeline-columns">
+          {staves[0]?.measures.flatMap((measure) =>
+            beats.map((beat) => {
+              const isActive =
+                inputCursor?.measureIndex === measure.index &&
+                inputCursor.beat === beat;
+              const x = getBeatX(measure.index, beat, score.timeSignature.beats);
+
+              return (
+                <line
+                  key={`timeline-${measure.index}-${beat}`}
+                  className={`timeline-column${isActive ? ' is-active' : ''}`}
+                  data-beat={beat}
+                  data-measure-index={measure.index}
+                  data-testid="timeline-column"
+                  x1={x}
+                  x2={x}
+                  y1={sharedColumnRange.y1}
+                  y2={sharedColumnRange.y2}
+                />
+              );
+            }),
+          )}
+        </g>
+      ) : null}
       {staves.flatMap((staff, staffIndex) =>
         staff.measures.flatMap((measure) =>
           beats.map((beat) => {
@@ -423,7 +467,7 @@ function ActiveInputCursor({
     cursor.beat,
     score.timeSignature.beats,
   );
-  const staffTop = getStaffTop(cursor.staffIndex);
+  const yRange = getTimelineYRange(score, cursor.staffIndex);
   const pitchY = getPitchY(cursor.pitchPreview, staff.clef, cursor.staffIndex);
 
   return (
@@ -439,8 +483,8 @@ function ActiveInputCursor({
         data-testid="active-input-cursor-line"
         x1={x}
         x2={x}
-        y1={staffTop - 36}
-        y2={staffTop + STAFF_LINE_SPACING * 4 + 36}
+        y1={yRange.y1}
+        y2={yRange.y2}
       />
       <rect
         className="active-input-cursor-note-box"

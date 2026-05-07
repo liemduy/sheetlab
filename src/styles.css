@@ -386,6 +386,17 @@ button {
   fill: rgb(43 103 255 / 28%);
 }
 
+.timeline-column {
+  stroke: rgb(43 103 255 / 10%);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.timeline-column.is-active {
+  stroke: rgb(43 103 255 / 35%);
+  stroke-width: 1.6;
+}
+
 .active-input-cursor-line {
   stroke: #2b67ff;
   stroke-linecap: round;

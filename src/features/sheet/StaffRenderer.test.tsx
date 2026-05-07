@@ -11,7 +11,12 @@ import type {
   StaffId,
 } from '../../domain/score/types';
 import type { MusicPosition } from './interaction';
-import { getScoreSvgHeight, getStaffTop, SVG_WIDTH } from './layout';
+import {
+  STAFF_LINE_SPACING,
+  getScoreSvgHeight,
+  getStaffTop,
+  SVG_WIDTH,
+} from './layout';
 import { getBeatX, getPitchY } from './notationGeometry';
 import { StaffRenderer } from './StaffRenderer';
 
@@ -129,6 +134,28 @@ describe('StaffRenderer', () => {
     expect(screen.getAllByTestId('rhythm-slot')).toHaveLength(128);
   });
 
+  it('renders shared timeline columns across grand-staff piano slots', () => {
+    render(
+      <StaffRenderer
+        duration="quarter"
+        inputCursor={{
+          beat: 1,
+          duration: 'quarter',
+          measureIndex: 0,
+          mode: 'note-input',
+          pitchPreview: { step: 'C', octave: 4 },
+          staffId: 'treble',
+          staffIndex: 0,
+        }}
+        score={createEmptyScore('grand', { measureCount: 4 })}
+      />,
+    );
+
+    expect(screen.getAllByTestId('timeline-column')).toHaveLength(16);
+    expect(screen.getAllByTestId('rhythm-slot')).toHaveLength(32);
+    expect(document.querySelectorAll('.timeline-column.is-active')).toHaveLength(1);
+  });
+
   it('renders the active blue input cursor at the current slot', () => {
     render(
       <StaffRenderer
@@ -168,6 +195,30 @@ describe('StaffRenderer', () => {
     expect(screen.getByTestId('grand-staff-connector')).toBeInTheDocument();
     expect(screen.getAllByTestId('measure-barline-treble')).toHaveLength(5);
     expect(screen.getAllByTestId('measure-barline-bass')).toHaveLength(5);
+  });
+
+  it('spans the active input cursor through both staves in grand staff mode', () => {
+    render(
+      <StaffRenderer
+        inputCursor={{
+          beat: 0,
+          duration: 'quarter',
+          measureIndex: 0,
+          mode: 'note-input',
+          pitchPreview: { step: 'C', octave: 3 },
+          staffId: 'bass',
+          staffIndex: 1,
+        }}
+        score={createEmptyScore('grand', { measureCount: 4 })}
+      />,
+    );
+
+    expect(
+      Number(screen.getByTestId('active-input-cursor-line').getAttribute('y1')),
+    ).toBe(getStaffTop(0) - 36);
+    expect(
+      Number(screen.getByTestId('active-input-cursor-line').getAttribute('y2')),
+    ).toBe(getStaffTop(1) + STAFF_LINE_SPACING * 4 + 36);
   });
 
   it('highlights the hovered staff in a grand staff system', () => {
