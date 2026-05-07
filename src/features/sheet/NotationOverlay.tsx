@@ -6,6 +6,7 @@ import {
   formatEventPitchList,
   getEventPitches,
   getPrimaryEventPitch,
+  isGeneratedRestEvent,
 } from '../../domain/score/events';
 import type { EntryMode, PlacementMode } from '../editor/editorState';
 import type { InputCursor } from '../editor/inputCursor';
@@ -106,6 +107,43 @@ function EventHitTarget({
         }`;
   const targetWidth = placementMode === 'insert' ? 16 : 28;
   const targetHeight = placementMode === 'insert' ? 30 : 40;
+  const visual = (
+    <g
+      className="score-event-visual"
+      data-event-id={event.id}
+      data-testid="score-event-visual"
+    >
+      {eventPitches.length > 0 ? (
+        eventPitches.map((pitch) => (
+          <NoteGlyph
+            key={`${pitch.step}${pitch.octave}${pitch.accidental ?? ''}`}
+            duration={event.duration}
+            pitch={pitch}
+            staffIndex={staffIndex}
+            variant="placed"
+            x={x}
+            y={getPitchY(pitch, staff.clef, staffIndex)}
+          />
+        ))
+      ) : (
+        <RestGlyph duration={event.duration} variant="placed" x={x} y={y} />
+      )}
+    </g>
+  );
+
+  if (isGeneratedRestEvent(event)) {
+    return (
+      <g
+        aria-label={label}
+        className="score-filler-rest"
+        data-duration={event.duration}
+        data-event-id={event.id}
+        data-testid="score-filler-rest"
+      >
+        {visual}
+      </g>
+    );
+  }
 
   return (
     <>
@@ -135,32 +173,7 @@ function EventHitTarget({
           }
         }}
       >
-        <g
-          className="score-event-visual"
-          data-event-id={event.id}
-          data-testid="score-event-visual"
-        >
-          {eventPitches.length > 0 ? (
-            eventPitches.map((pitch) => (
-              <NoteGlyph
-                key={`${pitch.step}${pitch.octave}${pitch.accidental ?? ''}`}
-                duration={event.duration}
-                pitch={pitch}
-                staffIndex={staffIndex}
-                variant="placed"
-                x={x}
-                y={getPitchY(pitch, staff.clef, staffIndex)}
-              />
-            ))
-          ) : (
-            <RestGlyph
-              duration={event.duration}
-              variant="placed"
-              x={x}
-              y={y}
-            />
-          )}
-        </g>
+        {visual}
         <rect
           className="score-event-target"
           data-testid="score-event-target"

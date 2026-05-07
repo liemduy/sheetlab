@@ -3,6 +3,7 @@ import {
   formatEventPitchList,
   getEventPitches,
   getPrimaryEventPitch,
+  isGeneratedRestEvent,
   isPitchedScoreEvent,
 } from './events';
 import type { ScoreEvent } from './types';
@@ -64,5 +65,24 @@ describe('score events', () => {
         (pitch) => `${pitch.step}${pitch.octave}`,
       ),
     ).toBe('C4 E4 G4');
+  });
+
+  it('identifies generated rest fillers', () => {
+    expect(
+      isGeneratedRestEvent({
+        id: 'rest-treble-m1-t0-quarter',
+        kind: 'rest',
+        beat: 0,
+        duration: 'quarter',
+      }),
+    ).toBe(true);
+    expect(
+      isGeneratedRestEvent({
+        id: 'user-rest',
+        kind: 'rest',
+        beat: 0,
+        duration: 'quarter',
+      }),
+    ).toBe(false);
   });
 });

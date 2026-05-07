@@ -8,6 +8,10 @@ export function isPitchedScoreEvent(
   return event.kind === 'note' || event.kind === 'chord';
 }
 
+export function isGeneratedRestEvent(event: ScoreEvent) {
+  return event.kind === 'rest' && event.id.startsWith('rest-');
+}
+
 export function getEventPitches(event: ScoreEvent): Pitch[] {
   if (event.kind === 'note') {
     return [event.pitch];

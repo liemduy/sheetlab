@@ -10,6 +10,44 @@ import {
   tryInsertScoreEvent,
   tryUpdateScoreEvent,
 } from './editing';
+import type { Score, StaffId } from './types';
+import { getDurationTicks, getMeasureTicks } from './ticks';
+
+function getVoiceEvents(
+  score: Score,
+  staffId: StaffId = 'treble',
+  measureIndex = 0,
+) {
+  return score.parts[0]?.staves
+    .find((staff) => staff.id === staffId)
+    ?.measures.find((measure) => measure.index === measureIndex)
+    ?.voices[0]?.events;
+}
+
+function getPitchedEvents(
+  score: Score,
+  staffId: StaffId = 'treble',
+  measureIndex = 0,
+) {
+  return getVoiceEvents(score, staffId, measureIndex)?.filter(
+    (event) => event.kind !== 'rest',
+  );
+}
+
+function expectMeasureEventsFillMeasure(
+  score: Score,
+  staffId: StaffId = 'treble',
+  measureIndex = 0,
+) {
+  const events = getVoiceEvents(score, staffId, measureIndex) ?? [];
+
+  expect(
+    events.reduce(
+      (totalTicks, event) => totalTicks + getDurationTicks(event.duration),
+      0,
+    ),
+  ).toBe(getMeasureTicks(score.timeSignature));
+}
 
 describe('score editing', () => {
   it('places a note event into the requested staff and measure', () => {
@@ -26,14 +64,26 @@ describe('score editing', () => {
     });
 
     expect(
-      nextScore.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events,
+      getVoiceEvents(nextScore),
     ).toEqual([
+      {
+        id: 'rest-treble-m1-t0-quarter',
+        kind: 'rest',
+        beat: 0,
+        duration: 'quarter',
+      },
       {
         id: 'event-test-note',
         kind: 'note',
         beat: 1,
         duration: 'quarter',
         pitch: { step: 'C', octave: 4, accidental: 'sharp' },
+      },
+      {
+        id: 'rest-treble-m1-t960-half',
+        kind: 'rest',
+        beat: 2,
+        duration: 'half',
       },
     ]);
   });
@@ -51,13 +101,21 @@ describe('score editing', () => {
     });
 
     expect(
-      nextScore.parts[0]?.staves[0]?.measures[1]?.voices[0]?.events[0],
-    ).toEqual({
-      id: 'event-test-rest',
-      kind: 'rest',
-      beat: 2,
-      duration: 'half',
-    });
+      getVoiceEvents(nextScore, 'treble', 1),
+    ).toEqual([
+      {
+        id: 'rest-treble-m2-t0-half',
+        kind: 'rest',
+        beat: 0,
+        duration: 'half',
+      },
+      {
+        id: 'event-test-rest',
+        kind: 'rest',
+        beat: 2,
+        duration: 'half',
+      },
+    ]);
   });
 
   it('adds an empty measure to each staff', () => {
@@ -112,9 +170,7 @@ describe('score editing', () => {
 
     expect(result.placed).toBe(true);
     expect(
-      result.score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events.map(
-        (event) => [event.id, event.beat],
-      ),
+      getPitchedEvents(result.score)?.map((event) => [event.id, event.beat]),
     ).toEqual([
       ['event-c', 0],
       ['event-d', 1],
@@ -150,7 +206,7 @@ describe('score editing', () => {
     expect(result.placed).toBe(true);
     expect(result.score.parts[0]?.staves[0]?.measures).toHaveLength(2);
     expect(
-      result.score.parts[0]?.staves[0]?.measures[1]?.voices[0]?.events,
+      getPitchedEvents(result.score, 'treble', 1),
     ).toMatchObject([
       {
         id: 'event-3',
@@ -197,7 +253,7 @@ describe('score editing', () => {
       pitch: { step: 'C', octave: 3 },
     });
 
-    expect(countScoreEvents(score)).toBe(1);
+    expect(countScoreEvents(score)).toBe(3);
   });
 
   it('rejects events that would overflow the measure', () => {
@@ -240,11 +296,48 @@ describe('score editing', () => {
     });
 
     expect(
-      nextScore.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events,
-    ).toHaveLength(1);
+      getVoiceEvents(nextScore),
+    ).toHaveLength(3);
     expect(
-      nextScore.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events[0]?.id,
+      getVoiceEvents(nextScore)?.[0]?.id,
     ).toBe('event-replacement');
+    expectMeasureEventsFillMeasure(nextScore);
+  });
+
+  it('splits a generated rest when placing a note into an empty slot', () => {
+    const score = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'event-c',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const nextScore = placeScoreEvent(score, {
+      eventId: 'event-e',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 2,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+
+    expect(
+      getVoiceEvents(nextScore)?.map((event) => [
+        event.id,
+        event.kind,
+        event.beat,
+        event.duration,
+      ]),
+    ).toEqual([
+      ['event-c', 'note', 0, 'quarter'],
+      ['rest-treble-m1-t480-quarter', 'rest', 1, 'quarter'],
+      ['event-e', 'note', 2, 'quarter'],
+      ['rest-treble-m1-t1440-quarter', 'rest', 3, 'quarter'],
+    ]);
+    expectMeasureEventsFillMeasure(nextScore);
   });
 
   it('rejects overlapping events at different beats', () => {
@@ -286,7 +379,14 @@ describe('score editing', () => {
       measureIndex: 0,
       staffId: 'treble',
     });
-    expect(countScoreEvents(deleteScoreEvent(score, 'event-delete-me'))).toBe(0);
+    expect(getVoiceEvents(deleteScoreEvent(score, 'event-delete-me'))).toEqual([
+      {
+        id: 'rest-treble-m1-t0-whole',
+        kind: 'rest',
+        beat: 0,
+        duration: 'whole',
+      },
+    ]);
   });
 
   it('updates duration and accidental on an existing note', () => {
@@ -337,8 +437,15 @@ describe('score editing', () => {
       },
     });
     expect(
-      result.score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events,
-    ).toEqual([]);
+      getVoiceEvents(result.score, 'treble', 0),
+    ).toEqual([
+      {
+        id: 'rest-treble-m1-t0-whole',
+        kind: 'rest',
+        beat: 0,
+        duration: 'whole',
+      },
+    ]);
   });
 
   it('rejects moves that collide with another event', () => {

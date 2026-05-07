@@ -9,7 +9,18 @@ import type {
   StaffId,
 } from './types';
 import { getDurationBeats } from './durations';
-import { getPrimaryEventPitch } from './events';
+import {
+  getPrimaryEventPitch,
+  isGeneratedRestEvent,
+  isPitchedScoreEvent,
+} from './events';
+import {
+  beatToTick,
+  getDurationTicks,
+  getMeasureTicks,
+  splitTicksIntoDurations,
+  tickToBeat,
+} from './ticks';
 
 export interface PlaceScoreEventRequest {
   eventId: string;
@@ -73,6 +84,154 @@ function overlaps(candidate: ScoreEvent, existing: ScoreEvent) {
   return candidate.beat < getEventEnd(existing) && getEventEnd(candidate) > existing.beat;
 }
 
+function getEventStartTick(event: ScoreEvent) {
+  return beatToTick(event.beat);
+}
+
+function getEventEndTick(event: ScoreEvent) {
+  return getEventStartTick(event) + getDurationTicks(event.duration);
+}
+
+function eventsOverlapByTick(candidate: ScoreEvent, existing: ScoreEvent) {
+  return (
+    getEventStartTick(candidate) < getEventEndTick(existing) &&
+    getEventEndTick(candidate) > getEventStartTick(existing)
+  );
+}
+
+function createRestId(
+  staffId: StaffId,
+  measureIndex: number,
+  startTick: number,
+  duration: DurationValue,
+) {
+  return `rest-${staffId}-m${measureIndex + 1}-t${startTick}-${duration}`;
+}
+
+function createRestEventsForTickRange(
+  staffId: StaffId,
+  measureIndex: number,
+  startTick: number,
+  endTick: number,
+): ScoreEvent[] {
+  const events: ScoreEvent[] = [];
+  let cursorTick = startTick;
+
+  for (const duration of splitTicksIntoDurations(endTick - startTick)) {
+    events.push({
+      id: createRestId(staffId, measureIndex, cursorTick, duration),
+      kind: 'rest',
+      beat: tickToBeat(cursorTick),
+      duration,
+    });
+    cursorTick += getDurationTicks(duration);
+  }
+
+  return events;
+}
+
+function compactRestRuns(
+  events: ScoreEvent[],
+  staffId: StaffId,
+  measureIndex: number,
+) {
+  const compactedEvents: ScoreEvent[] = [];
+  let restRunStartTick: number | null = null;
+  let restRunEndTick: number | null = null;
+
+  function flushRestRun() {
+    if (restRunStartTick === null || restRunEndTick === null) {
+      return;
+    }
+
+    compactedEvents.push(
+      ...createRestEventsForTickRange(
+        staffId,
+        measureIndex,
+        restRunStartTick,
+        restRunEndTick,
+      ),
+    );
+    restRunStartTick = null;
+    restRunEndTick = null;
+  }
+
+  for (const event of [...events].sort((a, b) => getEventStartTick(a) - getEventStartTick(b))) {
+    if (event.kind === 'rest') {
+      if (!isGeneratedRestEvent(event)) {
+        flushRestRun();
+        compactedEvents.push(event);
+        continue;
+      }
+
+      restRunStartTick = restRunStartTick ?? getEventStartTick(event);
+      restRunEndTick = getEventEndTick(event);
+      continue;
+    }
+
+    flushRestRun();
+    compactedEvents.push(event);
+  }
+
+  flushRestRun();
+
+  return compactedEvents.sort((a, b) => getEventStartTick(a) - getEventStartTick(b));
+}
+
+function materializeMeasureEvents(
+  events: ScoreEvent[],
+  score: Score,
+  staffId: StaffId,
+  measureIndex: number,
+) {
+  const measureTicks = getMeasureTicks(score.timeSignature);
+  const sortedEvents = [...events].sort(
+    (a, b) => getEventStartTick(a) - getEventStartTick(b),
+  );
+  const materializedEvents: ScoreEvent[] = [];
+  let cursorTick = 0;
+
+  for (const event of sortedEvents) {
+    const eventStartTick = getEventStartTick(event);
+    const eventEndTick = getEventEndTick(event);
+
+    if (eventStartTick < cursorTick) {
+      throw new Error('Rhythm event overlap');
+    }
+
+    if (eventEndTick > measureTicks) {
+      throw new Error('Rhythm event overflows measure');
+    }
+
+    if (eventStartTick > cursorTick) {
+      materializedEvents.push(
+        ...createRestEventsForTickRange(
+          staffId,
+          measureIndex,
+          cursorTick,
+          eventStartTick,
+        ),
+      );
+    }
+
+    materializedEvents.push(event);
+    cursorTick = eventEndTick;
+  }
+
+  if (cursorTick < measureTicks) {
+    materializedEvents.push(
+      ...createRestEventsForTickRange(
+        staffId,
+        measureIndex,
+        cursorTick,
+        measureTicks,
+      ),
+    );
+  }
+
+  return compactRestRuns(materializedEvents, staffId, measureIndex);
+}
+
 export function tryPlaceScoreEvent(
   score: Score,
   request: PlaceScoreEventRequest,
@@ -102,15 +261,46 @@ export function tryPlaceScoreEvent(
     };
   }
 
-  const eventsAtOtherBeats = targetVoice.events.filter(
-    (event) => event.beat !== nextEvent.beat,
+  const overlappingEvents = targetVoice.events.filter((event) =>
+    eventsOverlapByTick(nextEvent, event),
+  );
+  const shouldRejectOverlap = overlappingEvents.some(
+    (event) =>
+      isPitchedScoreEvent(event) &&
+      getEventStartTick(event) !== getEventStartTick(nextEvent),
   );
 
-  if (eventsAtOtherBeats.some((event) => overlaps(nextEvent, event))) {
+  if (shouldRejectOverlap) {
     return {
       score,
       placed: false,
       reason: 'event-overlap',
+    };
+  }
+
+  let nextVoiceEvents: ScoreEvent[];
+
+  try {
+    nextVoiceEvents = materializeMeasureEvents(
+      [
+        ...targetVoice.events.filter(
+          (event) => !eventsOverlapByTick(nextEvent, event),
+        ),
+        nextEvent,
+      ],
+      score,
+      request.staffId,
+      request.measureIndex,
+    );
+  } catch (error) {
+    return {
+      score,
+      placed: false,
+      reason:
+        error instanceof Error &&
+        error.message === 'Rhythm event overflows measure'
+          ? 'measure-overflow'
+          : 'event-overlap',
     };
   }
 
@@ -130,12 +320,7 @@ export function tryPlaceScoreEvent(
                         voiceIndex === 0
                           ? {
                               ...voice,
-                              events: [
-                                ...voice.events.filter(
-                                  (event) => event.beat !== nextEvent.beat,
-                                ),
-                                nextEvent,
-                              ].sort((a, b) => a.beat - b.beat),
+                              events: nextVoiceEvents,
                             }
                           : voice,
                       ),
@@ -247,7 +432,7 @@ export function tryInsertScoreEvent(
       event,
       globalBeat: measure.index * beatsPerMeasure + event.beat,
     })) ?? [],
-  );
+  ).filter(({ event }) => isPitchedScoreEvent(event));
   const insertionSplitsExistingEvent = flatEvents.some(({ event, globalBeat }) => {
     const eventEnd = globalBeat + getDurationBeats(event.duration);
 
@@ -276,7 +461,7 @@ export function tryInsertScoreEvent(
   const maxEndBeat = reflowedEvents.reduce(
     (maxEnd, { event, globalBeat }) =>
       Math.max(maxEnd, globalBeat + getDurationBeats(event.duration)),
-    0,
+    insertGlobalBeat + insertDuration,
   );
   const requiredMeasureCount = Math.max(
     targetStaff.measures.length,
@@ -297,21 +482,26 @@ export function tryInsertScoreEvent(
                 measures: staff.measures.map((measure) => ({
                   ...measure,
                   voices: measure.voices.map((voice, voiceIndex) =>
-                    voiceIndex === 0
-                      ? {
-                          ...voice,
-                          events: reflowedEvents
-                            .filter(
-                              ({ globalBeat }) =>
-                                Math.floor(globalBeat / beatsPerMeasure) ===
+                        voiceIndex === 0
+                          ? {
+                              ...voice,
+                              events: materializeMeasureEvents(
+                                reflowedEvents
+                                  .filter(
+                                    ({ globalBeat }) =>
+                                      Math.floor(globalBeat / beatsPerMeasure) ===
+                                      measure.index,
+                                  )
+                                  .map(({ event, globalBeat }) => ({
+                                    ...event,
+                                    beat: toLocalBeat(globalBeat, beatsPerMeasure),
+                                  })),
+                                scoreWithMeasures,
+                                staff.id,
                                 measure.index,
-                            )
-                            .map(({ event, globalBeat }) => ({
-                              ...event,
-                              beat: toLocalBeat(globalBeat, beatsPerMeasure),
-                            })),
-                        }
-                      : voice,
+                              ),
+                            }
+                          : voice,
                   ),
                 })),
               }
@@ -356,7 +546,14 @@ export function deleteScoreEvent(score: Score, eventId: string): Score {
           ...measure,
           voices: measure.voices.map((voice) => ({
             ...voice,
-            events: voice.events.filter((event) => event.id !== eventId),
+            events: voice.events.some((event) => event.id === eventId)
+              ? materializeMeasureEvents(
+                  voice.events.filter((event) => event.id !== eventId),
+                  score,
+                  staff.id,
+                  measure.index,
+                )
+              : voice.events,
           })),
         })),
       })),
@@ -443,7 +640,20 @@ export function tryUpdateScoreEvent(
     ?.measures.find((measure) => measure.index === targetMeasureIndex)
     ?.voices[0];
 
-  if (targetVoice?.events.some((event) => overlaps(candidateEvent, event))) {
+  if (getEventEnd(candidateEvent) > score.timeSignature.beats) {
+    return {
+      score,
+      updated: false,
+      reason: 'measure-overflow',
+    };
+  }
+
+  if (
+    targetVoice?.events.some(
+      (event) =>
+        isPitchedScoreEvent(event) && eventsOverlapByTick(candidateEvent, event),
+    )
+  ) {
     return {
       score,
       updated: false,

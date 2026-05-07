@@ -5,6 +5,7 @@ import {
   formatEventPitchList,
   getEventPitches,
   getPrimaryEventPitch,
+  isGeneratedRestEvent,
 } from '../../domain/score/events';
 import type { EntryMode } from '../editor/editorState';
 import { formatPitch, mapPointToMusicPosition } from './interaction';
@@ -74,6 +75,37 @@ function EventGlyph({
         )} measure ${measureIndex + 1} beat ${
           event.beat + 1
         }`;
+  const visual =
+    eventPitches.length > 0 ? (
+      eventPitches.map((pitch) => {
+        const pitchY = getPitchY(pitch, staff.clef, staffIndex);
+
+        return (
+          <g key={`${pitch.step}${pitch.octave}${pitch.accidental ?? ''}`}>
+            <ellipse cx={x} cy={pitchY} rx={8.5} ry={6} />
+            {event.duration !== 'whole' ? (
+              <line x1={x + 8} x2={x + 8} y1={pitchY} y2={pitchY - 38} />
+            ) : null}
+          </g>
+        );
+      })
+    ) : (
+      <rect x={x - 8} y={y - 5} width={16} height={10} rx={2} />
+    );
+
+  if (isGeneratedRestEvent(event)) {
+    return (
+      <g
+        aria-label={label}
+        className="score-filler-rest"
+        data-duration={event.duration}
+        data-event-id={event.id}
+        data-testid="score-filler-rest"
+      >
+        {visual}
+      </g>
+    );
+  }
 
   return (
     <g
@@ -97,22 +129,7 @@ function EventGlyph({
         }
       }}
     >
-      {eventPitches.length > 0 ? (
-        eventPitches.map((pitch) => {
-          const pitchY = getPitchY(pitch, staff.clef, staffIndex);
-
-          return (
-            <g key={`${pitch.step}${pitch.octave}${pitch.accidental ?? ''}`}>
-              <ellipse cx={x} cy={pitchY} rx={8.5} ry={6} />
-              {event.duration !== 'whole' ? (
-                <line x1={x + 8} x2={x + 8} y1={pitchY} y2={pitchY - 38} />
-              ) : null}
-            </g>
-          );
-        })
-      ) : (
-        <rect x={x - 8} y={y - 5} width={16} height={10} rx={2} />
-      )}
+      {visual}
     </g>
   );
 }

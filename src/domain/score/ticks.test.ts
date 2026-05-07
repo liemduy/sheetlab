@@ -4,6 +4,7 @@ import {
   beatToTick,
   getDurationTicks,
   getMeasureTicks,
+  splitTicksIntoDurations,
   tickToBeat,
 } from './ticks';
 
@@ -27,5 +28,13 @@ describe('score ticks', () => {
     expect(beatToTick(2.5)).toBe(1200);
     expect(tickToBeat(1200)).toBe(2.5);
     expect(tickToBeat(60)).toBe(0.125);
+  });
+
+  it('splits tick ranges into supported duration values', () => {
+    expect(splitTicksIntoDurations(1440)).toEqual(['half', 'quarter']);
+    expect(splitTicksIntoDurations(300)).toEqual(['eighth', 'thirtySecond']);
+    expect(() => splitTicksIntoDurations(59)).toThrow(
+      'Cannot represent 59 ticks with supported durations',
+    );
   });
 });

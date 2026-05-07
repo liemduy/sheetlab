@@ -29,7 +29,7 @@ export function buildPlaybackTimeline(score: Score): PlaybackTimelineEvent[] {
       part.staves.flatMap((staff) =>
         staff.measures.flatMap((measure) =>
           measure.voices.flatMap((voice) =>
-            voice.events.map((event) => {
+            voice.events.filter((event) => event.kind !== 'rest').map((event) => {
               const durationBeats = getDurationBeats(event.duration);
               const startBeat = measure.index * beatsPerMeasure + event.beat;
 

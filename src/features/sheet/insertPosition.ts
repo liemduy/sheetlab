@@ -23,7 +23,11 @@ export function snapInsertPositionToEventBoundary(
   const containingEvent = targetVoice.events.find((event) => {
     const eventEnd = event.beat + getDurationBeats(event.duration);
 
-    return event.beat < position.beat && eventEnd > position.beat;
+    return (
+      event.kind !== 'rest' &&
+      event.beat < position.beat &&
+      eventEnd > position.beat
+    );
   });
 
   if (!containingEvent) {
