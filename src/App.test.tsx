@@ -145,6 +145,8 @@ describe('App editor state', () => {
 
     expect(screen.getByTestId('score-event')).toBeInTheDocument();
     expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toBeInTheDocument();
+    expect(screen.queryByTestId('score-event-delete')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
   });
 
   it('adds a second pitch at the same slot as a chord column', () => {
@@ -243,6 +245,11 @@ describe('App editor state', () => {
     fireEvent.click(overlay, middleLinePoint);
 
     expect(screen.getByLabelText('Note B4 measure 1 beat 1')).toBeInTheDocument();
+    expect(screen.queryByTestId('ghost-event')).not.toBeInTheDocument();
+    expect(screen.getByTestId('active-input-cursor')).toHaveAttribute(
+      'data-beat',
+      '1',
+    );
     expect(screen.getByTestId('score-event')).toBeInTheDocument();
     await waitFor(() => {
       expect(
@@ -301,6 +308,7 @@ describe('App editor state', () => {
       clientX: STAFF_LEFT,
       clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
     });
+    fireEvent.click(screen.getByRole('button', { name: 'Note E4 measure 1 beat 1' }));
 
     expect(screen.getByTestId('score-event-delete')).toHaveAttribute(
       'aria-label',
@@ -321,6 +329,7 @@ describe('App editor state', () => {
       clientX: STAFF_LEFT,
       clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
     });
+    fireEvent.click(screen.getByRole('button', { name: 'Note E4 measure 1 beat 1' }));
 
     expect(screen.getByTestId('score-event')).toBeInTheDocument();
 

@@ -26,7 +26,7 @@ import {
 } from './layout';
 import { snapInsertPositionToEventBoundary } from './insertPosition';
 import { getBeatX, getPitchY } from './notationGeometry';
-import { NoteGlyph, RestGlyph } from './notationGlyph';
+import { ChordGlyph, NoteGlyph, RestGlyph } from './notationGlyph';
 
 interface NotationOverlayProps {
   activeEventId?: string | null;
@@ -113,18 +113,26 @@ function EventHitTarget({
       data-event-id={event.id}
       data-testid="score-event-visual"
     >
-      {eventPitches.length > 0 ? (
-        eventPitches.map((pitch) => (
-          <NoteGlyph
-            key={`${pitch.step}${pitch.octave}${pitch.accidental ?? ''}`}
-            duration={event.duration}
-            pitch={pitch}
-            staffIndex={staffIndex}
-            variant="placed"
-            x={x}
-            y={getPitchY(pitch, staff.clef, staffIndex)}
-          />
-        ))
+      {eventPitches.length > 1 ? (
+        <ChordGlyph
+          duration={event.duration}
+          notes={eventPitches.map((pitch) => ({
+            pitch,
+            y: getPitchY(pitch, staff.clef, staffIndex),
+          }))}
+          staffIndex={staffIndex}
+          variant="placed"
+          x={x}
+        />
+      ) : eventPitches.length === 1 ? (
+        <NoteGlyph
+          duration={event.duration}
+          pitch={eventPitches[0]}
+          staffIndex={staffIndex}
+          variant="placed"
+          x={x}
+          y={getPitchY(eventPitches[0], staff.clef, staffIndex)}
+        />
       ) : (
         <RestGlyph duration={event.duration} variant="placed" x={x} y={y} />
       )}
@@ -468,8 +476,6 @@ function ActiveInputCursor({
     score.timeSignature.beats,
   );
   const yRange = getTimelineYRange(score, cursor.staffIndex);
-  const pitchY = getPitchY(cursor.pitchPreview, staff.clef, cursor.staffIndex);
-
   return (
     <g
       className={`active-input-cursor active-input-cursor-${cursor.mode}`}
@@ -485,15 +491,6 @@ function ActiveInputCursor({
         x2={x}
         y1={yRange.y1}
         y2={yRange.y2}
-      />
-      <rect
-        className="active-input-cursor-note-box"
-        data-testid="active-input-cursor-note-box"
-        height={28}
-        rx={7}
-        width={32}
-        x={x - 16}
-        y={pitchY - 14}
       />
     </g>
   );
@@ -591,10 +588,10 @@ export function NotationOverlay({
           .flatMap((measure) => measure.voices)
           .flatMap((voice) => voice.events)
           .find((event) => event.id === dragState.eventId) ?? null;
-  const snappedHoverPosition =
-    inputCursorToMusicPosition(inputCursor, score) ??
-    (hoverPosition ? snapPositionToInputGrid(hoverPosition, duration, score) : null);
-  const shouldShowInputPreview = !dragState && !deleteHoverEventId;
+  const snappedHoverPosition = hoverPosition
+    ? snapPositionToInputGrid(hoverPosition, duration, score)
+    : null;
+  const shouldShowInputPreview = !dragState && !deleteHoverEventId && !selectedEventId;
   const displayHoverPosition =
     shouldShowInputPreview && placementMode === 'insert' && snappedHoverPosition
       ? snapInsertPositionToEventBoundary(score, snappedHoverPosition)

@@ -374,6 +374,37 @@ describe('StaffRenderer', () => {
     expect(
       container.querySelectorAll('[data-event-id="ui-c-major"] .score-event-notehead'),
     ).toHaveLength(3);
+    expect(
+      container.querySelectorAll('[data-event-id="ui-c-major"] .score-event-stem'),
+    ).toHaveLength(1);
+  });
+
+  it('offsets adjacent chord seconds instead of stacking noteheads directly', () => {
+    const score = createEmptyScore('treble', { measureCount: 1 });
+    const chord: ChordEvent = {
+      id: 'ui-adjacent-second',
+      kind: 'chord',
+      beat: 0,
+      duration: 'quarter',
+      pitches: [
+        { step: 'B', octave: 3 },
+        { step: 'C', octave: 4 },
+      ],
+    };
+
+    score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events.push(chord);
+
+    const { container } = render(<StaffRenderer score={score} />);
+    const noteheadXs = [
+      ...container.querySelectorAll(
+        '[data-event-id="ui-adjacent-second"] .score-event-notehead',
+      ),
+    ].map((element) => element.getAttribute('cx'));
+
+    expect(new Set(noteheadXs).size).toBe(2);
+    expect(
+      container.querySelectorAll('[data-event-id="ui-adjacent-second"] .score-event-stem'),
+    ).toHaveLength(1);
   });
 
   it('renders a delete target for the selected event', () => {
@@ -401,7 +432,7 @@ describe('StaffRenderer', () => {
     expect(onDeleteEvent).toHaveBeenCalledWith('treble-m1-e1');
   });
 
-  it('hides note-input preview while the delete target is hovered', () => {
+  it('hides note-input preview while an event is selected for deletion', () => {
     render(
       <StaffRenderer
         hoverPosition={trebleHover}
@@ -419,18 +450,9 @@ describe('StaffRenderer', () => {
       />,
     );
 
-    expect(screen.getByTestId('ghost-event')).toBeInTheDocument();
-    expect(screen.getByTestId('active-input-cursor')).toBeInTheDocument();
-
-    fireEvent.mouseEnter(screen.getByTestId('score-event-delete'));
-
     expect(screen.queryByTestId('ghost-event')).not.toBeInTheDocument();
     expect(screen.queryByTestId('active-input-cursor')).not.toBeInTheDocument();
-
-    fireEvent.mouseLeave(screen.getByTestId('score-event-delete'));
-
-    expect(screen.getByTestId('ghost-event')).toBeInTheDocument();
-    expect(screen.getByTestId('active-input-cursor')).toBeInTheDocument();
+    expect(screen.getByTestId('score-event-delete')).toBeInTheDocument();
   });
 
   it('emits a move event when a placed note is dragged to a new grid point', () => {

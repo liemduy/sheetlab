@@ -56,7 +56,7 @@ import {
 } from './features/persistence/projectStorage';
 
 function App() {
-  type SelectionSource = 'created' | 'manual';
+  type SelectionSource = 'manual';
 
   const [toolState, setToolState] = useState<EditorToolState>(
     DEFAULT_EDITOR_TOOL_STATE,
@@ -241,6 +241,7 @@ function App() {
         result.score,
         toolState.placementMode === 'insert' ? 'Event inserted' : 'Event placed',
       );
+      setHoverPosition(null);
       setInputCursor(
         advanceInputCursor(
           result.score,
@@ -252,8 +253,8 @@ function App() {
           ),
         ),
       );
-      setSelectedEventId(eventId);
-      setSelectedEventSource('created');
+      setSelectedEventId(null);
+      setSelectedEventSource(null);
     } else {
       setEditorMessage(`Cannot place: ${result.reason}`);
     }
@@ -288,7 +289,7 @@ function App() {
     if (result.updated) {
       commitScoreChange(result.score, 'Event moved');
       setSelectedEventId(eventId);
-      setSelectedEventSource('created');
+      setSelectedEventSource('manual');
     } else {
       setEditorMessage(`Cannot move: ${result.reason}`);
     }

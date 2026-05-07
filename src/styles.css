@@ -404,13 +404,6 @@ button {
   vector-effect: non-scaling-stroke;
 }
 
-.active-input-cursor-note-box {
-  fill: rgb(43 103 255 / 5%);
-  stroke: rgb(43 103 255 / 50%);
-  stroke-width: 1.2;
-  vector-effect: non-scaling-stroke;
-}
-
 .measure-guide {
   stroke: transparent;
   pointer-events: none;

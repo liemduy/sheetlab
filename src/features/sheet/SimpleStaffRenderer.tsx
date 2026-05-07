@@ -20,6 +20,7 @@ import {
   getStaffTop,
 } from './layout';
 import { getBeatX, getPitchY } from './notationGeometry';
+import { ChordGlyph, NoteGlyph, RestGlyph } from './notationGlyph';
 
 interface StaffRendererProps {
   score: Score;
@@ -76,21 +77,28 @@ function EventGlyph({
           event.beat + 1
         }`;
   const visual =
-    eventPitches.length > 0 ? (
-      eventPitches.map((pitch) => {
-        const pitchY = getPitchY(pitch, staff.clef, staffIndex);
-
-        return (
-          <g key={`${pitch.step}${pitch.octave}${pitch.accidental ?? ''}`}>
-            <ellipse cx={x} cy={pitchY} rx={8.5} ry={6} />
-            {event.duration !== 'whole' ? (
-              <line x1={x + 8} x2={x + 8} y1={pitchY} y2={pitchY - 38} />
-            ) : null}
-          </g>
-        );
-      })
+    eventPitches.length > 1 ? (
+      <ChordGlyph
+        duration={event.duration}
+        notes={eventPitches.map((pitch) => ({
+          pitch,
+          y: getPitchY(pitch, staff.clef, staffIndex),
+        }))}
+        staffIndex={staffIndex}
+        variant="placed"
+        x={x}
+      />
+    ) : eventPitches.length === 1 ? (
+      <NoteGlyph
+        duration={event.duration}
+        pitch={eventPitches[0]}
+        staffIndex={staffIndex}
+        variant="placed"
+        x={x}
+        y={getPitchY(eventPitches[0], staff.clef, staffIndex)}
+      />
     ) : (
-      <rect x={x - 8} y={y - 5} width={16} height={10} rx={2} />
+      <RestGlyph duration={event.duration} variant="placed" x={x} y={y} />
     );
 
   if (isGeneratedRestEvent(event)) {

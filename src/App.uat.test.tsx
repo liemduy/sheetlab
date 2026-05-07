@@ -76,6 +76,7 @@ describe('user acceptance song flows', () => {
     );
 
     clickScoreNote(overlay, 1, 1, { step: 'A', octave: 4 });
+    fireEvent.click(screen.getByRole('button', { name: 'Note A4 measure 2 beat 2' }));
     fireEvent.click(screen.getByTestId('score-event-delete'));
     clickScoreNote(overlay, 1, 1, { step: 'E', octave: 4 });
     clickDuration('Half');
@@ -124,6 +125,7 @@ describe('user acceptance song flows', () => {
     clickPlacement('Place');
 
     clickScoreNote(overlay, 0, 4 - 1, { step: 'A', octave: 5 });
+    fireEvent.click(screen.getByRole('button', { name: 'Chord G5 A5 measure 1 beat 4' }));
     fireEvent.click(screen.getByTestId('score-event-delete'));
     clickScoreNote(overlay, 0, 3, { step: 'G', octave: 5 });
 
