@@ -140,6 +140,35 @@ describe('App editor state', () => {
     expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toBeInTheDocument();
   });
 
+  it('advances the input cursor after placing notes by the active duration', () => {
+    render(<App />);
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'treble M1 B2 E4',
+      ),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Half' }));
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 2, 4),
+      clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
+    });
+
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'treble M2 B1 G4',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('previews and places the note the user points at on a real-sized sheet', async () => {
     const { container } = render(<App />);
 
@@ -158,10 +187,10 @@ describe('App editor state', () => {
       'note',
     );
     expect(
-      within(screen.getByLabelText('Current editor state')).getByText(
+      within(screen.getByLabelText('Current editor state')).getAllByText(
         'treble M1 B1 B4',
-      ),
-    ).toBeInTheDocument();
+      ).length,
+    ).toBeGreaterThan(0);
     const ghostNoteHead = screen
       .getByTestId('ghost-event')
       .querySelector('ellipse');

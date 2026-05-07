@@ -24,6 +24,13 @@ import {
   PLACEMENT_MODE_LABEL,
   SCORE_TYPE_LABEL,
 } from './features/editor/editorState';
+import {
+  advanceInputCursor,
+  createInputCursorFromPosition,
+  formatInputCursor,
+  updateInputCursorDuration,
+} from './features/editor/inputCursor';
+import type { InputCursor } from './features/editor/inputCursor';
 import type {
   DurationValue,
   PageSize,
@@ -54,6 +61,7 @@ function App() {
     DEFAULT_EDITOR_TOOL_STATE,
   );
   const [hoverPosition, setHoverPosition] = useState<MusicPosition | null>(null);
+  const [inputCursor, setInputCursor] = useState<InputCursor | null>(null);
   const [score, setScore] = useState(() =>
     createEmptyScore(DEFAULT_EDITOR_TOOL_STATE.scoreType, {
       tempo: DEFAULT_EDITOR_TOOL_STATE.tempo,
@@ -118,7 +126,20 @@ function App() {
 
   function handleDurationChange(duration: DurationValue) {
     updateToolState({ duration });
+    setInputCursor((currentCursor) =>
+      updateInputCursorDuration(currentCursor, duration),
+    );
     updateSelectedEvent({ duration }, 'Event duration updated');
+  }
+
+  function handleHoverPositionChange(position: MusicPosition | null) {
+    setHoverPosition(position);
+
+    if (position) {
+      setInputCursor(
+        createInputCursorFromPosition(position, toolState.duration, 'note-input'),
+      );
+    }
   }
 
   function handleScoreTypeChange(scoreType: ScoreType) {
@@ -131,6 +152,7 @@ function App() {
       'New score',
     );
     setHoverPosition(null);
+    setInputCursor(null);
     setSelectedEventId(null);
     setSelectedEventSource(null);
     scrollNotationIntoView();
@@ -146,6 +168,7 @@ function App() {
       'Score reset',
     );
     setHoverPosition(null);
+    setInputCursor(null);
     setSelectedEventId(null);
     setSelectedEventSource(null);
     scrollNotationIntoView();
@@ -212,6 +235,16 @@ function App() {
         result.score,
         toolState.placementMode === 'insert' ? 'Event inserted' : 'Event placed',
       );
+      setInputCursor(
+        advanceInputCursor(
+          result.score,
+          createInputCursorFromPosition(
+            placementPosition,
+            toolState.duration,
+            'note-input',
+          ),
+        ),
+      );
       setSelectedEventId(eventId);
       setSelectedEventSource('created');
     } else {
@@ -266,6 +299,7 @@ function App() {
     setScore(previousScore);
     setSelectedEventId(null);
     setSelectedEventSource(null);
+    setInputCursor(null);
     setEditorMessage('Undo');
   }
 
@@ -281,6 +315,7 @@ function App() {
     setScore(nextScore);
     setSelectedEventId(null);
     setSelectedEventSource(null);
+    setInputCursor(null);
     setEditorMessage('Redo');
   }
 
@@ -305,6 +340,7 @@ function App() {
     }));
     setSelectedEventId(null);
     setSelectedEventSource(null);
+    setInputCursor(null);
     setHoverPosition(null);
   }
 
@@ -326,6 +362,7 @@ function App() {
       }));
       setSelectedEventId(null);
       setSelectedEventSource(null);
+      setInputCursor(null);
       setHoverPosition(null);
     } catch {
       setEditorMessage('Invalid JSON project');
@@ -732,6 +769,10 @@ function App() {
                   : 'None'}
               </dd>
             </div>
+            <div>
+              <dt>Cursor</dt>
+              <dd>{formatInputCursor(inputCursor)}</dd>
+            </div>
           </dl>
         </aside>
 
@@ -758,7 +799,7 @@ function App() {
                 placementMode={toolState.placementMode}
                 selectedEventId={selectedEventId}
                 score={score}
-                onHoverPositionChange={setHoverPosition}
+                onHoverPositionChange={handleHoverPositionChange}
                 onPlaceAtPosition={handlePlaceAtPosition}
                 onDeleteEvent={handleDeleteEvent}
                 onMoveEvent={handleMoveEvent}
