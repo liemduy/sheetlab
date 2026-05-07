@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import App from './App';
 import type { Clef, Pitch } from './domain/score/types';
 import { getBeatX, getPitchY } from './features/sheet/notationGeometry';
@@ -76,7 +76,7 @@ describe('user acceptance song flows', () => {
     );
 
     clickScoreNote(overlay, 1, 1, { step: 'A', octave: 4 });
-    fireEvent.mouseDown(screen.getByTestId('score-event-delete'));
+    fireEvent.click(screen.getByTestId('score-event-delete'));
     clickScoreNote(overlay, 1, 1, { step: 'E', octave: 4 });
     clickDuration('Half');
     clickScoreNote(overlay, 1, 2, { step: 'E', octave: 4 });
@@ -124,7 +124,7 @@ describe('user acceptance song flows', () => {
     clickPlacement('Place');
 
     clickScoreNote(overlay, 0, 4 - 1, { step: 'A', octave: 5 });
-    fireEvent.mouseDown(screen.getByTestId('score-event-delete'));
+    fireEvent.click(screen.getByTestId('score-event-delete'));
     clickScoreNote(overlay, 0, 3, { step: 'G', octave: 5 });
 
     clickDuration('Half');
@@ -181,5 +181,76 @@ describe('user acceptance song flows', () => {
     expectNote('Note G2 measure 2 beat 1', 'whole');
     expectNote('Note F2 measure 3 beat 1', 'whole');
     expectNote('Note C3 measure 4 beat 1', 'whole');
+  });
+
+  it('exports a PDF after a user creates a piano score', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      blob: vi
+        .fn()
+        .mockResolvedValue(new Blob(['%PDF-'], { type: 'application/pdf' })),
+      ok: true,
+    });
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined);
+    const createObjectUrlSpy = vi.fn().mockReturnValue('blob:sheetlab-uat-pdf');
+    const revokeObjectUrlSpy = vi.fn();
+    const originalCreateObjectUrl = URL.createObjectURL;
+    const originalRevokeObjectUrl = URL.revokeObjectURL;
+
+    vi.stubGlobal('fetch', fetchSpy);
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: createObjectUrlSpy,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: revokeObjectUrlSpy,
+    });
+
+    render(<App />);
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Score type' }), {
+      target: { value: 'grand' },
+    });
+    const overlay = screen.getByTestId('staff-renderer');
+
+    clickScoreNote(overlay, 0, 0, { step: 'C', octave: 5 });
+    clickDuration('Whole');
+    clickScoreNote(overlay, 0, 0, { step: 'C', octave: 3 }, 'bass', 1);
+    fireEvent.click(screen.getByRole('button', { name: 'Export PDF' }));
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith(
+        '/api/export-pdf',
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(revokeObjectUrlSpy).toHaveBeenCalledWith('blob:sheetlab-uat-pdf');
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'PDF downloaded',
+      ),
+    ).toBeInTheDocument();
+
+    vi.unstubAllGlobals();
+    if (originalCreateObjectUrl) {
+      Object.defineProperty(URL, 'createObjectURL', {
+        configurable: true,
+        value: originalCreateObjectUrl,
+      });
+    } else {
+      Reflect.deleteProperty(URL, 'createObjectURL');
+    }
+    if (originalRevokeObjectUrl) {
+      Object.defineProperty(URL, 'revokeObjectURL', {
+        configurable: true,
+        value: originalRevokeObjectUrl,
+      });
+    } else {
+      Reflect.deleteProperty(URL, 'revokeObjectURL');
+    }
+    clickSpy.mockRestore();
   });
 });
