@@ -154,7 +154,7 @@ describe('score rhythm normalization', () => {
     });
     const voices = normalizeScoreRhythm(score);
 
-    expect(voices).toHaveLength(8);
+    expect(voices).toHaveLength(32);
     voices.forEach((voice) => {
       expect(voice.totalTicks).toBe(voice.measureTicks);
       expect(() => assertNormalizedVoiceIsFull(voice)).not.toThrow();

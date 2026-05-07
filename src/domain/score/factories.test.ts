@@ -7,6 +7,13 @@ import {
 import type { ChordEvent } from './types';
 
 describe('score factories', () => {
+  it('creates new scores with enough default measures for multiple systems', () => {
+    const score = createEmptyScore('grand');
+
+    expect(score.parts[0]?.staves[0]?.measures).toHaveLength(16);
+    expect(score.parts[0]?.staves[1]?.measures).toHaveLength(16);
+  });
+
   it('creates an empty treble score with one treble staff', () => {
     const score = createEmptyScore('treble', {
       id: 'score-test-treble',

@@ -23,9 +23,13 @@ import type { MusicPosition } from './interaction';
 import {
   STAFF_LEFT,
   STAFF_LINE_SPACING,
+  MEASURES_PER_SYSTEM,
   SVG_WIDTH,
+  getLocalMeasureIndex,
   getScoreStaffGap,
+  getScoreSystemGap,
   getMeasureX,
+  getMeasureRight,
   getStaffRight,
   getStaffTop,
 } from './layout';
@@ -158,6 +162,7 @@ function EventHitTarget({
   staff,
   staffGap,
   staffIndex,
+  systemGap,
 }: {
   activeEventId?: string | null;
   beatsPerMeasure: number;
@@ -180,6 +185,7 @@ function EventHitTarget({
   staff: Staff;
   staffGap: number;
   staffIndex: number;
+  systemGap: number;
 }) {
   const eventPitches = getEventPitches(event).map((pitch) =>
     clampPitchToClefRange(pitch, staff.clef),
@@ -190,8 +196,16 @@ function EventHitTarget({
     : null;
   const fallbackY =
     displayPrimaryPitch
-      ? getPitchY(displayPrimaryPitch, staff.clef, staffIndex, staffGap)
-      : getStaffTop(staffIndex, staffGap) + STAFF_LINE_SPACING * 2;
+      ? getPitchY(
+          displayPrimaryPitch,
+          staff.clef,
+          staffIndex,
+          staffGap,
+          measureIndex,
+          systemGap,
+        )
+      : getStaffTop(staffIndex, staffGap, measureIndex, systemGap) +
+        STAFF_LINE_SPACING * 2;
   const x = eventLayout?.x ?? getBeatX(measureIndex, event.beat, beatsPerMeasure);
   const y = eventLayout?.y ?? fallbackY;
   const label =
@@ -220,7 +234,14 @@ function EventHitTarget({
         ? eventPitches[0]
         : null;
   const selectedPitchY = selectedPitch
-    ? getPitchY(selectedPitch, staff.clef, staffIndex, staffGap)
+    ? getPitchY(
+        selectedPitch,
+        staff.clef,
+        staffIndex,
+        staffGap,
+        measureIndex,
+        systemGap,
+      )
     : null;
   const deleteLabel =
     selectedPitch && event.kind === 'chord'
@@ -236,7 +257,14 @@ function EventHitTarget({
 
     return eventPitches.reduce(
       (closest, pitch, pitchIndex) => {
-        const pitchY = getPitchY(pitch, staff.clef, staffIndex, staffGap);
+        const pitchY = getPitchY(
+          pitch,
+          staff.clef,
+          staffIndex,
+          staffGap,
+          measureIndex,
+          systemGap,
+        );
         const distance = Math.abs(point.y - pitchY);
 
         return distance < closest.distance
@@ -279,7 +307,7 @@ function EventHitTarget({
       staffId: staff.id,
       staffIndex,
       x,
-      y: getPitchY(pitch, staff.clef, staffIndex, staffGap),
+      y: getPitchY(pitch, staff.clef, staffIndex, staffGap, measureIndex, systemGap),
     };
   }
 
@@ -435,14 +463,19 @@ function GhostEvent({
     return null;
   }
 
+  const systemGap = getScoreSystemGap(score);
   const x = position.x;
   const noteY = getPitchY(
     position.pitch,
     staff.clef,
     position.staffIndex,
     staffGap,
+    position.measureIndex,
+    systemGap,
   );
-  const restY = getStaffTop(position.staffIndex, staffGap) + STAFF_LINE_SPACING * 2;
+  const restY =
+    getStaffTop(position.staffIndex, staffGap, position.measureIndex, systemGap) +
+    STAFF_LINE_SPACING * 2;
 
   return (
     <g
@@ -498,7 +531,12 @@ function InsertionCursor({
     position.beat,
     score.timeSignature.beats,
   );
-  const yRange = getTimelineYRange(score, position.staffIndex, staffGap);
+  const yRange = getTimelineYRange(
+    score,
+    position.staffIndex,
+    staffGap,
+    position.measureIndex,
+  );
 
   return (
     <line
@@ -512,26 +550,48 @@ function InsertionCursor({
   );
 }
 
-function getTimelineYRange(score: Score, staffIndex: number, staffGap: number) {
+function getTimelineYRange(
+  score: Score,
+  staffIndex: number,
+  staffGap: number,
+  measureIndex: number,
+) {
   const staves = score.parts[0]?.staves ?? [];
+  const systemGap = getScoreSystemGap(score);
 
   if (score.type === 'grand' && staves.length > 1) {
     return {
-      y1: getStaffTop(0, staffGap) - 36,
-      y2: getStaffTop(staves.length - 1, staffGap) + STAFF_LINE_SPACING * 4 + 36,
+      y1: getStaffTop(0, staffGap, measureIndex, systemGap) - 36,
+      y2:
+        getStaffTop(staves.length - 1, staffGap, measureIndex, systemGap) +
+        STAFF_LINE_SPACING * 4 +
+        36,
     };
   }
 
   return {
-    y1: getStaffTop(staffIndex, staffGap) - 36,
-    y2: getStaffTop(staffIndex, staffGap) + STAFF_LINE_SPACING * 4 + 36,
+    y1: getStaffTop(staffIndex, staffGap, measureIndex, systemGap) - 36,
+    y2:
+      getStaffTop(staffIndex, staffGap, measureIndex, systemGap) +
+      STAFF_LINE_SPACING * 4 +
+      36,
   };
 }
 
-function getStaffSlotYRange(staffIndex: number, staffGap: number) {
+function getStaffSlotYRange(
+  score: Score,
+  staffIndex: number,
+  staffGap: number,
+  measureIndex: number,
+) {
+  const systemGap = getScoreSystemGap(score);
+
   return {
-    y1: getStaffTop(staffIndex, staffGap) - 16,
-    y2: getStaffTop(staffIndex, staffGap) + STAFF_LINE_SPACING * 4 + 16,
+    y1: getStaffTop(staffIndex, staffGap, measureIndex, systemGap) - 16,
+    y2:
+      getStaffTop(staffIndex, staffGap, measureIndex, systemGap) +
+      STAFF_LINE_SPACING * 4 +
+      16,
   };
 }
 
@@ -550,7 +610,13 @@ function StaffHoverGuide({
     return null;
   }
 
-  const staffTop = getStaffTop(position.staffIndex, staffGap);
+  const systemGap = getScoreSystemGap(score);
+  const staffTop = getStaffTop(
+    position.staffIndex,
+    staffGap,
+    position.measureIndex,
+    systemGap,
+  );
   const measureCount = staff.measures.length;
 
   return (
@@ -562,7 +628,7 @@ function StaffHoverGuide({
       <rect
         height={STAFF_LINE_SPACING * 4 + 34}
         rx={8}
-        width={getStaffRight(measureCount) - STAFF_LEFT}
+        width={getStaffRight(measureCount, position.measureIndex) - STAFF_LEFT}
         x={STAFF_LEFT}
         y={staffTop - 17}
       />
@@ -575,15 +641,17 @@ function InvalidMeasureWarning({
   staffId,
   staffIndex,
   staffGap,
+  systemGap,
 }: {
   measureIndex: number;
   staffId: Staff['id'];
   staffIndex: number;
   staffGap: number;
+  systemGap: number;
 }) {
   const x1 = getMeasureX(measureIndex);
-  const x2 = getMeasureX(measureIndex + 1);
-  const staffTop = getStaffTop(staffIndex, staffGap);
+  const x2 = getMeasureRight(measureIndex);
+  const staffTop = getStaffTop(staffIndex, staffGap, measureIndex, systemGap);
 
   return (
     <g
@@ -672,7 +740,12 @@ function RhythmSlots({
   const slotWidth = activeSlotLayout
     ? Math.max(18, activeSlotLayout.maxX - activeSlotLayout.minX + slotPaddingX * 2)
     : Math.max(6, fallbackSlotEndX - fallbackSlotStartX);
-  const yRange = getStaffSlotYRange(inputCursor.staffIndex, staffGap);
+  const yRange = getStaffSlotYRange(
+    score,
+    inputCursor.staffIndex,
+    staffGap,
+    inputCursor.measureIndex,
+  );
 
   return (
     <g className="rhythm-slots" data-testid="rhythm-slots">
@@ -724,10 +797,19 @@ function inputCursorToMusicPosition(
     cursor.beat,
     score.timeSignature.beats,
   );
+  const systemGap = getScoreSystemGap(score);
   const y =
     cursor.mode === 'note-input'
-      ? getPitchY(cursor.pitchPreview, staff.clef, cursor.staffIndex, staffGap)
-      : getStaffTop(cursor.staffIndex, staffGap) + STAFF_LINE_SPACING * 2;
+      ? getPitchY(
+          cursor.pitchPreview,
+          staff.clef,
+          cursor.staffIndex,
+          staffGap,
+          cursor.measureIndex,
+          systemGap,
+        )
+      : getStaffTop(cursor.staffIndex, staffGap, cursor.measureIndex, systemGap) +
+        STAFF_LINE_SPACING * 2;
 
   return {
     beat: cursor.beat,
@@ -821,6 +903,8 @@ export function NotationOverlay({
     previewPosition: MusicPosition | null;
     startClientX: number;
     startClientY: number;
+    startSvgX: number;
+    startSvgY: number;
   } | null>(null);
   const [deleteHoverEventId, setDeleteHoverEventId] = useState<string | null>(
     null,
@@ -828,6 +912,7 @@ export function NotationOverlay({
   const suppressNextPlaceRef = useRef(false);
   const staves = score.parts[0]?.staves ?? [];
   const staffGap = getScoreStaffGap(score);
+  const systemGap = getScoreSystemGap(score);
   const invalidMeasureKeySet = new Set(invalidMeasureKeys);
   const ariaLabel =
     score.type === 'grand' ? 'Grand staff notation system' : 'Treble staff notation system';
@@ -900,8 +985,23 @@ export function NotationOverlay({
       return null;
     }
 
-    const pitch = mapStaffYToPitch(point.y, staff.clef, targetStaffIndex, staffGap);
-    const y = getPitchY(pitch, staff.clef, targetStaffIndex, staffGap);
+    const targetMeasureIndex = mappedPosition?.measureIndex ?? origin.measureIndex;
+    const pitch = mapStaffYToPitch(
+      point.y,
+      staff.clef,
+      targetStaffIndex,
+      staffGap,
+      targetMeasureIndex,
+      systemGap,
+    );
+    const y = getPitchY(
+      pitch,
+      staff.clef,
+      targetStaffIndex,
+      staffGap,
+      targetMeasureIndex,
+      systemGap,
+    );
 
     return {
       ...origin,
@@ -910,6 +1010,7 @@ export function NotationOverlay({
       pitch,
       staffId: staff.id,
       staffIndex: targetStaffIndex,
+      measureIndex: targetMeasureIndex,
       y,
     };
   }
@@ -925,11 +1026,17 @@ export function NotationOverlay({
         const position = getDragMusicPosition(event);
 
         if (dragState) {
-          const movement = Math.hypot(
+          const point = getSvgPoint(event, svgHeight);
+          const clientMovement = Math.hypot(
             event.clientX - dragState.startClientX,
             event.clientY - dragState.startClientY,
           );
-          const hasMoved = dragState.hasMoved || movement > 3;
+          const svgMovement = Math.hypot(
+            point.x - dragState.startSvgX,
+            point.y - dragState.startSvgY,
+          );
+          const hasMoved =
+            dragState.hasMoved || Math.max(clientMovement, svgMovement) > 3;
 
           setDragState({
             ...dragState,
@@ -1015,16 +1122,24 @@ export function NotationOverlay({
           staffGap={staffGap}
         />
       ) : null}
-      {score.type === 'grand' && staves.length > 1 ? (
-        <line
-          className="measure-guide"
-          data-testid="grand-staff-connector"
-          x1={STAFF_LEFT}
-          x2={STAFF_LEFT}
-          y1={getStaffTop(0, staffGap)}
-          y2={getStaffTop(staves.length - 1, staffGap) + STAFF_LINE_SPACING * 4}
-        />
-      ) : null}
+      {score.type === 'grand' && staves.length > 1
+        ? (staves[0]?.measures ?? [])
+            .filter((measure) => getLocalMeasureIndex(measure.index) === 0)
+            .map((measure) => (
+              <line
+                key={`grand-${measure.index}`}
+                className="measure-guide"
+                data-testid="grand-staff-connector"
+                x1={STAFF_LEFT}
+                x2={STAFF_LEFT}
+                y1={getStaffTop(0, staffGap, measure.index, systemGap)}
+                y2={
+                  getStaffTop(staves.length - 1, staffGap, measure.index, systemGap) +
+                  STAFF_LINE_SPACING * 4
+                }
+              />
+            ))
+        : null}
       {displayHoverPosition ? (
         <>
           {placementMode === 'insert' ? (
@@ -1054,23 +1169,46 @@ export function NotationOverlay({
                 staffGap={staffGap}
                 staffId={staff.id}
                 staffIndex={staffIndex}
+                systemGap={systemGap}
               />
             ) : null,
           )}
-          {Array.from(
-            { length: staff.measures.length + 1 },
-            (_, barlineIndex) => (
+          {staff.measures.flatMap((measure, measureOffset) => {
+            const staffTop = getStaffTop(
+              staffIndex,
+              staffGap,
+              measure.index,
+              systemGap,
+            );
+            const lines = [
+              {
+                key: `start-${measure.index}`,
+                x: getMeasureX(measure.index),
+              },
+            ];
+            const isSystemEnd =
+              getLocalMeasureIndex(measure.index) === MEASURES_PER_SYSTEM - 1 ||
+              measureOffset === staff.measures.length - 1;
+
+            if (isSystemEnd) {
+              lines.push({
+                key: `end-${measure.index}`,
+                x: getMeasureRight(measure.index),
+              });
+            }
+
+            return lines.map((line) => (
               <line
-                key={barlineIndex}
+                key={line.key}
                 className="measure-guide"
                 data-testid={`measure-barline-${staff.id}`}
-                x1={getMeasureX(barlineIndex)}
-                x2={getMeasureX(barlineIndex)}
-                y1={getStaffTop(staffIndex, staffGap)}
-                y2={getStaffTop(staffIndex, staffGap) + STAFF_LINE_SPACING * 4}
+                x1={line.x}
+                x2={line.x}
+                y1={staffTop}
+                y2={staffTop + STAFF_LINE_SPACING * 4}
               />
-            ),
-          )}
+            ));
+          })}
           {staff.measures.flatMap((measure) =>
             measure.voices[0]?.events.map((event) => (
               <EventHitTarget
@@ -1083,7 +1221,9 @@ export function NotationOverlay({
                 measureIndex={measure.index}
                 onDeleteEvent={onDeleteEvent}
                 onDeleteHoverChange={setDeleteHoverEventId}
-                onStartDrag={(eventId, pitchIndex, originPosition, dragEvent) =>
+                onStartDrag={(eventId, pitchIndex, originPosition, dragEvent) => {
+                  const startPoint = getNestedSvgPoint(dragEvent);
+
                   setDragState({
                     eventId,
                     hasMoved: false,
@@ -1092,8 +1232,10 @@ export function NotationOverlay({
                     previewPosition: null,
                     startClientX: dragEvent.clientX,
                     startClientY: dragEvent.clientY,
-                  })
-                }
+                    startSvgX: startPoint.x,
+                    startSvgY: startPoint.y,
+                  });
+                }}
                 onSelectEvent={onSelectEvent}
                 placementMode={placementMode}
                 selectedEventId={selectedEventId}
@@ -1101,6 +1243,7 @@ export function NotationOverlay({
                 staff={staff}
                 staffGap={staffGap}
                 staffIndex={staffIndex}
+                systemGap={systemGap}
               />
             )),
           )}
@@ -1120,8 +1263,24 @@ export function NotationOverlay({
             playbackBeat % score.timeSignature.beats,
             score.timeSignature.beats,
           )}
-          y1={getStaffTop(0, staffGap) - 24}
-          y2={getStaffTop(staves.length - 1, staffGap) + STAFF_LINE_SPACING * 4 + 24}
+          y1={
+            getStaffTop(
+              0,
+              staffGap,
+              Math.floor(playbackBeat / score.timeSignature.beats),
+              systemGap,
+            ) - 24
+          }
+          y2={
+            getStaffTop(
+              staves.length - 1,
+              staffGap,
+              Math.floor(playbackBeat / score.timeSignature.beats),
+              systemGap,
+            ) +
+            STAFF_LINE_SPACING * 4 +
+            24
+          }
         />
       ) : null}
       {dragState?.previewPosition && draggedEvent ? (

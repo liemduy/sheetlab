@@ -71,7 +71,7 @@ export function createEmptyScore(
   scoreType: ScoreType,
   options: CreateScoreOptions = {},
 ): Score {
-  const measureCount = options.measureCount ?? 4;
+  const measureCount = options.measureCount ?? 16;
 
   return {
     id: options.id ?? `score-${scoreType}-v0-1`,

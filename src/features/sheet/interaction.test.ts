@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { createEmptyScore } from '../../domain/score/factories';
-import { STAFF_LEFT, getMeasureContentLeft, getStaffTop } from './layout';
+import {
+  MEASURES_PER_SYSTEM,
+  STAFF_LEFT,
+  STAFF_GAP,
+  getMeasureContentLeft,
+  getScoreSystemGap,
+  getStaffTop,
+} from './layout';
 import {
   formatPitch,
   mapPointToMusicPosition,
@@ -61,6 +68,33 @@ describe('sheet interaction mapping', () => {
       measureIndex: 0,
       beat: 0,
     });
+  });
+
+  it('maps pointer positions on the second system to later measure indexes', () => {
+    const score = createEmptyScore('treble', { measureCount: 8 });
+    const systemGap = getScoreSystemGap(score);
+    const result = mapPointToMusicPosition(
+      {
+        x: getBeatX(MEASURES_PER_SYSTEM, 0, score.timeSignature.beats),
+        y: getPitchY(
+          { step: 'B', octave: 4 },
+          'treble',
+          0,
+          STAFF_GAP,
+          MEASURES_PER_SYSTEM,
+          systemGap,
+        ),
+      },
+      score,
+    );
+
+    expect(result).toMatchObject({
+      staffId: 'treble',
+      staffIndex: 0,
+      measureIndex: MEASURES_PER_SYSTEM,
+      beat: 0,
+    });
+    expect(result ? formatPitch(result.pitch) : null).toBe('B4');
   });
 
   it('returns null outside the editable staff area', () => {

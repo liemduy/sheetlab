@@ -13,7 +13,9 @@ import type {
 import type { MusicPosition } from './interaction';
 import { getMeasureKey } from './measureKey';
 import {
+  MEASURES_PER_SYSTEM,
   STAFF_GAP,
+  STAFF_LEFT,
   STAFF_LINE_SPACING,
   getScoreStaffGap,
   getScoreSvgHeight,
@@ -275,6 +277,20 @@ describe('StaffRenderer', () => {
     expect(screen.getByTestId('grand-staff-connector')).toBeInTheDocument();
     expect(screen.getAllByTestId('measure-barline-treble')).toHaveLength(5);
     expect(screen.getAllByTestId('measure-barline-bass')).toHaveLength(5);
+  });
+
+  it('renders default scores across four-measure systems instead of one short row', () => {
+    render(<StaffRenderer score={createEmptyScore('treble')} />);
+
+    const barlines = screen.getAllByTestId('measure-barline-treble');
+
+    expect(barlines).toHaveLength(20);
+    expect(Number(barlines[MEASURES_PER_SYSTEM + 1]?.getAttribute('x1'))).toBe(
+      STAFF_LEFT,
+    );
+    expect(
+      Number(barlines[MEASURES_PER_SYSTEM + 1]?.getAttribute('y1')),
+    ).toBeGreaterThan(Number(barlines[0]?.getAttribute('y1')));
   });
 
   it('keeps the active input slot inside the current grand-staff stave', () => {
@@ -1017,7 +1033,7 @@ describe('StaffRenderer', () => {
       pitch: { step: 'G', octave: 4 },
     });
     render(<StaffRenderer score={score} />);
-    const connector = screen.getByTestId('grand-staff-connector');
+    const connector = screen.getAllByTestId('grand-staff-connector')[0];
     const dynamicGap = getScoreStaffGap(score);
 
     expect(dynamicGap).toBeGreaterThan(STAFF_GAP);
@@ -1040,7 +1056,7 @@ describe('StaffRenderer', () => {
     });
 
     render(<StaffRenderer score={score} />);
-    const connector = screen.getByTestId('grand-staff-connector');
+    const connector = screen.getAllByTestId('grand-staff-connector')[0];
     const dynamicGap = getScoreStaffGap(score);
 
     expect(dynamicGap).toBeGreaterThan(STAFF_GAP);

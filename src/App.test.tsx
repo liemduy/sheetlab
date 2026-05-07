@@ -39,6 +39,12 @@ function svgToClientPoint(
   };
 }
 
+function getOverlaySvgHeight(overlay: Element) {
+  return Number(
+    overlay.getAttribute('viewBox')?.split(/\s+/)[3] ?? getScoreSvgHeight('grand'),
+  );
+}
+
 function startWriting(duration = 'Quarter') {
   fireEvent.click(screen.getByRole('button', { name: duration }));
 }
@@ -471,6 +477,7 @@ describe('App editor state', () => {
       bounds,
       getBeatX(0, 0, 4),
       getPitchY({ step: 'B', octave: 4 }, 'treble', 0),
+      getOverlaySvgHeight(overlay),
     );
 
     fireEvent.mouseMove(overlay, middleLinePoint);
@@ -524,11 +531,11 @@ describe('App editor state', () => {
   it('adds a measure from the toolbar', () => {
     render(<App />);
 
-    expect(screen.getAllByTestId('measure-barline-treble')).toHaveLength(5);
+    expect(screen.getAllByTestId('measure-barline-treble')).toHaveLength(20);
     fireEvent.click(screen.getByRole('button', { name: 'Add Measure' }));
 
-    expect(screen.getAllByTestId('measure-barline-treble')).toHaveLength(6);
-    expect(within(screen.getByLabelText('Current editor state')).getByText('5')).toBeInTheDocument();
+    expect(screen.getAllByTestId('measure-barline-treble')).toHaveLength(22);
+    expect(within(screen.getByLabelText('Current editor state')).getByText('17')).toBeInTheDocument();
   });
 
   it('selects and deletes a placed score event', () => {
@@ -772,11 +779,13 @@ describe('App editor state', () => {
       bounds,
       getBeatX(0, 0, 4),
       getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+      getOverlaySvgHeight(overlay),
     );
     const targetPoint = svgToClientPoint(
       bounds,
       getBeatX(0, 2, 4),
       getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
+      getOverlaySvgHeight(overlay),
     );
 
     fireEvent.click(overlay, startPoint);

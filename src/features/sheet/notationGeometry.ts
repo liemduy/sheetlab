@@ -16,12 +16,15 @@ export function getPitchY(
   clef: Clef,
   staffIndex: number,
   staffGap = STAFF_GAP,
+  measureIndex = 0,
+  systemGap = staffGap + 152,
 ) {
   const topLineValue = pitchToDiatonicValue(TOP_LINE_BY_CLEF[clef]);
   const pitchValue = pitchToDiatonicValue(pitch);
   const diatonicOffset = pitchValue - topLineValue;
 
-  return getStaffTop(staffIndex, staffGap) - diatonicOffset * (STAFF_LINE_SPACING / 2);
+  return getStaffTop(staffIndex, staffGap, measureIndex, systemGap) -
+    diatonicOffset * (STAFF_LINE_SPACING / 2);
 }
 
 export function getBeatX(

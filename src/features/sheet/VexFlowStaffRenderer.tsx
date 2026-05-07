@@ -25,8 +25,10 @@ import {
   STAFF_LINE_SPACING,
   SVG_WIDTH,
   VEXFLOW_STAVE_TOP_LINE_OFFSET,
+  getLocalMeasureIndex,
   getMeasureX,
   getScoreStaffGap,
+  getScoreSystemGap,
   getScoreSvgHeight,
   getStaffTop,
 } from './layout';
@@ -121,6 +123,7 @@ function drawVexFlowMeasureEvents({
   staff,
   staffGap,
   staffIndex,
+  systemGap,
   stave,
 }: {
   beatsPerMeasure: number;
@@ -129,6 +132,7 @@ function drawVexFlowMeasureEvents({
   staff: Staff;
   staffGap: number;
   staffIndex: number;
+  systemGap: number;
   stave: Stave;
 }) {
   const measure = staff.measures.find((candidate) => candidate.index === measureIndex);
@@ -180,10 +184,12 @@ function drawVexFlowMeasureEvents({
               staff.clef,
               staffIndex,
               staffGap,
+              measureIndex,
+              systemGap,
             ),
           )
         : [
-            getStaffTop(staffIndex, staffGap) +
+            getStaffTop(staffIndex, staffGap, measureIndex, systemGap) +
               STAFF_LINE_SPACING * 2,
           ];
     const minY = Math.min(...pitchYs);
@@ -209,6 +215,7 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
   const staves = score.parts[0]?.staves ?? [];
   const height = getScoreSvgHeight(score);
   const staffGap = getScoreStaffGap(score);
+  const systemGap = getScoreSystemGap(score);
 
   container.innerHTML = '';
 
@@ -220,18 +227,21 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
     staff.measures.map((measure) => {
       const stave = new Stave(
         getMeasureX(measure.index),
-        getStaffTop(staffIndex, staffGap) - VEXFLOW_STAVE_TOP_LINE_OFFSET,
+        getStaffTop(staffIndex, staffGap, measure.index, systemGap) -
+          VEXFLOW_STAVE_TOP_LINE_OFFSET,
         MEASURE_WIDTH,
         {
           spacingBetweenLinesPx: 11,
         },
       );
 
-      if (measure.index === 0) {
+      if (getLocalMeasureIndex(measure.index) === 0) {
         stave.addClef(staff.clef);
-        stave.addTimeSignature(
-          `${score.timeSignature.beats}/${score.timeSignature.beatUnit}`,
-        );
+        if (measure.index === 0) {
+          stave.addTimeSignature(
+            `${score.timeSignature.beats}/${score.timeSignature.beatUnit}`,
+          );
+        }
       }
 
       stave.setAttribute('data-measure-index', String(measure.index));
@@ -250,14 +260,26 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
   }
 
   if (score.type === 'grand' && renderedStaves.length >= 2) {
-    new StaveConnector(renderedStaves[0][0], renderedStaves[1][0])
-      .setType('brace')
-      .setContext(context)
-      .draw();
-    new StaveConnector(renderedStaves[0][0], renderedStaves[1][0])
-      .setType('singleLeft')
-      .setContext(context)
-      .draw();
+    renderedStaves[0].forEach((trebleStave, measureIndex) => {
+      if (getLocalMeasureIndex(measureIndex) !== 0) {
+        return;
+      }
+
+      const bassStave = renderedStaves[1]?.[measureIndex];
+
+      if (!bassStave) {
+        return;
+      }
+
+      new StaveConnector(trebleStave, bassStave)
+        .setType('brace')
+        .setContext(context)
+        .draw();
+      new StaveConnector(trebleStave, bassStave)
+        .setType('singleLeft')
+        .setContext(context)
+        .draw();
+    });
   }
 
   renderedStaves.forEach((staffStaves, staffIndex) => {
@@ -277,6 +299,7 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
           staff,
           staffGap,
           staffIndex,
+          systemGap,
           stave,
         }),
       );

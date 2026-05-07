@@ -7,12 +7,15 @@ import {
 } from '../../domain/score/pitchRange';
 import {
   MEASURE_WIDTH,
+  MEASURES_PER_SYSTEM,
   STAFF_LEFT,
   STAFF_GAP,
   STAFF_LINE_SPACING,
   getMeasureContentLeft,
   getMeasureContentWidth,
+  getMeasureCountForSystem,
   getScoreStaffGap,
+  getScoreSystemGap,
   getStaffRight,
   getStaffTop,
 } from './layout';
@@ -42,8 +45,10 @@ export function mapStaffYToPitch(
   clef: Staff['clef'],
   staffIndex: number,
   staffGap = STAFF_GAP,
+  measureIndex = 0,
+  systemGap = staffGap + 152,
 ) {
-  const staffTop = getStaffTop(staffIndex, staffGap);
+  const staffTop = getStaffTop(staffIndex, staffGap, measureIndex, systemGap);
   const diatonicOffset = Math.round(
     (staffTop - y) / (STAFF_LINE_SPACING / 2),
   );
@@ -63,25 +68,36 @@ export function formatPitch(pitch: Pitch) {
   return `${pitch.step}${accidental}${pitch.octave}`;
 }
 
-function findStaffAtY(staves: Staff[], y: number, staffGap: number) {
+function findStaffAtY(
+  staves: Staff[],
+  y: number,
+  staffGap: number,
+  systemGap: number,
+) {
+  const measureCount = staves[0]?.measures.length ?? 0;
+  const systemCount = Math.max(1, Math.ceil(measureCount / MEASURES_PER_SYSTEM));
   const candidates = staves
-    .map((staff, staffIndex) => {
-      const staffTop = getStaffTop(staffIndex, staffGap);
-      const staffBottom = staffTop + STAFF_LINE_SPACING * 4;
-      const staffCenter = staffTop + STAFF_LINE_SPACING * 2;
+    .flatMap((staff, staffIndex) =>
+      Array.from({ length: systemCount }, (_, systemIndex) => {
+        const measureIndex = systemIndex * MEASURES_PER_SYSTEM;
+        const staffTop = getStaffTop(staffIndex, staffGap, measureIndex, systemGap);
+        const staffBottom = staffTop + STAFF_LINE_SPACING * 4;
+        const staffCenter = staffTop + STAFF_LINE_SPACING * 2;
 
-      return {
-        distance: Math.abs(y - staffCenter),
-        isInsideEditableBand:
-          y >= staffTop - STAFF_VERTICAL_PADDING &&
-          y <= staffBottom + STAFF_VERTICAL_PADDING,
-        staff,
-      };
-    })
+        return {
+          distance: Math.abs(y - staffCenter),
+          isInsideEditableBand:
+            y >= staffTop - STAFF_VERTICAL_PADDING &&
+            y <= staffBottom + STAFF_VERTICAL_PADDING,
+          staff,
+          systemIndex,
+        };
+      }),
+    )
     .filter((candidate) => candidate.isInsideEditableBand)
     .sort((a, b) => a.distance - b.distance);
 
-  return candidates[0]?.staff;
+  return candidates[0];
 }
 
 export function mapPointToMusicPosition(
@@ -90,17 +106,30 @@ export function mapPointToMusicPosition(
 ): MusicPosition | null {
   const staves = score.parts[0]?.staves ?? [];
   const staffGap = getScoreStaffGap(score);
-  const staff = findStaffAtY(staves, point.y, staffGap);
+  const systemGap = getScoreSystemGap(score);
+  const staffMatch = findStaffAtY(staves, point.y, staffGap, systemGap);
+  const staff = staffMatch?.staff;
   const measureCount = staff?.measures.length ?? 0;
+  const systemIndex = staffMatch?.systemIndex ?? 0;
+  const systemMeasureCount = getMeasureCountForSystem(measureCount, systemIndex);
 
-  if (!staff || point.x < STAFF_LEFT || point.x > getStaffRight(measureCount)) {
+  if (
+    !staff ||
+    systemMeasureCount === 0 ||
+    point.x < STAFF_LEFT ||
+    point.x > getStaffRight(measureCount, systemIndex * MEASURES_PER_SYSTEM)
+  ) {
     return null;
   }
 
   const staffIndex = staves.indexOf(staff);
+  const localMeasureIndex = Math.min(
+    systemMeasureCount - 1,
+    Math.max(0, Math.floor((point.x - STAFF_LEFT) / MEASURE_WIDTH)),
+  );
   const measureIndex = Math.min(
     measureCount - 1,
-    Math.max(0, Math.floor((point.x - STAFF_LEFT) / MEASURE_WIDTH)),
+    Math.max(0, systemIndex * MEASURES_PER_SYSTEM + localMeasureIndex),
   );
   const measureContentLeft = getMeasureContentLeft(measureIndex);
   const measureContentWidth = getMeasureContentWidth(measureIndex);
@@ -115,7 +144,14 @@ export function mapPointToMusicPosition(
     score.timeSignature.beats - SNAP_BEAT,
     Math.max(0, Math.round(rawBeat / SNAP_BEAT) * SNAP_BEAT),
   );
-  const pitch = mapStaffYToPitch(point.y, staff.clef, staffIndex, staffGap);
+  const pitch = mapStaffYToPitch(
+    point.y,
+    staff.clef,
+    staffIndex,
+    staffGap,
+    measureIndex,
+    systemGap,
+  );
 
   return {
     staffId: staff.id,

@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { describe, expect, it, vi } from 'vitest';
 import App from './App';
 import type { Clef, Pitch } from './domain/score/types';
+import { SVG_WIDTH, getScoreSvgHeight } from './features/sheet/layout';
 import { getBeatX, getPitchY } from './features/sheet/notationGeometry';
 
 function clickDuration(name: 'Whole' | 'Half' | 'Quarter') {
@@ -12,6 +13,42 @@ function clickPlacement(name: 'Insert' | 'Place') {
   fireEvent.click(screen.getByRole('button', { name }));
 }
 
+function setVisibleSheetBounds(element: Element) {
+  const bounds = {
+    bottom: 710,
+    height: 660,
+    left: 40,
+    right: 960,
+    top: 50,
+    width: 920,
+    x: 40,
+    y: 50,
+    toJSON: () => ({}),
+  } satisfies DOMRect;
+
+  element.getBoundingClientRect = () => bounds;
+
+  return bounds;
+}
+
+function getOverlaySvgHeight(overlay: Element) {
+  return Number(
+    overlay.getAttribute('viewBox')?.split(/\s+/)[3] ?? getScoreSvgHeight('grand'),
+  );
+}
+
+function svgToClientPoint(
+  bounds: DOMRect,
+  x: number,
+  y: number,
+  svgHeight: number,
+) {
+  return {
+    clientX: bounds.left + (x / SVG_WIDTH) * bounds.width,
+    clientY: bounds.top + (y / svgHeight) * bounds.height,
+  };
+}
+
 function clickScoreNote(
   overlay: HTMLElement,
   measureIndex: number,
@@ -20,10 +57,18 @@ function clickScoreNote(
   clef: Clef = 'treble',
   staffIndex = 0,
 ) {
-  fireEvent.click(overlay, {
-    clientX: getBeatX(measureIndex, beat, 4),
-    clientY: getPitchY(pitch, clef, staffIndex),
-  });
+  const bounds = setVisibleSheetBounds(overlay);
+  const svgHeight = getOverlaySvgHeight(overlay);
+
+  fireEvent.click(
+    overlay,
+    svgToClientPoint(
+      bounds,
+      getBeatX(measureIndex, beat, 4),
+      getPitchY(pitch, clef, staffIndex),
+      svgHeight,
+    ),
+  );
 }
 
 function dragScoreNote(
@@ -32,14 +77,20 @@ function dragScoreNote(
   from: { beat: number; clef?: Clef; measureIndex: number; pitch: Pitch; staffIndex?: number },
   to: { beat: number; clef?: Clef; measureIndex: number; pitch: Pitch; staffIndex?: number },
 ) {
-  const startPoint = {
-    clientX: getBeatX(from.measureIndex, from.beat, 4),
-    clientY: getPitchY(from.pitch, from.clef ?? 'treble', from.staffIndex ?? 0),
-  };
-  const targetPoint = {
-    clientX: getBeatX(to.measureIndex, to.beat, 4),
-    clientY: getPitchY(to.pitch, to.clef ?? 'treble', to.staffIndex ?? 0),
-  };
+  const bounds = setVisibleSheetBounds(overlay);
+  const svgHeight = getOverlaySvgHeight(overlay);
+  const startPoint = svgToClientPoint(
+    bounds,
+    getBeatX(from.measureIndex, from.beat, 4),
+    getPitchY(from.pitch, from.clef ?? 'treble', from.staffIndex ?? 0),
+    svgHeight,
+  );
+  const targetPoint = svgToClientPoint(
+    bounds,
+    getBeatX(to.measureIndex, to.beat, 4),
+    getPitchY(to.pitch, to.clef ?? 'treble', to.staffIndex ?? 0),
+    svgHeight,
+  );
 
   fireEvent.mouseDown(screen.getByRole('button', { name: label }), startPoint);
   fireEvent.mouseMove(overlay, targetPoint);
@@ -137,12 +188,13 @@ describe('user acceptance song flows', () => {
     clickDuration('Quarter');
     clickScoreNote(overlay, 0, 3, { step: 'G', octave: 5 });
 
-    clickDuration('Half');
-    clickScoreNote(overlay, 1, 2, { step: 'C', octave: 5 });
     clickDuration('Quarter');
     clickScoreNote(overlay, 1, 0, { step: 'E', octave: 5 });
     clickScoreNote(overlay, 1, 1, { step: 'D', octave: 5 });
+    clickDuration('Half');
+    clickScoreNote(overlay, 1, 2, { step: 'C', octave: 5 });
 
+    clickDuration('Quarter');
     clickScoreNote(overlay, 2, 0, { step: 'G', octave: 4 });
     clickScoreNote(overlay, 2, 1, { step: 'A', octave: 4 });
     clickScoreNote(overlay, 2, 2, { step: 'B', octave: 4 });
@@ -152,6 +204,7 @@ describe('user acceptance song flows', () => {
     clickScoreNote(overlay, 3, 0, { step: 'C', octave: 5 });
 
     clickScoreNote(overlay, 0, 0, { step: 'D', octave: 3 }, 'bass', 1);
+    fireEvent.click(screen.getByRole('button', { name: 'Select tool' }));
     dragScoreNote(
       overlay,
       'Note D3 measure 1 beat 1',
