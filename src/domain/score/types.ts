@@ -40,11 +40,16 @@ export interface NoteEvent extends BaseScoreEvent {
   pitch: Pitch;
 }
 
+export interface ChordEvent extends BaseScoreEvent {
+  kind: 'chord';
+  pitches: Pitch[];
+}
+
 export interface RestEvent extends BaseScoreEvent {
   kind: 'rest';
 }
 
-export type ScoreEvent = NoteEvent | RestEvent;
+export type ScoreEvent = NoteEvent | ChordEvent | RestEvent;
 
 export interface Voice {
   id: string;

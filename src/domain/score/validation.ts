@@ -65,7 +65,16 @@ function isScoreEvent(value: unknown): value is ScoreEvent {
     return true;
   }
 
-  return value.kind === 'note' && isPitch(value.pitch);
+  if (value.kind === 'note') {
+    return isPitch(value.pitch);
+  }
+
+  return (
+    value.kind === 'chord' &&
+    Array.isArray(value.pitches) &&
+    value.pitches.length > 0 &&
+    value.pitches.every(isPitch)
+  );
 }
 
 export function isScore(value: unknown): value is Score {

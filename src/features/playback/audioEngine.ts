@@ -26,9 +26,9 @@ export async function playTimelineAudio(
   const now = Tone.now();
 
   timeline.forEach((event) => {
-    if (event.kind === 'note' && event.pitch) {
+    if (event.pitches.length > 0) {
       synth.triggerAttackRelease(
-        pitchToToneNote(event.pitch),
+        event.pitches.map(pitchToToneNote),
         event.durationSeconds,
         now + event.startSeconds,
       );

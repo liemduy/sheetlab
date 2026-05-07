@@ -1,6 +1,11 @@
 import type { MouseEvent } from 'react';
 import type { Score, ScoreEvent, Staff } from '../../domain/score/types';
 import type { DurationValue } from '../../domain/score/types';
+import {
+  formatEventPitchList,
+  getEventPitches,
+  getPrimaryEventPitch,
+} from '../../domain/score/events';
 import type { EntryMode } from '../editor/editorState';
 import { formatPitch, mapPointToMusicPosition } from './interaction';
 import type { MusicPosition } from './interaction';
@@ -54,16 +59,21 @@ function EventGlyph({
   staffIndex: number;
 }) {
   const x = getBeatX(measureIndex, event.beat, beatsPerMeasure);
+  const eventPitches = getEventPitches(event);
+  const primaryPitch = getPrimaryEventPitch(event);
   const y =
-    event.kind === 'note'
-      ? getPitchY(event.pitch, staff.clef, staffIndex)
+    primaryPitch
+      ? getPitchY(primaryPitch, staff.clef, staffIndex)
       : getStaffTop(staffIndex) + STAFF_LINE_SPACING * 2;
   const label =
-    event.kind === 'note'
-      ? `Note ${formatPitch(event.pitch)} measure ${measureIndex + 1} beat ${
+    event.kind === 'rest'
+      ? `Rest measure ${measureIndex + 1} beat ${event.beat + 1}`
+      : `${event.kind === 'chord' ? 'Chord' : 'Note'} ${formatEventPitchList(
+          event,
+          formatPitch,
+        )} measure ${measureIndex + 1} beat ${
           event.beat + 1
-        }`
-      : `Rest measure ${measureIndex + 1} beat ${event.beat + 1}`;
+        }`;
 
   return (
     <g
@@ -87,13 +97,19 @@ function EventGlyph({
         }
       }}
     >
-      {event.kind === 'note' ? (
-        <>
-          <ellipse cx={x} cy={y} rx={8.5} ry={6} />
-          {event.duration !== 'whole' ? (
-            <line x1={x + 8} x2={x + 8} y1={y} y2={y - 38} />
-          ) : null}
-        </>
+      {eventPitches.length > 0 ? (
+        eventPitches.map((pitch) => {
+          const pitchY = getPitchY(pitch, staff.clef, staffIndex);
+
+          return (
+            <g key={`${pitch.step}${pitch.octave}${pitch.accidental ?? ''}`}>
+              <ellipse cx={x} cy={pitchY} rx={8.5} ry={6} />
+              {event.duration !== 'whole' ? (
+                <line x1={x + 8} x2={x + 8} y1={pitchY} y2={pitchY - 38} />
+              ) : null}
+            </g>
+          );
+        })
       ) : (
         <rect x={x - 8} y={y - 5} width={16} height={10} rx={2} />
       )}

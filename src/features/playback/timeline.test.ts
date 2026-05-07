@@ -7,6 +7,7 @@ import {
   getPlaybackBeatAtSeconds,
   getTimelineDurationSeconds,
 } from './timeline';
+import type { ChordEvent } from '../../domain/score/types';
 
 describe('playback timeline', () => {
   it('converts quarter notes to beat and second timings', () => {
@@ -51,6 +52,37 @@ describe('playback timeline', () => {
     });
 
     expect(buildPlaybackTimeline(score)).toHaveLength(2);
+  });
+
+  it('keeps chord columns as one timeline event with multiple pitches', () => {
+    const score = createEmptyScore('grand', { measureCount: 1 });
+    const chord: ChordEvent = {
+      id: 'timeline-c-major',
+      kind: 'chord',
+      beat: 0,
+      duration: 'quarter',
+      pitches: [
+        { step: 'C', octave: 4 },
+        { step: 'E', octave: 4 },
+        { step: 'G', octave: 4 },
+      ],
+    };
+
+    score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events.push(chord);
+
+    const timelineEvent = buildPlaybackTimeline(score)[0];
+
+    expect(timelineEvent).toMatchObject({
+      id: 'timeline-c-major',
+      kind: 'chord',
+      pitch: { step: 'C', octave: 4 },
+      pitches: [
+        { step: 'C', octave: 4 },
+        { step: 'E', octave: 4 },
+        { step: 'G', octave: 4 },
+      ],
+      startBeat: 0,
+    });
   });
 
   it('finds the active event and playback beat at an elapsed time', () => {

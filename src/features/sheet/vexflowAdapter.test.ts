@@ -45,6 +45,33 @@ describe('vexflow adapter', () => {
     });
   });
 
+  it('maps chord events to one VexFlow note spec with multiple keys', () => {
+    expect(
+      scoreEventToVexFlowSpec(
+        {
+          id: 'event-chord',
+          kind: 'chord',
+          beat: 0,
+          duration: 'quarter',
+          pitches: [
+            { step: 'C', octave: 4 },
+            { step: 'E', octave: 4 },
+            { step: 'G', octave: 4 },
+          ],
+        },
+        'treble',
+      ),
+    ).toEqual({
+      eventId: 'event-chord',
+      beat: 0,
+      keys: ['c/4', 'e/4', 'g/4'],
+      duration: 'q',
+      clef: 'treble',
+      accidental: undefined,
+      kind: 'chord',
+    });
+  });
+
   it('maps rest events to clef-aware VexFlow rest specs', () => {
     expect(
       scoreEventToVexFlowSpec(

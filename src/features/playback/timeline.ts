@@ -1,5 +1,6 @@
 import type { Pitch, Score, ScoreEvent, StaffId } from '../../domain/score/types';
 import { getDurationBeats } from '../../domain/score/durations';
+import { getEventPitches } from '../../domain/score/events';
 
 export interface PlaybackTimelineEvent {
   id: string;
@@ -12,6 +13,7 @@ export interface PlaybackTimelineEvent {
   durationSeconds: number;
   kind: ScoreEvent['kind'];
   pitch?: Pitch;
+  pitches: Pitch[];
 }
 
 export function getSecondsPerBeat(tempo: number) {
@@ -31,6 +33,8 @@ export function buildPlaybackTimeline(score: Score): PlaybackTimelineEvent[] {
               const durationBeats = getDurationBeats(event.duration);
               const startBeat = measure.index * beatsPerMeasure + event.beat;
 
+              const pitches = getEventPitches(event);
+
               return {
                 id: event.id,
                 staffId: staff.id,
@@ -41,7 +45,8 @@ export function buildPlaybackTimeline(score: Score): PlaybackTimelineEvent[] {
                 startSeconds: startBeat * secondsPerBeat,
                 durationSeconds: durationBeats * secondsPerBeat,
                 kind: event.kind,
-                pitch: event.kind === 'note' ? event.pitch : undefined,
+                pitch: pitches[0],
+                pitches,
               };
             }),
           ),

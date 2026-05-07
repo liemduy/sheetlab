@@ -9,6 +9,7 @@ import type {
   StaffId,
 } from './types';
 import { getDurationBeats } from './durations';
+import { getPrimaryEventPitch } from './events';
 
 export interface PlaceScoreEventRequest {
   eventId: string;
@@ -405,30 +406,34 @@ export function tryUpdateScoreEvent(
   const targetStaffId = update.staffId ?? found.staffId;
   const targetMeasureIndex = update.measureIndex ?? found.measureIndex;
   const targetBeat = update.beat ?? found.event.beat;
+  const existingPitch = getPrimaryEventPitch(found.event);
   const pitch: Pitch =
-    found.event.kind === 'note'
+    found.event.kind !== 'rest'
       ? {
-          ...found.event.pitch,
+          ...(existingPitch ?? { step: 'C' as const, octave: 4 }),
           ...update.pitch,
           accidental:
             update.accidental === null
               ? undefined
-              : update.accidental ?? update.pitch?.accidental ?? found.event.pitch.accidental,
+              : update.accidental ??
+                update.pitch?.accidental ??
+                existingPitch?.accidental,
         }
       : { step: 'C' as const, octave: 4 };
   const accidental =
-    found.event.kind === 'note'
+    found.event.kind !== 'rest'
       ? update.accidental === null
         ? undefined
-        : update.accidental ?? found.event.pitch.accidental
+        : update.accidental ?? existingPitch?.accidental
       : undefined;
+  const entryMode = found.event.kind === 'rest' ? 'rest' : 'note';
   const candidateEvent = createScoreEvent({
     eventId,
     staffId: targetStaffId,
     measureIndex: targetMeasureIndex,
     beat: targetBeat,
     duration,
-    entryMode: found.event.kind,
+    entryMode,
     pitch,
     accidental,
   });
@@ -452,7 +457,7 @@ export function tryUpdateScoreEvent(
     measureIndex: targetMeasureIndex,
     beat: targetBeat,
     duration,
-    entryMode: found.event.kind,
+    entryMode,
     pitch,
     accidental,
   });

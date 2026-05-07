@@ -5,6 +5,7 @@ import type {
   Pitch,
   ScoreEvent,
 } from '../../domain/score/types';
+import { getEventPitches } from '../../domain/score/events';
 
 export interface VexFlowNoteSpec {
   eventId: string;
@@ -76,14 +77,16 @@ export function scoreEventToVexFlowSpec(
     };
   }
 
+  const pitches = getEventPitches(event);
+
   return {
     eventId: event.id,
     beat: event.beat,
-    keys: [pitchToVexFlowKey(event.pitch)],
+    keys: pitches.map(pitchToVexFlowKey),
     duration: durationToVexFlowDuration(event.duration),
     clef,
-    accidental: event.pitch.accidental,
-    kind: 'note',
+    accidental: pitches[0]?.accidental,
+    kind: event.kind,
   };
 }
 

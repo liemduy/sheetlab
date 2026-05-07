@@ -4,6 +4,7 @@ import {
   deserializeScore,
   serializeScore,
 } from './factories';
+import type { ChordEvent } from './types';
 
 describe('score factories', () => {
   it('creates an empty treble score with one treble staff', () => {
@@ -72,6 +73,28 @@ describe('score factories', () => {
     const restored = deserializeScore(serializeScore(original));
 
     expect(restored).toEqual(original);
+  });
+
+  it('serializes and deserializes chord events without losing column pitches', () => {
+    const original = createEmptyScore('grand', {
+      id: 'score-chord-roundtrip',
+      measureCount: 1,
+    });
+    const chord: ChordEvent = {
+      id: 'right-hand-c-major',
+      kind: 'chord',
+      beat: 0,
+      duration: 'quarter',
+      pitches: [
+        { step: 'C', octave: 4 },
+        { step: 'E', octave: 4 },
+        { step: 'G', octave: 4 },
+      ],
+    };
+
+    original.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events.push(chord);
+
+    expect(deserializeScore(serializeScore(original))).toEqual(original);
   });
 
   it('adds the default A4 page size when loading an older project', () => {

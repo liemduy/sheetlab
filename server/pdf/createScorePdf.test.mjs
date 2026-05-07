@@ -21,6 +21,32 @@ describe('createScorePdf', () => {
     expect(pdf.length).toBeGreaterThan(1000);
   });
 
+  it('exports chord columns as one PDF event with multiple pitches', async () => {
+    const score = createEmptyScore('grand', { measureCount: 1 });
+    const chord = {
+      id: 'pdf-c-major',
+      kind: 'chord',
+      beat: 0,
+      duration: 'quarter',
+      pitches: [
+        { step: 'C', octave: 4 },
+        { step: 'E', octave: 4 },
+        { step: 'G', octave: 4 },
+      ],
+    };
+
+    score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events.push(chord);
+
+    const layout = createScorePdfLayout(score);
+    const pdf = await createScorePdf(score);
+
+    expect(layout.events[0]?.event).toMatchObject(chord);
+    expect(layout.events[0]?.bounds.maxY).toBeGreaterThan(
+      layout.events[0]?.bounds.minY ?? 0,
+    );
+    expect(pdf.subarray(0, 5).toString('utf8')).toBe('%PDF-');
+  });
+
   it.each([
     {
       expectedLedgerLines: 3,

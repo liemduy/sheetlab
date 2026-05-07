@@ -2,6 +2,11 @@ import { useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 import type { Score, ScoreEvent, Staff } from '../../domain/score/types';
 import type { DurationValue } from '../../domain/score/types';
+import {
+  formatEventPitchList,
+  getEventPitches,
+  getPrimaryEventPitch,
+} from '../../domain/score/events';
 import type { EntryMode, PlacementMode } from '../editor/editorState';
 import type { InputCursor } from '../editor/inputCursor';
 import {
@@ -84,16 +89,21 @@ function EventHitTarget({
   staffIndex: number;
 }) {
   const x = getBeatX(measureIndex, event.beat, beatsPerMeasure);
+  const eventPitches = getEventPitches(event);
+  const primaryPitch = getPrimaryEventPitch(event);
   const y =
-    event.kind === 'note'
-      ? getPitchY(event.pitch, staff.clef, staffIndex)
+    primaryPitch
+      ? getPitchY(primaryPitch, staff.clef, staffIndex)
       : getStaffTop(staffIndex) + STAFF_LINE_SPACING * 2;
   const label =
-    event.kind === 'note'
-      ? `Note ${formatPitch(event.pitch)} measure ${measureIndex + 1} beat ${
+    event.kind === 'rest'
+      ? `Rest measure ${measureIndex + 1} beat ${event.beat + 1}`
+      : `${event.kind === 'chord' ? 'Chord' : 'Note'} ${formatEventPitchList(
+          event,
+          formatPitch,
+        )} measure ${measureIndex + 1} beat ${
           event.beat + 1
-        }`
-      : `Rest measure ${measureIndex + 1} beat ${event.beat + 1}`;
+        }`;
   const targetWidth = placementMode === 'insert' ? 16 : 28;
   const targetHeight = placementMode === 'insert' ? 30 : 40;
 
@@ -130,15 +140,18 @@ function EventHitTarget({
           data-event-id={event.id}
           data-testid="score-event-visual"
         >
-          {event.kind === 'note' ? (
-            <NoteGlyph
-              duration={event.duration}
-              pitch={event.pitch}
-              staffIndex={staffIndex}
-              variant="placed"
-              x={x}
-              y={y}
-            />
+          {eventPitches.length > 0 ? (
+            eventPitches.map((pitch) => (
+              <NoteGlyph
+                key={`${pitch.step}${pitch.octave}${pitch.accidental ?? ''}`}
+                duration={event.duration}
+                pitch={pitch}
+                staffIndex={staffIndex}
+                variant="placed"
+                x={x}
+                y={getPitchY(pitch, staff.clef, staffIndex)}
+              />
+            ))
           ) : (
             <RestGlyph
               duration={event.duration}
@@ -696,7 +709,7 @@ export function NotationOverlay({
       {dragState?.previewPosition && draggedEvent ? (
         <GhostEvent
           duration={draggedEvent.duration}
-          entryMode={draggedEvent.kind}
+          entryMode={draggedEvent.kind === 'rest' ? 'rest' : 'note'}
           position={dragState.previewPosition}
           score={score}
         />

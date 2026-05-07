@@ -48,6 +48,18 @@ function getLedgerLineYs(y, staffTop) {
   return ys;
 }
 
+function getEventPitches(event) {
+  if (event.kind === 'note') {
+    return [event.pitch];
+  }
+
+  if (event.kind === 'chord') {
+    return event.pitches;
+  }
+
+  return [];
+}
+
 function getMeasureCount(score) {
   return Math.max(
     1,
@@ -82,15 +94,18 @@ function getEventDrawing(event, staff, staffIndex, measureIndex, layout) {
     contentLeft +
     (event.beat / layout.timeSignature.beats) * Math.max(1, contentWidth);
   const staffTop = layout.systemTop + staffIndex * STAFF_GAP;
-  const y =
-    event.kind === 'note'
-      ? getPitchY(event.pitch, staff.clef, staffTop)
-      : staffTop + STAFF_LINE_SPACING * 2;
-  const ledgerYs = event.kind === 'note' ? getLedgerLineYs(y, staffTop) : [];
+  const eventPitches = getEventPitches(event);
+  const primaryPitch = eventPitches[0];
+  const y = primaryPitch
+    ? getPitchY(primaryPitch, staff.clef, staffTop)
+    : staffTop + STAFF_LINE_SPACING * 2;
+  const ledgerYs = eventPitches.flatMap((pitch) =>
+    getLedgerLineYs(getPitchY(pitch, staff.clef, staffTop), staffTop),
+  );
   const middleLineY = staffTop + STAFF_LINE_SPACING * 2;
   const stemDirection = y <= middleLineY ? 'down' : 'up';
   const stem =
-    event.kind === 'note' && event.duration !== 'whole'
+    eventPitches.length > 0 && event.duration !== 'whole'
       ? {
           direction: stemDirection,
           endY: stemDirection === 'up' ? y - STEM_LENGTH : y + STEM_LENGTH,
@@ -103,6 +118,15 @@ function getEventDrawing(event, staff, staffIndex, measureIndex, layout) {
     minX: x - NOTEHEAD_RX,
     minY: y - NOTEHEAD_RY,
   };
+
+  for (const pitch of eventPitches) {
+    const pitchY = getPitchY(pitch, staff.clef, staffTop);
+
+    bounds.minX = Math.min(bounds.minX, x - NOTEHEAD_RX);
+    bounds.maxX = Math.max(bounds.maxX, x + NOTEHEAD_RX);
+    bounds.minY = Math.min(bounds.minY, pitchY - NOTEHEAD_RY);
+    bounds.maxY = Math.max(bounds.maxY, pitchY + NOTEHEAD_RY);
+  }
 
   for (const ledgerY of ledgerYs) {
     bounds.minX = Math.min(bounds.minX, x - LEDGER_HALF_WIDTH);
@@ -227,24 +251,24 @@ function drawNote(doc, event, staff, staffIndex, measureIndex, layout) {
 
   doc.lineWidth(0.7).strokeColor('#111111').fillColor('#111111');
 
-  for (const ledgerY of ledgerYs) {
-    doc
-      .moveTo(x - LEDGER_HALF_WIDTH, ledgerY)
-      .lineTo(x + LEDGER_HALF_WIDTH, ledgerY)
-      .stroke();
-  }
+  getEventPitches(event).forEach((pitch) => {
+    const pitchY = getPitchY(pitch, staff.clef, staffTop);
 
-  if (event.duration === 'whole' || event.duration === 'half') {
-    doc.save().ellipse(x, y, NOTEHEAD_RX, NOTEHEAD_RY).stroke().restore();
-  } else {
-    doc.ellipse(x, y, NOTEHEAD_RX, NOTEHEAD_RY).fill('#111111');
-  }
+    for (const ledgerY of getLedgerLineYs(pitchY, staffTop)) {
+      doc
+        .moveTo(x - LEDGER_HALF_WIDTH, ledgerY)
+        .lineTo(x + LEDGER_HALF_WIDTH, ledgerY)
+        .stroke();
+    }
 
-  if (event.duration === 'whole') {
-    return;
-  }
+    if (event.duration === 'whole' || event.duration === 'half') {
+      doc.save().ellipse(x, pitchY, NOTEHEAD_RX, NOTEHEAD_RY).stroke().restore();
+    } else {
+      doc.ellipse(x, pitchY, NOTEHEAD_RX, NOTEHEAD_RY).fill('#111111');
+    }
+  });
 
-  if (stem) {
+  if (event.duration !== 'whole' && stem) {
     doc.moveTo(stem.x, y).lineTo(stem.x, stem.endY).stroke();
   }
 }

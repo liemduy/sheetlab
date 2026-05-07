@@ -3,7 +3,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { placeScoreEvent } from '../../domain/score/editing';
 import { createEmptyScore } from '../../domain/score/factories';
 import { trebleStudyFixture } from '../../domain/score/fixtures';
-import type { Clef, Pitch, ScoreType, StaffId } from '../../domain/score/types';
+import type {
+  ChordEvent,
+  Clef,
+  Pitch,
+  ScoreType,
+  StaffId,
+} from '../../domain/score/types';
 import type { MusicPosition } from './interaction';
 import { getScoreSvgHeight, getStaffTop, SVG_WIDTH } from './layout';
 import { getBeatX, getPitchY } from './notationGeometry';
@@ -290,6 +296,33 @@ describe('StaffRenderer', () => {
     expect(container.querySelectorAll('[data-testid="score-event-visual"]')).toHaveLength(4);
     expect(container.querySelectorAll('.sheetlab-vf-event')).toHaveLength(0);
     expect(container.querySelector('[data-event-id="treble-m1-e1"]')).not.toBeNull();
+  });
+
+  it('renders chord events as one selectable column with multiple noteheads', () => {
+    const score = createEmptyScore('grand', { measureCount: 1 });
+    const chord: ChordEvent = {
+      id: 'ui-c-major',
+      kind: 'chord',
+      beat: 0,
+      duration: 'quarter',
+      pitches: [
+        { step: 'C', octave: 4 },
+        { step: 'E', octave: 4 },
+        { step: 'G', octave: 4 },
+      ],
+    };
+
+    score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events.push(chord);
+
+    const { container } = render(<StaffRenderer score={score} />);
+    const chordButton = screen.getByRole('button', {
+      name: 'Chord C4 E4 G4 measure 1 beat 1',
+    });
+
+    expect(chordButton).toBeInTheDocument();
+    expect(
+      container.querySelectorAll('[data-event-id="ui-c-major"] .score-event-notehead'),
+    ).toHaveLength(3);
   });
 
   it('renders a delete target for the selected event', () => {
