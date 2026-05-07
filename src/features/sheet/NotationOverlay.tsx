@@ -33,7 +33,10 @@ import { snapInsertPositionToEventBoundary } from './insertPosition';
 import { getBeatX, getPitchY } from './notationGeometry';
 import { ChordGlyph, NoteGlyph, RestGlyph } from './notationGlyph';
 import { getMeasureKey } from './measureKey';
-import { snapPositionToRhythmSlot } from './rhythmSlots';
+import {
+  getRhythmSlotsForMeasure,
+  snapPositionToRhythmSlot,
+} from './rhythmSlots';
 
 export interface RenderedEventLayout {
   beat: number;
@@ -624,10 +627,12 @@ function InvalidMeasureWarning({
 }
 
 function RhythmSlots({
+  eventLayouts,
   inputCursor,
   isInputArmed,
   score,
 }: {
+  eventLayouts?: Record<string, RenderedEventLayout>;
   inputCursor?: InputCursor | null;
   isInputArmed?: boolean;
   score: Score;
@@ -637,7 +642,15 @@ function RhythmSlots({
   }
 
   const staffGap = getScoreStaffGap(score);
-  const slotStartX = getBeatX(
+  const activeSlot = getRhythmSlotsForMeasure(
+    score,
+    inputCursor.staffId,
+    inputCursor.measureIndex,
+  ).find((slot) => Math.abs(slot.beat - inputCursor.beat) <= BEAT_MATCH_EPSILON);
+  const activeSlotLayout = activeSlot
+    ? eventLayouts?.[activeSlot.eventId]
+    : undefined;
+  const fallbackSlotStartX = getBeatX(
     inputCursor.measureIndex,
     inputCursor.beat,
     score.timeSignature.beats,
@@ -647,11 +660,18 @@ function RhythmSlots({
     inputCursor.beat +
       getDurationBeats(inputCursor.duration, inputCursor.dots ?? 0),
   );
-  const slotEndX = getBeatX(
+  const fallbackSlotEndX = getBeatX(
     inputCursor.measureIndex,
     slotEndBeat,
     score.timeSignature.beats,
   );
+  const slotPaddingX = 7;
+  const slotStartX = activeSlotLayout
+    ? activeSlotLayout.minX - slotPaddingX
+    : fallbackSlotStartX;
+  const slotWidth = activeSlotLayout
+    ? Math.max(18, activeSlotLayout.maxX - activeSlotLayout.minX + slotPaddingX * 2)
+    : Math.max(6, fallbackSlotEndX - fallbackSlotStartX);
   const yRange = getStaffSlotYRange(inputCursor.staffIndex, staffGap);
 
   return (
@@ -668,13 +688,14 @@ function RhythmSlots({
           className="rhythm-slot timeline-slot is-active"
           data-beat={inputCursor.beat}
           data-duration={inputCursor.duration}
+          data-layout-source={activeSlotLayout ? 'vexflow' : 'beat-grid'}
           data-measure-index={inputCursor.measureIndex}
           data-slot-end-beat={slotEndBeat}
           data-staff-id={inputCursor.staffId}
           data-testid="rhythm-slot"
           height={yRange.y2 - yRange.y1}
           rx={7}
-          width={Math.max(6, slotEndX - slotStartX)}
+          width={slotWidth}
           x={slotStartX}
           y={yRange.y1}
         />
@@ -982,6 +1003,7 @@ export function NotationOverlay({
     >
       <rect className="staff-page-bg" x={0} y={0} width={SVG_WIDTH} height={svgHeight} />
       <RhythmSlots
+        eventLayouts={eventLayouts}
         inputCursor={inputCursor}
         isInputArmed={shouldShowInputPreview}
         score={score}

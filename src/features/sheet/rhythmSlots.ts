@@ -56,7 +56,7 @@ function createVirtualEmptyMeasureSlots(
       beat,
       duration,
       endBeat,
-      eventId: `virtual-rest-${staffId}-m${measureIndex + 1}-t${cursorTick}`,
+      eventId: `rest-${staffId}-m${measureIndex + 1}-display-${beat}-${duration}`,
       kind: 'rest',
       measureIndex,
       staffId,

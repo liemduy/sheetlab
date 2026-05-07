@@ -164,44 +164,42 @@ function drawVexFlowMeasureEvents({
     svgElement.setAttribute('data-pitch-count', String(getEventPitches(event).length));
     svgElement.setAttribute('data-staff-id', staff.id);
 
-    if (!isGeneratedRestEvent(event)) {
-      const eventPitches = getEventPitches(event);
-      const fallbackX = getBeatX(measureIndex, event.beat, beatsPerMeasure);
-      const minX = note.getNoteHeadBeginX();
-      const maxX = note.getNoteHeadEndX();
-      const renderedX =
-        Number.isFinite(minX) && Number.isFinite(maxX)
-          ? (minX + maxX) / 2
-          : fallbackX;
-      const pitchYs =
-        eventPitches.length > 0
-          ? eventPitches.map((pitch) =>
-              getPitchY(
-                clampPitchToClefRange(pitch, staff.clef),
-                staff.clef,
-                staffIndex,
-                staffGap,
-              ),
-            )
-          : [
-              getStaffTop(staffIndex, staffGap) +
-                STAFF_LINE_SPACING * 2,
-            ];
-      const minY = Math.min(...pitchYs);
-      const maxY = Math.max(...pitchYs);
+    const eventPitches = getEventPitches(event);
+    const fallbackX = getBeatX(measureIndex, event.beat, beatsPerMeasure);
+    const minX = note.getNoteHeadBeginX();
+    const maxX = note.getNoteHeadEndX();
+    const renderedX =
+      Number.isFinite(minX) && Number.isFinite(maxX)
+        ? (minX + maxX) / 2
+        : fallbackX;
+    const pitchYs =
+      eventPitches.length > 0
+        ? eventPitches.map((pitch) =>
+            getPitchY(
+              clampPitchToClefRange(pitch, staff.clef),
+              staff.clef,
+              staffIndex,
+              staffGap,
+            ),
+          )
+        : [
+            getStaffTop(staffIndex, staffGap) +
+              STAFF_LINE_SPACING * 2,
+          ];
+    const minY = Math.min(...pitchYs);
+    const maxY = Math.max(...pitchYs);
 
-      eventLayouts[event.id] = {
-        beat: event.beat,
-        maxX: Number.isFinite(maxX) ? maxX : renderedX + 10,
-        maxY,
-        measureIndex,
-        minX: Number.isFinite(minX) ? minX : renderedX - 10,
-        minY,
-        staffId: staff.id,
-        x: renderedX,
-        y: (minY + maxY) / 2,
-      };
-    }
+    eventLayouts[event.id] = {
+      beat: event.beat,
+      maxX: Number.isFinite(maxX) ? maxX : renderedX + 10,
+      maxY,
+      measureIndex,
+      minX: Number.isFinite(minX) ? minX : renderedX - 10,
+      minY,
+      staffId: staff.id,
+      x: renderedX,
+      y: (minY + maxY) / 2,
+    };
   });
 
   return eventLayouts;

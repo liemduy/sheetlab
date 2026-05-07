@@ -218,6 +218,51 @@ describe('StaffRenderer', () => {
     expect(document.querySelectorAll('.rhythm-slot.is-active')).toHaveLength(1);
   });
 
+  it('fits the active input slot around the rendered VexFlow event bounds', async () => {
+    const score = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'quarter-note-1',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+
+    render(
+      <StaffRenderer
+        duration="quarter"
+        inputCursor={{
+          beat: 0,
+          duration: 'quarter',
+          measureIndex: 0,
+          mode: 'note-input',
+          pitchPreview: { step: 'E', octave: 4 },
+          staffId: 'treble',
+          staffIndex: 0,
+        }}
+        score={score}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rhythm-slot')).toHaveAttribute(
+        'data-layout-source',
+        'vexflow',
+      );
+    });
+
+    const slot = screen.getByTestId('rhythm-slot');
+    const note = screen.getByLabelText('Note E4 measure 1 beat 1');
+    const slotX = Number(slot.getAttribute('x'));
+    const slotWidth = Number(slot.getAttribute('width'));
+    const noteX = Number(note.getAttribute('data-layout-x'));
+
+    expect(slotX).toBeLessThan(noteX);
+    expect(slotX + slotWidth).toBeGreaterThan(noteX);
+    expect(slotWidth).toBeLessThan(getBeatX(0, 1, 4) - getBeatX(0, 0, 4));
+  });
+
   it('renders an empty grand staff system', () => {
     render(<StaffRenderer score={createEmptyScore('grand', { measureCount: 4 })} />);
 
@@ -301,7 +346,7 @@ describe('StaffRenderer', () => {
     );
   });
 
-  it('snaps the visual ghost to the active duration slot', () => {
+  it('snaps the visual ghost to the first rhythm slot in an empty measure', () => {
     render(
       <StaffRenderer
         duration="quarter"
@@ -318,9 +363,8 @@ describe('StaffRenderer', () => {
       .getByTestId('ghost-event')
       .querySelector('ellipse');
 
-    expect(Number(ghostNoteHead?.getAttribute('cx'))).toBeCloseTo(
-      getBeatX(0, 2, 4),
-      2,
+    expect(Number(ghostNoteHead?.getAttribute('cx'))).toBeLessThan(
+      getBeatX(0, 1, 4),
     );
   });
 
@@ -342,7 +386,7 @@ describe('StaffRenderer', () => {
     );
   });
 
-  it('snaps the insert preview to the nearest valid event boundary', () => {
+  it('snaps the insert preview to the active rhythm slot boundary', () => {
     render(
       <StaffRenderer
         duration="quarter"
@@ -357,7 +401,7 @@ describe('StaffRenderer', () => {
     );
 
     expect(Number(screen.getByTestId('insertion-cursor').getAttribute('x1'))).toBeCloseTo(
-      getBeatX(0, 1, trebleStudyFixture.timeSignature.beats),
+      getBeatX(0, 0, trebleStudyFixture.timeSignature.beats),
       2,
     );
   });
@@ -1283,7 +1327,7 @@ describe('StaffRenderer', () => {
     );
   });
 
-  it('places clicks on the active duration slot instead of freehand beats', () => {
+  it('places clicks on the current rhythm slot instead of freehand beats', () => {
     const score = createEmptyScore('treble', { measureCount: 4 });
     const onPlaceAtPosition = vi.fn();
 
@@ -1307,7 +1351,7 @@ describe('StaffRenderer', () => {
 
     expect(onPlaceAtPosition).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        beat: 2,
+        beat: 0,
         measureIndex: 0,
         pitch: { step: 'B', octave: 4 },
         staffId: 'treble',
