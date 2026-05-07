@@ -817,10 +817,6 @@ function App() {
                 }}
               />
             </div>
-            <p className="surface-note">
-              V0.4 notation surface. Hover to preview, click to place,
-              insert to shift later notes, drag selected notes to repair them.
-            </p>
           </div>
         </section>
       </section>

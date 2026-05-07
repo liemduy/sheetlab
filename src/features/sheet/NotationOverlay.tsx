@@ -325,9 +325,6 @@ function StaffHoverGuide({
         x={STAFF_LEFT}
         y={staffTop - 17}
       />
-      <text x={STAFF_LEFT - 58} y={staffTop + STAFF_LINE_SPACING * 2 + 4}>
-        {staff.clef === 'treble' ? 'Treble' : 'Bass'}
-      </text>
     </g>
   );
 }
@@ -364,11 +361,11 @@ function RhythmSlots({
                 data-measure-index={measure.index}
                 data-staff-id={staff.id}
                 data-testid="rhythm-slot"
-                height={4}
-                rx={1.6}
-                width={12}
-                x={x - 6}
-                y={y - 2}
+                height={3}
+                rx={1.5}
+                width={10}
+                x={x - 5}
+                y={y - 1.5}
               />
             );
           }),

@@ -286,18 +286,6 @@ button {
   text-align: right;
 }
 
-.surface-note {
-  margin: 1.8rem auto 0;
-  max-width: 44rem;
-  border: 1px solid rgb(23 107 84 / 16%);
-  border-radius: 999px;
-  padding: 0.75rem 1.15rem;
-  background: rgb(23 107 84 / 6%);
-  color: var(--muted);
-  font-size: 0.94rem;
-  text-align: center;
-}
-
 .staff-renderer {
   display: block;
   width: 100%;
@@ -351,19 +339,10 @@ button {
 }
 
 .staff-hover-guide rect {
-  fill: rgb(23 107 84 / 7%);
-  stroke: rgb(23 107 84 / 22%);
-  stroke-width: 1.2;
+  fill: rgb(43 103 255 / 4%);
+  stroke: rgb(43 103 255 / 14%);
+  stroke-width: 0.9;
   vector-effect: non-scaling-stroke;
-}
-
-.staff-hover-guide text {
-  fill: var(--accent-strong);
-  font-family: Cambria, "Times New Roman", serif;
-  font-size: 0.72rem;
-  font-style: italic;
-  font-weight: 700;
-  text-anchor: start;
 }
 
 .rhythm-slots,
@@ -378,25 +357,25 @@ button {
 }
 
 .rhythm-slot {
-  fill: rgb(43 103 255 / 16%);
+  fill: rgb(43 103 255 / 12%);
   stroke: transparent;
 }
 
 .rhythm-slot.is-active {
-  fill: rgb(43 103 255 / 34%);
+  fill: rgb(43 103 255 / 28%);
 }
 
 .active-input-cursor-line {
   stroke: #2b67ff;
   stroke-linecap: round;
-  stroke-width: 2.5;
+  stroke-width: 2;
   vector-effect: non-scaling-stroke;
 }
 
 .active-input-cursor-note-box {
-  fill: rgb(43 103 255 / 7%);
-  stroke: rgb(43 103 255 / 62%);
-  stroke-width: 1.5;
+  fill: rgb(43 103 255 / 5%);
+  stroke: rgb(43 103 255 / 50%);
+  stroke-width: 1.2;
   vector-effect: non-scaling-stroke;
 }
 
@@ -568,8 +547,7 @@ button {
   }
 
   .topbar,
-  .left-panel,
-  .surface-note {
+  .left-panel {
     display: none;
   }
 
@@ -653,7 +631,4 @@ button {
     margin-top: 3rem;
   }
 
-  .surface-note {
-    border-radius: 1.15rem;
-  }
 }

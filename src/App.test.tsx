@@ -57,9 +57,7 @@ describe('App editor state', () => {
       within(screen.getByLabelText('Current editor state')).getByText('A4'),
     ).toBeInTheDocument();
     expect(document.querySelector('.paper-a4')).not.toBeNull();
-    expect(
-      screen.getByText(/V0.4 notation surface/),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(/notation surface/i)).not.toBeInTheDocument();
     expect(screen.getByText('96 BPM')).toBeInTheDocument();
   });
 

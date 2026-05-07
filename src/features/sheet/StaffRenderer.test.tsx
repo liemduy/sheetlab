@@ -173,7 +173,7 @@ describe('StaffRenderer', () => {
       'data-staff-id',
       'bass',
     );
-    expect(screen.getByText('Bass')).toBeInTheDocument();
+    expect(screen.queryByText('Bass')).not.toBeInTheDocument();
   });
 
   it('renders a ghost note at the hover position', () => {
