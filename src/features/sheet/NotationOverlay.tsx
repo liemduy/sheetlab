@@ -4,7 +4,10 @@ import type { Score, ScoreEvent, Staff } from '../../domain/score/types';
 import type { DurationValue } from '../../domain/score/types';
 import type { EntryMode, PlacementMode } from '../editor/editorState';
 import type { InputCursor } from '../editor/inputCursor';
-import { getInputSlotBeats } from '../editor/inputCursor';
+import {
+  createInputCursorFromPosition,
+  getInputSlotBeats,
+} from '../editor/inputCursor';
 import { formatPitch, mapPointToMusicPosition } from './interaction';
 import type { MusicPosition } from './interaction';
 import {
@@ -407,6 +410,59 @@ function ActiveInputCursor({
   );
 }
 
+function inputCursorToMusicPosition(
+  cursor: InputCursor | null | undefined,
+  score: Score,
+): MusicPosition | null {
+  if (!cursor) {
+    return null;
+  }
+
+  const staff = score.parts[0]?.staves[cursor.staffIndex];
+
+  if (!staff || staff.id !== cursor.staffId) {
+    return null;
+  }
+
+  const x = getBeatX(
+    cursor.measureIndex,
+    cursor.beat,
+    score.timeSignature.beats,
+  );
+  const y =
+    cursor.mode === 'note-input'
+      ? getPitchY(cursor.pitchPreview, staff.clef, cursor.staffIndex)
+      : getStaffTop(cursor.staffIndex) + STAFF_LINE_SPACING * 2;
+
+  return {
+    beat: cursor.beat,
+    measureIndex: cursor.measureIndex,
+    pitch: cursor.pitchPreview,
+    staffId: cursor.staffId,
+    staffIndex: cursor.staffIndex,
+    x,
+    y,
+  };
+}
+
+function snapPositionToInputGrid(
+  position: MusicPosition,
+  duration: DurationValue,
+  score: Score,
+) {
+  return (
+    inputCursorToMusicPosition(
+      createInputCursorFromPosition(
+        position,
+        duration,
+        'note-input',
+        score.timeSignature.beats,
+      ),
+      score,
+    ) ?? position
+  );
+}
+
 export function NotationOverlay({
   activeEventId,
   duration,
@@ -443,10 +499,13 @@ export function NotationOverlay({
           .flatMap((measure) => measure.voices)
           .flatMap((voice) => voice.events)
           .find((event) => event.id === dragState.eventId) ?? null;
+  const snappedHoverPosition =
+    inputCursorToMusicPosition(inputCursor, score) ??
+    (hoverPosition ? snapPositionToInputGrid(hoverPosition, duration, score) : null);
   const displayHoverPosition =
-    placementMode === 'insert' && hoverPosition
-      ? snapInsertPositionToEventBoundary(score, hoverPosition)
-      : hoverPosition;
+    placementMode === 'insert' && snappedHoverPosition
+      ? snapInsertPositionToEventBoundary(score, snappedHoverPosition)
+      : snappedHoverPosition;
 
   function getEventMusicPosition(event: MouseEvent<SVGSVGElement>) {
     return mapPointToMusicPosition(getSvgPoint(event, svgHeight), score);
@@ -505,9 +564,12 @@ export function NotationOverlay({
         }
 
         const position = getEventMusicPosition(event);
+        const placementPosition = position
+          ? snapPositionToInputGrid(position, duration, score)
+          : null;
 
-        if (position) {
-          onPlaceAtPosition?.(position);
+        if (placementPosition) {
+          onPlaceAtPosition?.(placementPosition);
         }
       }}
     >

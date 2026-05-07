@@ -196,6 +196,29 @@ describe('StaffRenderer', () => {
     );
   });
 
+  it('snaps the visual ghost to the active duration slot', () => {
+    render(
+      <StaffRenderer
+        duration="quarter"
+        entryMode="note"
+        hoverPosition={{
+          ...trebleHover,
+          beat: 1.5,
+        }}
+        score={createEmptyScore('treble', { measureCount: 4 })}
+      />,
+    );
+
+    const ghostNoteHead = screen
+      .getByTestId('ghost-event')
+      .querySelector('ellipse');
+
+    expect(Number(ghostNoteHead?.getAttribute('cx'))).toBeCloseTo(
+      getBeatX(0, 2, 4),
+      2,
+    );
+  });
+
   it('renders an insertion cursor and smaller note hit targets in insert mode', () => {
     render(
       <StaffRenderer
@@ -584,6 +607,38 @@ describe('StaffRenderer', () => {
     expect(onPlaceAtPosition).toHaveBeenLastCalledWith(
       expect.objectContaining({
         beat: 0,
+        measureIndex: 0,
+        pitch: { step: 'B', octave: 4 },
+        staffId: 'treble',
+      }),
+    );
+  });
+
+  it('places clicks on the active duration slot instead of freehand beats', () => {
+    const score = createEmptyScore('treble', { measureCount: 4 });
+    const onPlaceAtPosition = vi.fn();
+
+    render(
+      <StaffRenderer
+        duration="quarter"
+        score={score}
+        onPlaceAtPosition={onPlaceAtPosition}
+      />,
+    );
+
+    const overlay = screen.getByTestId('staff-renderer');
+    const bounds = setVisibleSheetBounds(overlay);
+    const betweenQuarterSlots = svgToClientPoint(
+      bounds,
+      getBeatX(0, 1.5, 4),
+      getPitchY({ step: 'B', octave: 4 }, 'treble', 0),
+    );
+
+    fireEvent.click(overlay, betweenQuarterSlots);
+
+    expect(onPlaceAtPosition).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        beat: 2,
         measureIndex: 0,
         pitch: { step: 'B', octave: 4 },
         staffId: 'treble',

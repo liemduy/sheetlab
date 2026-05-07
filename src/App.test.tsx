@@ -140,6 +140,22 @@ describe('App editor state', () => {
     expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toBeInTheDocument();
   });
 
+  it('places notes on the snapped visible slot when the user clicks between slots', () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByTestId('staff-renderer'), {
+      clientX: getBeatX(0, 1.5, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.getByLabelText('Note E4 measure 1 beat 3')).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'treble M1 B4 E4',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('advances the input cursor after placing notes by the active duration', () => {
     render(<App />);
 
