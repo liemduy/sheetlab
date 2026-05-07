@@ -107,6 +107,7 @@ describe('StaffRenderer', () => {
     expect(screen.getByTestId('staff-treble')).toBeInTheDocument();
     expect(screen.queryByTestId('staff-bass')).not.toBeInTheDocument();
     expect(screen.getAllByTestId('measure-barline-treble')).toHaveLength(5);
+    expect(container.querySelectorAll('.vexflow-output .vf-generated-rest')).toHaveLength(4);
   });
 
   it('does not render the full rhythm grid before the cursor has a hover position', () => {
@@ -161,7 +162,7 @@ describe('StaffRenderer', () => {
     expect(screen.getAllByTestId('rhythm-slot')).toHaveLength(1);
   });
 
-  it('renders a shared highlighted slot across grand-staff piano staves', () => {
+  it('renders one highlighted slot on the active piano staff', () => {
     render(
       <StaffRenderer
         duration="quarter"
@@ -179,7 +180,7 @@ describe('StaffRenderer', () => {
     );
 
     expect(screen.getAllByTestId('rhythm-slot')).toHaveLength(1);
-    expect(document.querySelectorAll('.timeline-slot.is-grand-slot')).toHaveLength(1);
+    expect(document.querySelectorAll('.timeline-slot.is-grand-slot')).toHaveLength(0);
     expect(screen.getByTestId('rhythm-slot')).toHaveAttribute('data-beat', '1');
   });
 
@@ -231,7 +232,7 @@ describe('StaffRenderer', () => {
     expect(screen.getAllByTestId('measure-barline-bass')).toHaveLength(5);
   });
 
-  it('spans the active input cursor through both staves in grand staff mode', () => {
+  it('keeps the active input slot inside the current grand-staff stave', () => {
     render(
       <StaffRenderer
         inputCursor={{
@@ -251,12 +252,10 @@ describe('StaffRenderer', () => {
 
     expect(
       Number(slot.getAttribute('y')),
-    ).toBe(getStaffTop(0) - 36);
+    ).toBe(getStaffTop(1) - 16);
     expect(
       Number(slot.getAttribute('height')),
-    ).toBe(
-      getStaffTop(1) + STAFF_LINE_SPACING * 4 + 36 - (getStaffTop(0) - 36),
-    );
+    ).toBe(STAFF_LINE_SPACING * 4 + 32);
   });
 
   it('highlights the hovered staff in a grand staff system', () => {
@@ -1174,6 +1173,31 @@ describe('StaffRenderer', () => {
     ).not.toBeNull();
     expect(container.querySelectorAll('.vexflow-output .vf-flag').length).toBeGreaterThan(0);
     expect(container.querySelectorAll('.score-event-notehead')).toHaveLength(0);
+  });
+
+  it('beams consecutive short notes through VexFlow instead of leaving separate flags', () => {
+    const firstNoteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'eighth-note-1',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'B', octave: 4 },
+    });
+    const score = placeScoreEvent(firstNoteScore, {
+      eventId: 'eighth-note-2',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0.5,
+      duration: 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 5 },
+    });
+    const { container } = render(<StaffRenderer score={score} />);
+
+    expect(container.querySelectorAll('.vexflow-output .vf-beam').length).toBeGreaterThan(0);
+    expect(container.querySelectorAll('.vexflow-output .vf-flag')).toHaveLength(0);
   });
 
   it('keeps VexFlow staff lines aligned with overlay pitch geometry', () => {

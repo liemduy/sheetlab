@@ -524,6 +524,13 @@ function getTimelineYRange(score: Score, staffIndex: number, staffGap: number) {
   };
 }
 
+function getStaffSlotYRange(staffIndex: number, staffGap: number) {
+  return {
+    y1: getStaffTop(staffIndex, staffGap) - 16,
+    y2: getStaffTop(staffIndex, staffGap) + STAFF_LINE_SPACING * 4 + 16,
+  };
+}
+
 function StaffHoverGuide({
   position,
   score,
@@ -628,7 +635,6 @@ function RhythmSlots({
     return null;
   }
 
-  const staves = score.parts[0]?.staves ?? [];
   const staffGap = getScoreStaffGap(score);
   const slotStartX = getBeatX(
     inputCursor.measureIndex,
@@ -645,7 +651,7 @@ function RhythmSlots({
     slotEndBeat,
     score.timeSignature.beats,
   );
-  const yRange = getTimelineYRange(score, inputCursor.staffIndex, staffGap);
+  const yRange = getStaffSlotYRange(inputCursor.staffIndex, staffGap);
 
   return (
     <g className="rhythm-slots" data-testid="rhythm-slots">
@@ -658,9 +664,7 @@ function RhythmSlots({
         data-testid="active-input-cursor"
       >
         <rect
-          className={`rhythm-slot timeline-slot is-active${
-            score.type === 'grand' && staves.length > 1 ? ' is-grand-slot' : ''
-          }`}
+          className="rhythm-slot timeline-slot is-active"
           data-beat={inputCursor.beat}
           data-duration={inputCursor.duration}
           data-measure-index={inputCursor.measureIndex}
@@ -705,6 +709,8 @@ function inputCursorToMusicPosition(
 
   return {
     beat: cursor.beat,
+    clientX: cursor.clientX,
+    clientY: cursor.clientY,
     measureIndex: cursor.measureIndex,
     pitch: cursor.pitchPreview,
     staffId: cursor.staffId,
@@ -830,14 +836,30 @@ export function NotationOverlay({
         : null;
 
   function getEventMusicPosition(event: MouseEvent<SVGSVGElement>) {
-    return mapPointToMusicPosition(getSvgPoint(event, svgHeight), score);
+    const position = mapPointToMusicPosition(getSvgPoint(event, svgHeight), score);
+
+    return position
+      ? {
+          ...position,
+          clientX: event.clientX,
+          clientY: event.clientY,
+        }
+      : null;
   }
 
   function getDragMusicPosition(event: MouseEvent<SVGSVGElement>) {
     const point = getSvgPoint(event, svgHeight);
 
     if (!dragState?.originPosition) {
-      return mapPointToMusicPosition(point, score);
+      const position = mapPointToMusicPosition(point, score);
+
+      return position
+        ? {
+            ...position,
+            clientX: event.clientX,
+            clientY: event.clientY,
+          }
+        : null;
     }
 
     const origin = dragState.originPosition;
@@ -860,6 +882,8 @@ export function NotationOverlay({
 
     return {
       ...origin,
+      clientX: event.clientX,
+      clientY: event.clientY,
       pitch,
       staffId: staff.id,
       staffIndex: targetStaffIndex,

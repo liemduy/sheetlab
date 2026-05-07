@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Accidental as VexFlowAccidental,
+  Beam,
   Dot,
   Formatter,
   Renderer,
@@ -9,6 +10,7 @@ import {
   StaveNote,
 } from 'vexflow';
 import type { ScoreEvent, Staff } from '../../domain/score/types';
+import { getDurationBeats } from '../../domain/score/durations';
 import {
   getEventDots,
   getEventPitches,
@@ -32,6 +34,7 @@ import {
   accidentalToVexFlow,
   durationToVexFlowDuration,
   pitchToVexFlowKey,
+  splitBeatsIntoDurations,
 } from './vexflowAdapter';
 import { getBeatX, getPitchY } from './notationGeometry';
 import { getMeasureKey } from './measureKey';
@@ -91,6 +94,26 @@ function createVexFlowNote(event: ScoreEvent, staff: Staff) {
   return staveNote;
 }
 
+function createEmptyMeasureDisplayRests(
+  staffId: Staff['id'],
+  measureIndex: number,
+  beatsPerMeasure: number,
+): ScoreEvent[] {
+  let cursorBeat = 0;
+
+  return splitBeatsIntoDurations(beatsPerMeasure).map((duration) => {
+    const event: ScoreEvent = {
+      id: `rest-${staffId}-m${measureIndex + 1}-display-${cursorBeat}-${duration}`,
+      kind: 'rest',
+      beat: cursorBeat,
+      duration,
+    };
+    cursorBeat += getDurationBeats(duration);
+
+    return event;
+  });
+}
+
 function drawVexFlowMeasureEvents({
   beatsPerMeasure,
   context,
@@ -109,20 +132,22 @@ function drawVexFlowMeasureEvents({
   stave: Stave;
 }) {
   const measure = staff.measures.find((candidate) => candidate.index === measureIndex);
-  const events = measure?.voices[0]?.events ?? [];
-  const hasUserEvents = events.some((event) => !isGeneratedRestEvent(event));
-
-  if (!hasUserEvents) {
-    return {};
-  }
-
+  const measureEvents = measure?.voices[0]?.events ?? [];
+  const events =
+    measureEvents.length > 0
+      ? measureEvents
+      : createEmptyMeasureDisplayRests(staff.id, measureIndex, beatsPerMeasure);
   const notes = events.map((event) => createVexFlowNote(event, staff));
   const eventLayouts: Record<string, RenderedEventLayout> = {};
+  const beams = Beam.generateBeams(notes, {
+    beamRests: false,
+    groups: Beam.getDefaultBeamGroups(`${beatsPerMeasure}/4`),
+  });
 
   Formatter.FormatAndDraw(context, stave, notes, {
     alignRests: true,
-    autoBeam: true,
   });
+  beams.forEach((beam) => beam.setContext(context).draw());
 
   notes.forEach((note, noteIndex) => {
     const event = events[noteIndex];

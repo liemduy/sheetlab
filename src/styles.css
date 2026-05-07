@@ -352,8 +352,14 @@ button {
 }
 
 .vexflow-output .vf-generated-rest {
-  opacity: 0;
-  visibility: hidden;
+  opacity: 0.22;
+  visibility: visible;
+}
+
+.vexflow-output .vf-generated-rest,
+.vexflow-output .vf-generated-rest * {
+  fill: #8da0b3 !important;
+  stroke: #8da0b3 !important;
 }
 
 .vexflow-output .vf-user-event.is-selected,

@@ -385,6 +385,33 @@ describe('App editor state', () => {
     ).toBeInTheDocument();
   });
 
+  it('keeps same-staff note entry on the advanced cursor even when the click x drifts', async () => {
+    const { container } = render(<App />);
+    startWriting('Eighth');
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 2, 4),
+      clientY: getPitchY({ step: 'A', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 3.5, 4),
+      clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.getByLabelText('Note G4 measure 1 beat 1')).toBeInTheDocument();
+    expect(screen.getByLabelText('Note A4 measure 1 beat 1.5')).toBeInTheDocument();
+    expect(screen.getByLabelText('Note G4 measure 1 beat 2')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(container.querySelectorAll('.vexflow-output .vf-beam').length).toBeGreaterThan(0);
+    });
+  });
+
   it('previews and places the note the user points at on a real-sized sheet', async () => {
     const { container } = render(<App />);
     startWriting();

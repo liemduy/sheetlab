@@ -23,6 +23,8 @@ export interface SvgPoint {
 }
 
 export interface MusicPosition {
+  clientX?: number;
+  clientY?: number;
   staffId: StaffId;
   staffIndex: number;
   measureIndex: number;

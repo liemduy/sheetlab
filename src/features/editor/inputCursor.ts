@@ -7,6 +7,8 @@ export type InputCursorMode = 'note-input' | 'select' | 'delete-hover';
 
 export interface InputCursor {
   beat: number;
+  clientX?: number;
+  clientY?: number;
   dots?: number;
   duration: DurationValue;
   measureIndex: number;
@@ -37,6 +39,8 @@ export function createInputCursorFromPosition(
 ): InputCursor {
   return {
     beat: snapBeatToInputSlot(position.beat, duration, beatsPerMeasure, dots),
+    clientX: position.clientX,
+    clientY: position.clientY,
     dots,
     duration,
     measureIndex: position.measureIndex,

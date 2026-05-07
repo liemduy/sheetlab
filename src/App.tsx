@@ -33,7 +33,6 @@ import {
   advanceInputCursor,
   createInputCursorFromPosition,
   formatInputCursor,
-  updateInputCursorDuration,
 } from './features/editor/inputCursor';
 import type { InputCursor } from './features/editor/inputCursor';
 import type {
@@ -70,6 +69,50 @@ function pitchesMatch(first: Pitch, second: Pitch) {
   );
 }
 
+function musicPositionFromCursor(
+  cursor: InputCursor,
+  pointerPosition: MusicPosition,
+): MusicPosition {
+  return {
+    ...pointerPosition,
+    beat: cursor.beat,
+    measureIndex: cursor.measureIndex,
+    pitch: pointerPosition.pitch,
+    staffId: cursor.staffId,
+    staffIndex: cursor.staffIndex,
+  };
+}
+
+function hasPitchedEventAtPosition(score: Score, position: MusicPosition) {
+  const voice = score.parts
+    .flatMap((part) => part.staves)
+    .find((staff) => staff.id === position.staffId)
+    ?.measures.find((measure) => measure.index === position.measureIndex)
+    ?.voices[0];
+
+  return (
+    voice?.events.some(
+      (event) => isPitchedScoreEvent(event) && event.beat === position.beat,
+    ) ?? false
+  );
+}
+
+const SEQUENTIAL_CLICK_CLIENT_RADIUS = 32;
+
+function isNearSequentialCursor(
+  cursor: InputCursor,
+  position: MusicPosition,
+) {
+  if (cursor.clientX === undefined || position.clientX === undefined) {
+    return false;
+  }
+
+  return (
+    Math.abs(position.clientX - cursor.clientX) <=
+    SEQUENTIAL_CLICK_CLIENT_RADIUS
+  );
+}
+
 function App() {
   type SelectionSource = 'manual';
 
@@ -99,6 +142,11 @@ function App() {
   const playbackController = useRef<{ stop: () => void } | null>(null);
   const playbackEndTimer = useRef<number | null>(null);
   const playbackInterval = useRef<number | null>(null);
+  const isCursorSequenceLockedRef = useRef(false);
+
+  function setCursorSequenceLocked(isLocked: boolean) {
+    isCursorSequenceLockedRef.current = isLocked;
+  }
 
   function commitScoreChange(nextScore: Score, message: string) {
     setPastScores((currentPast) => [...currentPast, score]);
@@ -173,14 +221,9 @@ function App() {
 
   function handleDurationChange(duration: DurationValue) {
     updateToolState({ duration, isInputArmed: true });
-    setInputCursor((currentCursor) =>
-      updateInputCursorDuration(
-        currentCursor,
-        duration,
-        score.timeSignature.beats,
-        toolState.dots,
-      ),
-    );
+    setCursorSequenceLocked(false);
+    setHoverPosition(null);
+    setInputCursor(null);
     updateSelectedEvent({ duration }, 'Event duration updated');
   }
 
@@ -188,14 +231,9 @@ function App() {
     const dots = dotted ? 1 : 0;
 
     updateToolState({ dots });
-    setInputCursor((currentCursor) =>
-      updateInputCursorDuration(
-        currentCursor,
-        toolState.duration,
-        score.timeSignature.beats,
-        dots,
-      ),
-    );
+    setCursorSequenceLocked(false);
+    setHoverPosition(null);
+    setInputCursor(null);
     updateSelectedEvent({ dots }, dotted ? 'Dotted note enabled' : 'Dotted note disabled');
   }
 
@@ -203,6 +241,7 @@ function App() {
     updateToolState({ isInputArmed: false });
     setHoverPosition(null);
     setInputCursor(null);
+    setCursorSequenceLocked(false);
     setSelectedEventId(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
@@ -229,19 +268,36 @@ function App() {
   function handleHoverPositionChange(position: MusicPosition | null) {
     const nextHoverPosition = toolState.isInputArmed ? position : null;
 
-    setHoverPosition(nextHoverPosition);
-
-    if (nextHoverPosition) {
-      setInputCursor(
-        createInputCursorFromPosition(
-          nextHoverPosition,
-          toolState.duration,
-          'note-input',
-          score.timeSignature.beats,
-          toolState.dots,
-        ),
-      );
+    if (!nextHoverPosition) {
+      setHoverPosition(null);
+      return;
     }
+
+    setInputCursor((currentCursor) => {
+      const shouldKeepSequentialBeat =
+        isCursorSequenceLockedRef.current &&
+        currentCursor !== null &&
+        currentCursor.staffId === nextHoverPosition.staffId &&
+        (currentCursor.measureIndex === nextHoverPosition.measureIndex ||
+          isNearSequentialCursor(currentCursor, nextHoverPosition));
+      const nextCursor = shouldKeepSequentialBeat
+        ? {
+            ...currentCursor,
+            pitchPreview: nextHoverPosition.pitch,
+            staffIndex: nextHoverPosition.staffIndex,
+          }
+        : createInputCursorFromPosition(
+            nextHoverPosition,
+            toolState.duration,
+            'note-input',
+            score.timeSignature.beats,
+            toolState.dots,
+          );
+
+      setHoverPosition(musicPositionFromCursor(nextCursor, nextHoverPosition));
+
+      return nextCursor;
+    });
   }
 
   function handleScoreTypeChange(scoreType: ScoreType) {
@@ -255,6 +311,7 @@ function App() {
     );
     setHoverPosition(null);
     setInputCursor(null);
+    setCursorSequenceLocked(false);
     setSelectedEventId(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
@@ -272,6 +329,7 @@ function App() {
     );
     setHoverPosition(null);
     setInputCursor(null);
+    setCursorSequenceLocked(false);
     setSelectedEventId(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
@@ -316,10 +374,19 @@ function App() {
       return;
     }
 
+    const sequentialPlacementPosition =
+      isCursorSequenceLockedRef.current &&
+      inputCursor !== null &&
+      inputCursor.staffId === position.staffId &&
+      (inputCursor.measureIndex === position.measureIndex ||
+        isNearSequentialCursor(inputCursor, position)) &&
+      !hasPitchedEventAtPosition(score, position)
+        ? musicPositionFromCursor(inputCursor, position)
+        : position;
     const placementPosition =
       toolState.placementMode === 'insert'
         ? snapInsertPositionToEventBoundary(score, position)
-        : position;
+        : sequentialPlacementPosition;
     const accidental =
       toolState.accidental === 'none' ? undefined : toolState.accidental;
     const eventId = `event-${eventCounter.current++}`;
@@ -358,6 +425,7 @@ function App() {
           ),
         ),
       );
+      setCursorSequenceLocked(true);
       setSelectedEventId(null);
       setSelectedPitchIndex(null);
       setSelectedEventSource(null);
@@ -475,6 +543,7 @@ function App() {
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     setInputCursor(null);
+    setCursorSequenceLocked(false);
     setInvalidMeasureKeys([]);
     updateToolState({ isInputArmed: false });
     setEditorMessage('Undo');
@@ -494,6 +563,7 @@ function App() {
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     setInputCursor(null);
+    setCursorSequenceLocked(false);
     setInvalidMeasureKeys([]);
     updateToolState({ isInputArmed: false });
     setEditorMessage('Redo');
@@ -523,6 +593,7 @@ function App() {
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     setInputCursor(null);
+    setCursorSequenceLocked(false);
     setHoverPosition(null);
   }
 
@@ -547,6 +618,7 @@ function App() {
       setSelectedPitchIndex(null);
       setSelectedEventSource(null);
       setInputCursor(null);
+      setCursorSequenceLocked(false);
       setHoverPosition(null);
     } catch {
       setEditorMessage('Invalid JSON project');
@@ -823,6 +895,7 @@ function App() {
                   }
                   onClick={() => {
                     updateToolState({ placementMode });
+                    setCursorSequenceLocked(false);
                     scrollNotationIntoView();
                   }}
                 >
@@ -1079,6 +1152,7 @@ function App() {
                   updateToolState({ isInputArmed: false });
                   setHoverPosition(null);
                   setInputCursor(null);
+                  setCursorSequenceLocked(false);
                   setSelectedEventId(eventId);
                   setSelectedPitchIndex(pitchIndex ?? null);
                   setSelectedEventSource('manual');
