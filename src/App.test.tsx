@@ -147,6 +147,26 @@ describe('App editor state', () => {
     expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toBeInTheDocument();
   });
 
+  it('adds a second pitch at the same slot as a chord column', () => {
+    render(<App />);
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'C', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+
+    expect(
+      screen.getByLabelText('Chord C4 E4 measure 1 beat 1'),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText('Note C4 measure 1 beat 1')).not.toBeInTheDocument();
+  });
+
   it('places notes on the snapped visible slot when the user clicks between slots', () => {
     render(<App />);
 

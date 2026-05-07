@@ -10,6 +10,7 @@ import type {
 } from './types';
 import { getDurationBeats } from './durations';
 import {
+  getEventPitches,
   getPrimaryEventPitch,
   isGeneratedRestEvent,
   isPitchedScoreEvent,
@@ -73,6 +74,104 @@ function createScoreEvent(request: PlaceScoreEventRequest): ScoreEvent {
       ...request.pitch,
       accidental: request.accidental,
     },
+  };
+}
+
+function getPitchKey(pitch: Pitch) {
+  return `${pitch.step}${pitch.accidental ?? ''}${pitch.octave}`;
+}
+
+function comparePitches(a: Pitch, b: Pitch) {
+  const steps = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+  const valueA = a.octave * steps.length + steps.indexOf(a.step);
+  const valueB = b.octave * steps.length + steps.indexOf(b.step);
+
+  return valueA - valueB;
+}
+
+function mergePitchedEventWithNote(
+  existingEvent: ScoreEvent,
+  noteEvent: ScoreEvent,
+  eventId: string,
+): ScoreEvent {
+  if (noteEvent.kind !== 'note' || !isPitchedScoreEvent(existingEvent)) {
+    return noteEvent;
+  }
+
+  const uniquePitches = new Map<string, Pitch>();
+
+  [...getEventPitches(existingEvent), noteEvent.pitch].forEach((pitch) => {
+    uniquePitches.set(getPitchKey(pitch), pitch);
+  });
+
+  const pitches = [...uniquePitches.values()].sort(comparePitches);
+
+  if (pitches.length === 1) {
+    return {
+      ...noteEvent,
+      pitch: pitches[0] ?? noteEvent.pitch,
+    };
+  }
+
+  return {
+    id: eventId,
+    kind: 'chord',
+    beat: noteEvent.beat,
+    duration: noteEvent.duration,
+    pitches,
+  };
+}
+
+function applyPitchUpdate(
+  pitch: Pitch,
+  update: UpdateScoreEventRequest,
+): Pitch {
+  return {
+    ...pitch,
+    ...update.pitch,
+    accidental:
+      update.accidental === null
+        ? undefined
+        : update.accidental ?? update.pitch?.accidental ?? pitch.accidental,
+  };
+}
+
+function createUpdatedScoreEvent(
+  event: ScoreEvent,
+  eventId: string,
+  beat: number,
+  duration: DurationValue,
+  update: UpdateScoreEventRequest,
+): ScoreEvent {
+  if (event.kind === 'rest') {
+    return {
+      id: eventId,
+      kind: 'rest',
+      beat,
+      duration,
+    };
+  }
+
+  if (event.kind === 'chord') {
+    const nextPitches = event.pitches.map((pitch, index) =>
+      index === 0 ? applyPitchUpdate(pitch, update) : pitch,
+    );
+
+    return {
+      id: eventId,
+      kind: 'chord',
+      beat,
+      duration,
+      pitches: nextPitches.sort(comparePitches),
+    };
+  }
+
+  return {
+    id: eventId,
+    kind: 'note',
+    beat,
+    duration,
+    pitch: applyPitchUpdate(event.pitch, update),
   };
 }
 
@@ -232,18 +331,38 @@ function materializeMeasureEvents(
   return compactRestRuns(materializedEvents, staffId, measureIndex);
 }
 
-export function tryPlaceScoreEvent(
+function getTargetVoice(
   score: Score,
-  request: PlaceScoreEventRequest,
-): PlaceScoreEventResult {
-  const nextEvent = createScoreEvent(request);
+  staffId: StaffId,
+  measureIndex: number,
+) {
   const targetStaff = score.parts
     .flatMap((part) => part.staves)
-    .find((staff) => staff.id === request.staffId);
+    .find((staff) => staff.id === staffId);
   const targetMeasure = targetStaff?.measures.find(
-    (measure) => measure.index === request.measureIndex,
+    (measure) => measure.index === measureIndex,
   );
   const targetVoice = targetMeasure?.voices[0];
+
+  return {
+    targetMeasure,
+    targetStaff,
+    targetVoice,
+  };
+}
+
+function writeScoreEvent(
+  score: Score,
+  staffId: StaffId,
+  measureIndex: number,
+  nextEvent: ScoreEvent,
+  options: { allowSameStartPitchedReplacement: boolean },
+): PlaceScoreEventResult {
+  const { targetMeasure, targetStaff, targetVoice } = getTargetVoice(
+    score,
+    staffId,
+    measureIndex,
+  );
 
   if (!targetStaff || !targetMeasure || !targetVoice) {
     return {
@@ -267,7 +386,8 @@ export function tryPlaceScoreEvent(
   const shouldRejectOverlap = overlappingEvents.some(
     (event) =>
       isPitchedScoreEvent(event) &&
-      getEventStartTick(event) !== getEventStartTick(nextEvent),
+      (!options.allowSameStartPitchedReplacement ||
+        getEventStartTick(event) !== getEventStartTick(nextEvent)),
   );
 
   if (shouldRejectOverlap) {
@@ -289,8 +409,8 @@ export function tryPlaceScoreEvent(
         nextEvent,
       ],
       score,
-      request.staffId,
-      request.measureIndex,
+      staffId,
+      measureIndex,
     );
   } catch (error) {
     return {
@@ -309,11 +429,11 @@ export function tryPlaceScoreEvent(
     parts: score.parts.map((part) => ({
       ...part,
       staves: part.staves.map((staff) =>
-        staff.id === request.staffId
+        staff.id === staffId
           ? {
               ...staff,
               measures: staff.measures.map((measure) =>
-                measure.index === request.measureIndex
+                measure.index === measureIndex
                   ? {
                       ...measure,
                       voices: measure.voices.map((voice, voiceIndex) =>
@@ -337,6 +457,37 @@ export function tryPlaceScoreEvent(
     score: nextScore,
     placed: true,
   };
+}
+
+export function tryPlaceScoreEvent(
+  score: Score,
+  request: PlaceScoreEventRequest,
+): PlaceScoreEventResult {
+  const candidateEvent = createScoreEvent(request);
+  const { targetVoice } = getTargetVoice(
+    score,
+    request.staffId,
+    request.measureIndex,
+  );
+  const sameSlotPitchedEvent = targetVoice?.events.find(
+    (event) =>
+      isPitchedScoreEvent(event) &&
+      eventsOverlapByTick(candidateEvent, event) &&
+      getEventStartTick(event) === getEventStartTick(candidateEvent) &&
+      event.duration === candidateEvent.duration,
+  );
+  const nextEvent =
+    candidateEvent.kind === 'note' && sameSlotPitchedEvent
+      ? mergePitchedEventWithNote(
+          sameSlotPitchedEvent,
+          candidateEvent,
+          request.eventId,
+        )
+      : candidateEvent;
+
+  return writeScoreEvent(score, request.staffId, request.measureIndex, nextEvent, {
+    allowSameStartPitchedReplacement: true,
+  });
 }
 
 export function placeScoreEvent(score: Score, request: PlaceScoreEventRequest) {
@@ -603,74 +754,22 @@ export function tryUpdateScoreEvent(
   const targetStaffId = update.staffId ?? found.staffId;
   const targetMeasureIndex = update.measureIndex ?? found.measureIndex;
   const targetBeat = update.beat ?? found.event.beat;
-  const existingPitch = getPrimaryEventPitch(found.event);
-  const pitch: Pitch =
-    found.event.kind !== 'rest'
-      ? {
-          ...(existingPitch ?? { step: 'C' as const, octave: 4 }),
-          ...update.pitch,
-          accidental:
-            update.accidental === null
-              ? undefined
-              : update.accidental ??
-                update.pitch?.accidental ??
-                existingPitch?.accidental,
-        }
-      : { step: 'C' as const, octave: 4 };
-  const accidental =
-    found.event.kind !== 'rest'
-      ? update.accidental === null
-        ? undefined
-        : update.accidental ?? existingPitch?.accidental
-      : undefined;
-  const entryMode = found.event.kind === 'rest' ? 'rest' : 'note';
-  const candidateEvent = createScoreEvent({
+  const candidateEvent = createUpdatedScoreEvent(
+    found.event,
     eventId,
-    staffId: targetStaffId,
-    measureIndex: targetMeasureIndex,
-    beat: targetBeat,
+    targetBeat,
     duration,
-    entryMode,
-    pitch,
-    accidental,
-  });
-  const targetVoice = scoreWithoutEvent.parts
-    .flatMap((part) => part.staves)
-    .find((staff) => staff.id === targetStaffId)
-    ?.measures.find((measure) => measure.index === targetMeasureIndex)
-    ?.voices[0];
-
-  if (getEventEnd(candidateEvent) > score.timeSignature.beats) {
-    return {
-      score,
-      updated: false,
-      reason: 'measure-overflow',
-    };
-  }
-
-  if (
-    targetVoice?.events.some(
-      (event) =>
-        isPitchedScoreEvent(event) && eventsOverlapByTick(candidateEvent, event),
-    )
-  ) {
-    return {
-      score,
-      updated: false,
-      reason: 'event-overlap',
-    };
-  }
-
-  const result = tryPlaceScoreEvent(scoreWithoutEvent, {
-    eventId,
-    staffId: targetStaffId,
-    measureIndex: targetMeasureIndex,
-    beat: targetBeat,
-    duration,
-    entryMode,
-    pitch,
-    accidental,
-  });
+    update,
+  );
+  const result = writeScoreEvent(
+    scoreWithoutEvent,
+    targetStaffId,
+    targetMeasureIndex,
+    candidateEvent,
+    {
+      allowSameStartPitchedReplacement: false,
+    },
+  );
 
   return {
     score: result.placed ? result.score : score,

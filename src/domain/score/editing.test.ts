@@ -275,7 +275,7 @@ describe('score editing', () => {
     });
   });
 
-  it('replaces an existing event at the same beat', () => {
+  it('adds a same-duration note at the same beat as a chord column', () => {
     const score = placeScoreEvent(createEmptyScore('treble'), {
       eventId: 'event-original',
       staffId: 'treble',
@@ -298,9 +298,46 @@ describe('score editing', () => {
     expect(
       getVoiceEvents(nextScore),
     ).toHaveLength(3);
-    expect(
-      getVoiceEvents(nextScore)?.[0]?.id,
-    ).toBe('event-replacement');
+    expect(getVoiceEvents(nextScore)?.[0]).toMatchObject({
+      id: 'event-replacement',
+      kind: 'chord',
+      beat: 0,
+      duration: 'quarter',
+      pitches: [
+        { step: 'C', octave: 4 },
+        { step: 'D', octave: 4 },
+      ],
+    });
+    expectMeasureEventsFillMeasure(nextScore);
+  });
+
+  it('replaces a same-start event when the selected duration changes', () => {
+    const score = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'event-original',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const nextScore = placeScoreEvent(score, {
+      eventId: 'event-replacement',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'half',
+      entryMode: 'note',
+      pitch: { step: 'D', octave: 4 },
+    });
+
+    expect(getVoiceEvents(nextScore)?.[0]).toMatchObject({
+      id: 'event-replacement',
+      kind: 'note',
+      beat: 0,
+      duration: 'half',
+      pitch: { step: 'D', octave: 4 },
+    });
     expectMeasureEventsFillMeasure(nextScore);
   });
 
@@ -409,6 +446,76 @@ describe('score editing', () => {
       duration: 'half',
       pitch: { step: 'C', octave: 4, accidental: 'flat' },
     });
+  });
+
+  it('updates chord duration without collapsing it to a single note', () => {
+    const noteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'event-c',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const score = placeScoreEvent(noteScore, {
+      eventId: 'event-chord',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+    const result = tryUpdateScoreEvent(score, 'event-chord', {
+      duration: 'half',
+    });
+
+    expect(result.updated).toBe(true);
+    expect(findScoreEvent(result.score, 'event-chord')?.event).toMatchObject({
+      kind: 'chord',
+      duration: 'half',
+      pitches: [
+        { step: 'C', octave: 4 },
+        { step: 'E', octave: 4 },
+      ],
+    });
+    expectMeasureEventsFillMeasure(result.score);
+  });
+
+  it('moves a chord column without losing its pitches', () => {
+    const noteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'event-c',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const score = placeScoreEvent(noteScore, {
+      eventId: 'event-chord',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+    const result = tryUpdateScoreEvent(score, 'event-chord', {
+      beat: 2,
+    });
+
+    expect(result.updated).toBe(true);
+    expect(findScoreEvent(result.score, 'event-chord')?.event).toMatchObject({
+      kind: 'chord',
+      beat: 2,
+      pitches: [
+        { step: 'C', octave: 4 },
+        { step: 'E', octave: 4 },
+      ],
+    });
+    expectMeasureEventsFillMeasure(result.score);
   });
 
   it('moves an existing note to a new beat, measure, and pitch', () => {
