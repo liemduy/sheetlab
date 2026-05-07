@@ -50,6 +50,12 @@ describe('App editor state', () => {
       'aria-pressed',
       'true',
     );
+    expect(screen.getByRole('button', { name: 'Quarter' })).toHaveTextContent(
+      '♩',
+    );
+    expect(screen.getByRole('button', { name: 'Quarter' })).not.toHaveTextContent(
+      'Quarter',
+    );
     expect(screen.getByText('Moderato ♩ = 96')).toBeInTheDocument();
     expect(screen.getByText('Composer')).toBeInTheDocument();
     expect(screen.getByLabelText('Page size')).toHaveValue('a4');
@@ -65,10 +71,11 @@ describe('App editor state', () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Eighth' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Thirty-second' }));
     fireEvent.click(screen.getByRole('button', { name: 'Rest' }));
     fireEvent.click(screen.getByRole('button', { name: 'Insert' }));
 
-    expect(screen.getByRole('button', { name: 'Eighth' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Thirty-second' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
@@ -77,7 +84,9 @@ describe('App editor state', () => {
       'true',
     );
     expect(
-      within(screen.getByLabelText('Current editor state')).getByText('Eighth'),
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'Thirty-second',
+      ),
     ).toBeInTheDocument();
     expect(
       within(screen.getByLabelText('Current editor state')).getByText('Insert'),

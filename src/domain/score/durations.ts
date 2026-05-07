@@ -6,6 +6,7 @@ export const DURATION_BEATS: Record<DurationValue, number> = {
   quarter: 1,
   eighth: 0.5,
   sixteenth: 0.25,
+  thirtySecond: 0.125,
 };
 
 export function getDurationBeats(duration: DurationValue) {

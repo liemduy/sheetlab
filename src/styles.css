@@ -105,6 +105,7 @@ button {
 }
 
 .toolbar-group {
+  align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
@@ -114,10 +115,24 @@ button {
   background: rgb(255 255 255 / 48%);
 }
 
+.toolbar-group-label {
+  padding-inline: 0.45rem 0.25rem;
+  color: var(--muted);
+  font-family: ui-sans-serif, "Segoe UI", sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .tool-button {
+  display: inline-grid;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  place-items: center;
   border: 1px solid rgb(36 31 26 / 15%);
   border-radius: 999px;
-  padding: 0.5rem 0.82rem;
+  padding: 0.44rem 0.72rem;
   background: rgb(255 255 255 / 78%);
   color: var(--ink);
   transition:
@@ -136,6 +151,12 @@ button {
   border-color: var(--accent);
   background: var(--accent);
   color: #ffffff;
+}
+
+.tool-symbol {
+  font-family: "Noto Music", "Segoe UI Symbol", Cambria, "Times New Roman", serif;
+  font-size: 1.15rem;
+  line-height: 1;
 }
 
 .workspace {

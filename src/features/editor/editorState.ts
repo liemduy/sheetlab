@@ -26,6 +26,7 @@ export const DURATION_OPTIONS: DurationValue[] = [
   'quarter',
   'eighth',
   'sixteenth',
+  'thirtySecond',
 ];
 
 export const DEFAULT_EDITOR_TOOL_STATE: EditorToolState = {
@@ -43,6 +44,16 @@ export const DURATION_LABEL: Record<DurationValue, string> = {
   quarter: 'Quarter',
   eighth: 'Eighth',
   sixteenth: 'Sixteenth',
+  thirtySecond: 'Thirty-second',
+};
+
+export const DURATION_SYMBOL: Record<DurationValue, string> = {
+  whole: '𝅝',
+  half: '𝅗𝅥',
+  quarter: '♩',
+  eighth: '♪',
+  sixteenth: '𝅘𝅥𝅯',
+  thirtySecond: '𝅘𝅥𝅰',
 };
 
 export const SCORE_TYPE_LABEL: Record<ScoreType, string> = {

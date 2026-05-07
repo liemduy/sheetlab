@@ -12,6 +12,7 @@ describe('vexflow adapter', () => {
   it('maps pitch and duration values to VexFlow notation strings', () => {
     expect(pitchToVexFlowKey({ step: 'C', octave: 4 })).toBe('c/4');
     expect(durationToVexFlowDuration('quarter')).toBe('q');
+    expect(durationToVexFlowDuration('thirtySecond')).toBe('32');
     expect(durationToVexFlowDuration('half', true)).toBe('hr');
   });
 
@@ -68,6 +69,7 @@ describe('vexflow adapter', () => {
   it('splits beat gaps into MVP duration values', () => {
     expect(splitBeatsIntoDurations(3.5)).toEqual(['half', 'quarter', 'eighth']);
     expect(splitBeatsIntoDurations(0.25)).toEqual(['sixteenth']);
+    expect(splitBeatsIntoDurations(0.125)).toEqual(['thirtySecond']);
   });
 
   it('fills measure gaps with hidden rests for beat-accurate VexFlow layout', () => {

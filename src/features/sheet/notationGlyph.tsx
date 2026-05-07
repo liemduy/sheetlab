@@ -64,7 +64,11 @@ function getRestPath(duration: DurationValue, x: number, y: number) {
     return `M ${x - 8} ${y + 1} h 16 v 5 h -16 z`;
   }
 
-  if (duration === 'eighth' || duration === 'sixteenth') {
+  if (
+    duration === 'eighth' ||
+    duration === 'sixteenth' ||
+    duration === 'thirtySecond'
+  ) {
     return [
       `M ${x - 2} ${y - 17}`,
       `c 9 6 7 16 -2 18`,

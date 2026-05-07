@@ -20,6 +20,7 @@ import {
   DEFAULT_EDITOR_TOOL_STATE,
   DURATION_LABEL,
   DURATION_OPTIONS,
+  DURATION_SYMBOL,
   PAGE_SIZE_LABEL,
   PLACEMENT_MODE_LABEL,
   SCORE_TYPE_LABEL,
@@ -533,51 +534,68 @@ function App() {
 
         <nav className="toolbar" aria-label="Editor toolbar">
           <div className="toolbar-group" aria-label="Duration tools">
+            <span className="toolbar-group-label">Duration</span>
             {DURATION_OPTIONS.map((duration) => (
               <button
                 key={duration}
                 type="button"
+                aria-label={DURATION_LABEL[duration]}
                 className={`tool-button${
                   toolState.duration === duration ? ' is-active' : ''
                 }`}
                 aria-pressed={toolState.duration === duration}
+                title={DURATION_LABEL[duration]}
                 onClick={() => {
                   handleDurationChange(duration);
                   scrollNotationIntoView();
                 }}
               >
-                {DURATION_LABEL[duration]}
+                <span className="tool-symbol" aria-hidden="true">
+                  {DURATION_SYMBOL[duration]}
+                </span>
               </button>
             ))}
           </div>
           <div className="toolbar-group" aria-label="Entry tools">
+            <span className="toolbar-group-label">Entry</span>
             {(['note', 'rest'] satisfies EntryMode[]).map((entryMode) => (
               <button
                 key={entryMode}
                 type="button"
+                aria-label={entryMode === 'note' ? 'Note' : 'Rest'}
                 className={`tool-button${
                   toolState.entryMode === entryMode ? ' is-active' : ''
                 }`}
                 aria-pressed={toolState.entryMode === entryMode}
+                title={entryMode === 'note' ? 'Note' : 'Rest'}
                 onClick={() => {
                   updateToolState({ entryMode });
                   scrollNotationIntoView();
                 }}
               >
-                {entryMode === 'note' ? 'Note' : 'Rest'}
+                <span className="tool-symbol" aria-hidden="true">
+                  {entryMode === 'note' ? '♩' : '𝄽'}
+                </span>
               </button>
             ))}
           </div>
           <div className="toolbar-group" aria-label="Placement tools">
+            <span className="toolbar-group-label">Write mode</span>
             {(['place', 'insert'] satisfies PlacementMode[]).map(
               (placementMode) => (
                 <button
                   key={placementMode}
                   type="button"
+                  aria-label={PLACEMENT_MODE_LABEL[placementMode]}
                   className={`tool-button${
                     toolState.placementMode === placementMode ? ' is-active' : ''
                   }`}
                   aria-pressed={toolState.placementMode === placementMode}
+                  title={
+                    placementMode === 'insert'
+                      ? 'Insert and shift later notes'
+                      : 'Place or replace at the current slot'
+                  }
                   onClick={() => {
                     updateToolState({ placementMode });
                     scrollNotationIntoView();
@@ -589,33 +607,47 @@ function App() {
             )}
           </div>
           <div className="toolbar-group" aria-label="Transport and history">
+            <span className="toolbar-group-label">Transport</span>
             <button
               type="button"
+              aria-label={isPlaying ? 'Stop' : 'Play'}
               className={`tool-button${isPlaying ? ' is-active' : ''}`}
               onClick={handlePlaybackToggle}
             >
-              {isPlaying ? 'Stop' : 'Play'}
+              <span className="tool-symbol" aria-hidden="true">
+                {isPlaying ? '■' : '▶'}
+              </span>
             </button>
             <button
               type="button"
+              aria-label="Undo"
               className="tool-button"
               disabled={pastScores.length === 0}
               onClick={handleUndo}
             >
-              Undo
+              ↶
             </button>
             <button
               type="button"
+              aria-label="Redo"
               className="tool-button"
               disabled={futureScores.length === 0}
               onClick={handleRedo}
             >
-              Redo
+              ↷
             </button>
-            <button type="button" className="tool-button" onClick={handleAddMeasure}>
+            <button
+              type="button"
+              className="tool-button"
+              onClick={handleAddMeasure}
+            >
               Add Measure
             </button>
-            <button type="button" className="tool-button" onClick={handleResetScore}>
+            <button
+              type="button"
+              className="tool-button"
+              onClick={handleResetScore}
+            >
               Reset
             </button>
             <button
@@ -628,6 +660,7 @@ function App() {
             </button>
           </div>
           <div className="toolbar-group" aria-label="Project tools">
+            <span className="toolbar-group-label">File</span>
             <button type="button" className="tool-button" onClick={handleSaveProject}>
               Save
             </button>

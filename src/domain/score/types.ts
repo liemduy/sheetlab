@@ -10,7 +10,13 @@ export type NoteStep = 'C' | 'D' | 'E' | 'F' | 'G' | 'A' | 'B';
 
 export type Accidental = 'natural' | 'sharp' | 'flat';
 
-export type DurationValue = 'whole' | 'half' | 'quarter' | 'eighth' | 'sixteenth';
+export type DurationValue =
+  | 'whole'
+  | 'half'
+  | 'quarter'
+  | 'eighth'
+  | 'sixteenth'
+  | 'thirtySecond';
 
 export interface TimeSignature {
   beats: number;

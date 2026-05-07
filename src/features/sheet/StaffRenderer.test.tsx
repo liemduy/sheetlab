@@ -112,6 +112,17 @@ describe('StaffRenderer', () => {
     expect(screen.getAllByTestId('rhythm-slot')).toHaveLength(8);
   });
 
+  it('renders dense thirty-second slots for fine input', () => {
+    render(
+      <StaffRenderer
+        duration="thirtySecond"
+        score={createEmptyScore('treble', { measureCount: 4 })}
+      />,
+    );
+
+    expect(screen.getAllByTestId('rhythm-slot')).toHaveLength(128);
+  });
+
   it('renders the active blue input cursor at the current slot', () => {
     render(
       <StaffRenderer

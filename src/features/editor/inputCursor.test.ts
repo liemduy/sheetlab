@@ -122,5 +122,9 @@ describe('input cursor', () => {
     expect(getInputSlotBeats('eighth', 4)).toEqual([
       0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5,
     ]);
+    expect(getInputSlotBeats('thirtySecond', 4)).toHaveLength(32);
+    expect(getInputSlotBeats('thirtySecond', 4).slice(0, 4)).toEqual([
+      0, 0.125, 0.25, 0.375,
+    ]);
   });
 });

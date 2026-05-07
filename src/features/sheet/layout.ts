@@ -1,11 +1,11 @@
-export const STAFF_LEFT = 126;
-export const STAFF_RIGHT = 824;
+export const STAFF_LEFT = 76;
+export const STAFF_RIGHT = 884;
 export const STAFF_LINE_SPACING = 11;
 export const STAFF_GAP = 132;
-export const MEASURE_WIDTH = 174.5;
-export const MEASURE_LEFT_PADDING = 18;
-export const FIRST_MEASURE_LEFT_PADDING = 70;
-export const MEASURE_RIGHT_PADDING = 18;
+export const MEASURE_WIDTH = 202;
+export const MEASURE_LEFT_PADDING = 20;
+export const FIRST_MEASURE_LEFT_PADDING = 78;
+export const MEASURE_RIGHT_PADDING = 20;
 export const FIRST_STAFF_Y = 118;
 export const SVG_WIDTH = 920;
 export const VEXFLOW_STAVE_TOP_LINE_OFFSET = 44.5;

@@ -22,6 +22,7 @@ const DURATIONS = new Set<DurationValue>([
   'quarter',
   'eighth',
   'sixteenth',
+  'thirtySecond',
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
