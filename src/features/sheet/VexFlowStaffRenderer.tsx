@@ -410,6 +410,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         onClearInteraction={props.onClearInteraction}
         onDeleteEvent={props.onDeleteEvent}
         onHoverPositionChange={props.onHoverPositionChange}
+        onMeasureContextMenu={props.onMeasureContextMenu}
         onMoveEvent={props.onMoveEvent}
         onPlaceAtPosition={props.onPlaceAtPosition}
         onSelectMeasure={props.onSelectMeasure}

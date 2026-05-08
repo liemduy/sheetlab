@@ -601,6 +601,122 @@ export function addMeasure(score: Score): Score {
   return ensureMeasureCount(score, measureCount + 1);
 }
 
+function getScoreMeasureCount(score: Score) {
+  return Math.max(
+    0,
+    ...score.parts.flatMap((part) =>
+      part.staves.map((staff) => staff.measures.length),
+    ),
+  );
+}
+
+function reindexStaffMeasures(
+  score: Score,
+  staff: Staff,
+  measures: Measure[],
+) {
+  return measures.map((measure, index) => ({
+    ...measure,
+    id: `measure-${staff.id}-${index + 1}`,
+    index,
+    voices: measure.voices.map((voice, voiceIndex) => ({
+      ...voice,
+      id:
+        voiceIndex === 0
+          ? `voice-${staff.id}-${index + 1}-main`
+          : `${voice.id}-m${index + 1}`,
+      events:
+        voice.events.length > 0
+          ? materializeMeasureEvents(voice.events, score, staff.id, index)
+          : [],
+    })),
+  }));
+}
+
+export function insertMeasureAt(score: Score, measureIndex: number): Score {
+  const measureCount = getScoreMeasureCount(score);
+  const targetIndex = Math.max(0, Math.min(measureIndex, measureCount));
+  const normalizedScore = ensureMeasureCount(score, measureCount);
+
+  return {
+    ...normalizedScore,
+    parts: normalizedScore.parts.map((part) => ({
+      ...part,
+      staves: part.staves.map((staff) => {
+        const nextMeasures = [
+          ...staff.measures.slice(0, targetIndex),
+          createEmptyMeasure(staff, targetIndex),
+          ...staff.measures.slice(targetIndex),
+        ];
+
+        return {
+          ...staff,
+          measures: reindexStaffMeasures(normalizedScore, staff, nextMeasures),
+        };
+      }),
+    })),
+  };
+}
+
+export function deleteMeasureAt(score: Score, measureIndex: number): Score {
+  const measureCount = getScoreMeasureCount(score);
+
+  if (measureCount <= 1) {
+    return score;
+  }
+
+  const targetIndex = Math.max(0, Math.min(measureIndex, measureCount - 1));
+  const normalizedScore = ensureMeasureCount(score, measureCount);
+
+  return {
+    ...normalizedScore,
+    parts: normalizedScore.parts.map((part) => ({
+      ...part,
+      staves: part.staves.map((staff) => {
+        const nextMeasures = staff.measures.filter(
+          (measure) => measure.index !== targetIndex,
+        );
+
+        return {
+          ...staff,
+          measures: reindexStaffMeasures(normalizedScore, staff, nextMeasures),
+        };
+      }),
+    })),
+  };
+}
+
+export function clearMeasureContent(
+  score: Score,
+  staffId: StaffId,
+  measureIndex: number,
+): Score {
+  return {
+    ...score,
+    parts: score.parts.map((part) => ({
+      ...part,
+      staves: part.staves.map((staff) =>
+        staff.id === staffId
+          ? {
+              ...staff,
+              measures: staff.measures.map((measure) =>
+                measure.index === measureIndex
+                  ? {
+                      ...measure,
+                      voices: measure.voices.map((voice) => ({
+                        ...voice,
+                        events: [],
+                      })),
+                    }
+                  : measure,
+              ),
+            }
+          : staff,
+      ),
+    })),
+  };
+}
+
 function toLocalBeat(globalBeat: number, beatsPerMeasure: number) {
   return Number((globalBeat % beatsPerMeasure).toFixed(4));
 }

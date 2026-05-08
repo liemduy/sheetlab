@@ -17,6 +17,12 @@ export interface StaffRendererProps {
   onClearInteraction?: () => void;
   onSelectEvent?: (eventId: string, pitchIndex?: number | null) => void;
   onDeleteEvent?: (eventId: string, pitchIndex?: number | null) => void;
+  onMeasureContextMenu?: (
+    staffId: StaffId,
+    measureIndex: number,
+    clientX: number,
+    clientY: number,
+  ) => void;
   onMoveEvent?: (
     eventId: string,
     position: MusicPosition,

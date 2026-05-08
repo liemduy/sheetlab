@@ -76,8 +76,14 @@ describe('App editor state', () => {
     expect(screen.getByRole('button', { name: 'Quarter' })).not.toHaveTextContent(
       'Quarter',
     );
+    expect(screen.getByLabelText('Score title')).toHaveValue(
+      'Untitled Piano Exercise',
+    );
     expect(screen.getByText('Moderato ♩ = 96')).toBeInTheDocument();
-    expect(screen.getByText('Composer')).toBeInTheDocument();
+    expect(screen.getByLabelText('Composer')).toHaveAttribute(
+      'placeholder',
+      'Composer',
+    );
     expect(screen.getByLabelText('Page size')).toHaveValue('a4');
     expect(
       within(screen.getByLabelText('Current editor state')).getByText('A4'),
@@ -169,7 +175,7 @@ describe('App editor state', () => {
 
     expect(screen.getByTestId('ghost-event')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('heading', { name: 'Untitled Piano Exercise' }));
+    fireEvent.click(screen.getByLabelText('Score title'));
 
     expect(screen.getByRole('button', { name: 'Select tool' })).toHaveAttribute(
       'aria-pressed',
@@ -243,6 +249,20 @@ describe('App editor state', () => {
     ).toBeInTheDocument();
     expect(document.querySelector('.paper-letter')).not.toBeNull();
     expect(screen.getByText('120 BPM')).toBeInTheDocument();
+  });
+
+  it('edits score title and composer inline on the paper', () => {
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText('Score title'), {
+      target: { value: 'My Piano Study' },
+    });
+    fireEvent.change(screen.getByLabelText('Composer'), {
+      target: { value: 'Ada Composer' },
+    });
+
+    expect(screen.getByLabelText('Score title')).toHaveValue('My Piano Study');
+    expect(screen.getByLabelText('Composer')).toHaveValue('Ada Composer');
   });
 
   it('places a score event when the user clicks the sheet', () => {
@@ -487,6 +507,38 @@ describe('App editor state', () => {
     ).toBeInTheDocument();
   });
 
+  it('lets the hover cursor return to an earlier rhythm slot after placement', () => {
+    render(<App />);
+    startWriting('Eighth');
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.getByTestId('active-input-cursor')).toHaveAttribute(
+      'data-beat',
+      '0.5',
+    );
+
+    fireEvent.mouseMove(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.getByTestId('active-input-cursor')).toHaveAttribute(
+      'data-beat',
+      '0',
+    );
+    expect(
+      within(screen.getByLabelText('Current editor state')).getAllByText(
+        'treble M1 B1 G4',
+      ).length,
+    ).toBeGreaterThan(0);
+  });
+
   it('previews and places the note the user points at on a real-sized sheet', async () => {
     const { container } = render(<App />);
     startWriting();
@@ -556,6 +608,72 @@ describe('App editor state', () => {
 
     expect(screen.getAllByTestId('measure-barline-treble')).toHaveLength(22);
     expect(within(screen.getByLabelText('Current editor state')).getByText('17')).toBeInTheDocument();
+  });
+
+  it('opens a right-click measure menu and clears that staff measure content', () => {
+    render(<App />);
+    startWriting();
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Measure 1 treble' }), {
+      clientX: 320,
+      clientY: 180,
+    });
+
+    expect(screen.getByTestId('measure-context-menu')).toBeInTheDocument();
+    expect(screen.getByTestId('selected-measure')).toHaveAttribute(
+      'data-measure-key',
+      'treble:0',
+    );
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Clear content' }));
+
+    expect(screen.queryByLabelText('Note E4 measure 1 beat 1')).not.toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'Measure content cleared',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('adds and deletes measure columns from the right-click measure menu with a warning', () => {
+    render(<App />);
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Measure 2 treble' }), {
+      clientX: 320,
+      clientY: 180,
+    });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Add measure before' }));
+
+    expect(screen.getAllByTestId('measure-barline-treble')).toHaveLength(22);
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText('17'),
+    ).toBeInTheDocument();
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Measure 2 treble' }), {
+      clientX: 320,
+      clientY: 180,
+    });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete measure' }));
+
+    expect(screen.getByRole('dialog', { name: 'Delete measure warning' }))
+      .toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete measure' }));
+
+    expect(screen.queryByRole('dialog', { name: 'Delete measure warning' }))
+      .not.toBeInTheDocument();
+    expect(screen.getAllByTestId('measure-barline-treble')).toHaveLength(20);
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'Measure deleted',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('selects and deletes a placed score event', () => {

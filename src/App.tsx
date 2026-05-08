@@ -4,10 +4,13 @@ import { createEmptyScore, deserializeScore } from './domain/score/factories';
 import { isPitchedScoreEvent } from './domain/score/events';
 import {
   addMeasure,
+  clearMeasureContent,
   countScoreEvents,
+  deleteMeasureAt,
   deleteScoreEvent,
   deleteScoreEventPitch,
   findScoreEvent,
+  insertMeasureAt,
   tryInsertScoreEvent,
   tryPlaceScoreEvent,
   tryUpdateScoreEvent,
@@ -129,9 +132,15 @@ function createCursorAfterPlacement(
     ? {
         ...placementPosition,
         beat: nextSlot.beat,
+        clientX: undefined,
+        clientY: undefined,
         measureIndex: nextSlot.measureIndex,
       }
-    : placementPosition;
+    : {
+        ...placementPosition,
+        clientX: undefined,
+        clientY: undefined,
+      };
 
   return createInputCursorFromPosition(
     nextPosition,
@@ -164,6 +173,16 @@ function App() {
     staffId: StaffId;
     measureIndex: number;
   } | null>(null);
+  const [measureContextMenu, setMeasureContextMenu] = useState<{
+    clientX: number;
+    clientY: number;
+    staffId: StaffId;
+    measureIndex: number;
+  } | null>(null);
+  const [pendingMeasureDelete, setPendingMeasureDelete] = useState<{
+    staffId: StaffId;
+    measureIndex: number;
+  } | null>(null);
   const [selectedPitchIndex, setSelectedPitchIndex] = useState<number | null>(null);
   const [selectedEventSource, setSelectedEventSource] =
     useState<SelectionSource | null>(null);
@@ -187,6 +206,13 @@ function App() {
     setScore(nextScore);
     setInvalidMeasureKeys([]);
     setEditorMessage(message);
+  }
+
+  function updateScoreMetadata(update: Partial<Pick<Score, 'composer' | 'title'>>) {
+    setScore((currentScore) => ({
+      ...currentScore,
+      ...update,
+    }));
   }
 
   function updateToolState(update: Partial<EditorToolState>) {
@@ -279,6 +305,8 @@ function App() {
     setCursorSequenceLocked(false);
     setSelectedEventId(null);
     setSelectedMeasure(null);
+    setMeasureContextMenu(null);
+    setPendingMeasureDelete(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     setEditorMessage('Select mode');
@@ -293,6 +321,7 @@ function App() {
 
     if (
       target.closest('[data-testid="staff-renderer"]') ||
+      target.closest('.measure-context-menu, .measure-warning-dialog') ||
       target.closest('button, input, select, textarea, a')
     ) {
       return;
@@ -309,26 +338,14 @@ function App() {
       return;
     }
 
-    setInputCursor((currentCursor) => {
-      const shouldKeepSequentialBeat =
-        isCursorSequenceLockedRef.current &&
-        currentCursor !== null &&
-        currentCursor.staffId === nextHoverPosition.staffId &&
-        (currentCursor.measureIndex === nextHoverPosition.measureIndex ||
-          isNearSequentialCursor(currentCursor, nextHoverPosition));
-      const nextCursor = shouldKeepSequentialBeat
-        ? {
-            ...currentCursor,
-            pitchPreview: nextHoverPosition.pitch,
-            staffIndex: nextHoverPosition.staffIndex,
-          }
-        : createInputCursorFromPosition(
-            nextHoverPosition,
-            toolState.duration,
-            'note-input',
-            score.timeSignature.beats,
-            toolState.dots,
-          );
+    setInputCursor(() => {
+      const nextCursor = createInputCursorFromPosition(
+        nextHoverPosition,
+        toolState.duration,
+        'note-input',
+        score.timeSignature.beats,
+        toolState.dots,
+      );
 
       setHoverPosition(musicPositionFromCursor(nextCursor, nextHoverPosition));
 
@@ -350,6 +367,8 @@ function App() {
     setCursorSequenceLocked(false);
     setSelectedEventId(null);
     setSelectedMeasure(null);
+    setMeasureContextMenu(null);
+    setPendingMeasureDelete(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     scrollNotationIntoView();
@@ -369,6 +388,8 @@ function App() {
     setCursorSequenceLocked(false);
     setSelectedEventId(null);
     setSelectedMeasure(null);
+    setMeasureContextMenu(null);
+    setPendingMeasureDelete(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     scrollNotationIntoView();
@@ -376,6 +397,128 @@ function App() {
 
   function handleAddMeasure() {
     commitScoreChange(addMeasure(score), 'Measure added');
+  }
+
+  function getMeasureCount() {
+    return score.parts[0]?.staves[0]?.measures.length ?? 0;
+  }
+
+  function handleMeasureContextMenu(
+    staffId: StaffId,
+    measureIndex: number,
+    clientX: number,
+    clientY: number,
+  ) {
+    updateToolState({ isInputArmed: false });
+    setHoverPosition(null);
+    setInputCursor(null);
+    setCursorSequenceLocked(false);
+    setSelectedEventId(null);
+    setSelectedMeasure({ staffId, measureIndex });
+    setMeasureContextMenu({ clientX, clientY, staffId, measureIndex });
+    setPendingMeasureDelete(null);
+    setSelectedPitchIndex(null);
+    setSelectedEventSource(null);
+    setEditorMessage('Measure selected');
+  }
+
+  function closeMeasureContextMenu() {
+    setMeasureContextMenu(null);
+  }
+
+  function handleClearMeasureContent() {
+    const targetMeasure = measureContextMenu ?? selectedMeasure;
+
+    if (!targetMeasure) {
+      return;
+    }
+
+    commitScoreChange(
+      clearMeasureContent(
+        score,
+        targetMeasure.staffId,
+        targetMeasure.measureIndex,
+      ),
+      'Measure content cleared',
+    );
+    setSelectedMeasure({
+      staffId: targetMeasure.staffId,
+      measureIndex: targetMeasure.measureIndex,
+    });
+    closeMeasureContextMenu();
+  }
+
+  function handleInsertMeasureBefore() {
+    const targetMeasure = measureContextMenu ?? selectedMeasure;
+
+    if (!targetMeasure) {
+      return;
+    }
+
+    commitScoreChange(
+      insertMeasureAt(score, targetMeasure.measureIndex),
+      'Measure inserted before',
+    );
+    setSelectedMeasure({
+      staffId: targetMeasure.staffId,
+      measureIndex: targetMeasure.measureIndex,
+    });
+    closeMeasureContextMenu();
+  }
+
+  function handleInsertMeasureAfter() {
+    const targetMeasure = measureContextMenu ?? selectedMeasure;
+
+    if (!targetMeasure) {
+      return;
+    }
+
+    commitScoreChange(
+      insertMeasureAt(score, targetMeasure.measureIndex + 1),
+      'Measure inserted after',
+    );
+    setSelectedMeasure({
+      staffId: targetMeasure.staffId,
+      measureIndex: targetMeasure.measureIndex + 1,
+    });
+    closeMeasureContextMenu();
+  }
+
+  function handleRequestDeleteMeasure() {
+    const targetMeasure = measureContextMenu ?? selectedMeasure;
+
+    if (!targetMeasure) {
+      return;
+    }
+
+    setPendingMeasureDelete(targetMeasure);
+    closeMeasureContextMenu();
+  }
+
+  function handleConfirmDeleteMeasure() {
+    if (!pendingMeasureDelete) {
+      return;
+    }
+
+    const measureCount = getMeasureCount();
+    const nextSelectedIndex = Math.min(
+      pendingMeasureDelete.measureIndex,
+      Math.max(0, measureCount - 2),
+    );
+
+    commitScoreChange(
+      deleteMeasureAt(score, pendingMeasureDelete.measureIndex),
+      'Measure deleted',
+    );
+    setSelectedMeasure(
+      measureCount > 1
+        ? {
+            staffId: pendingMeasureDelete.staffId,
+            measureIndex: nextSelectedIndex,
+          }
+        : null,
+    );
+    setPendingMeasureDelete(null);
   }
 
   function handleTempoChange(value: string) {
@@ -486,6 +629,8 @@ function App() {
     );
     setSelectedEventId(null);
     setSelectedMeasure(null);
+    setMeasureContextMenu(null);
+    setPendingMeasureDelete(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
   }
@@ -497,6 +642,8 @@ function App() {
     setCursorSequenceLocked(false);
     setSelectedEventId(null);
     setSelectedMeasure({ staffId, measureIndex });
+    setMeasureContextMenu(null);
+    setPendingMeasureDelete(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     setEditorMessage('Measure selected');
@@ -512,6 +659,8 @@ function App() {
     if (selectedEventId === eventId) {
       setSelectedEventId(null);
       setSelectedMeasure(null);
+      setMeasureContextMenu(null);
+      setPendingMeasureDelete(null);
       setSelectedPitchIndex(null);
       setSelectedEventSource(null);
     }
@@ -591,6 +740,8 @@ function App() {
     setScore(previousScore);
     setSelectedEventId(null);
     setSelectedMeasure(null);
+    setMeasureContextMenu(null);
+    setPendingMeasureDelete(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     setInputCursor(null);
@@ -612,6 +763,8 @@ function App() {
     setScore(nextScore);
     setSelectedEventId(null);
     setSelectedMeasure(null);
+    setMeasureContextMenu(null);
+    setPendingMeasureDelete(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     setInputCursor(null);
@@ -643,6 +796,8 @@ function App() {
     }));
     setSelectedEventId(null);
     setSelectedMeasure(null);
+    setMeasureContextMenu(null);
+    setPendingMeasureDelete(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     setInputCursor(null);
@@ -669,6 +824,8 @@ function App() {
       }));
       setSelectedEventId(null);
       setSelectedMeasure(null);
+      setMeasureContextMenu(null);
+      setPendingMeasureDelete(null);
       setSelectedPitchIndex(null);
       setSelectedEventSource(null);
       setInputCursor(null);
@@ -1174,10 +1331,29 @@ function App() {
         >
           <div className={`paper paper-${score.pageSize}`}>
             <div className="paper-heading">
-              <h2>{score.title}</h2>
+              <input
+                aria-label="Score title"
+                className="score-title-input"
+                value={score.title}
+                onChange={(event) =>
+                  updateScoreMetadata({ title: event.target.value })
+                }
+                onClick={handleClearInteraction}
+                onFocus={handleClearInteraction}
+              />
               <div className="score-meta-row">
                 <span>Moderato {'\u2669'} = {toolState.tempo}</span>
-                <span>{score.composer || 'Composer'}</span>
+                <input
+                  aria-label="Composer"
+                  className="score-composer-input"
+                  placeholder="Composer"
+                  value={score.composer}
+                  onChange={(event) =>
+                    updateScoreMetadata({ composer: event.target.value })
+                  }
+                  onClick={handleClearInteraction}
+                  onFocus={handleClearInteraction}
+                />
               </div>
             </div>
             <div
@@ -1203,6 +1379,7 @@ function App() {
                 onHoverPositionChange={handleHoverPositionChange}
                 onPlaceAtPosition={handlePlaceAtPosition}
                 onDeleteEvent={handleDeleteEvent}
+                onMeasureContextMenu={handleMeasureContextMenu}
                 onMoveEvent={handleMoveEvent}
                 onSelectMeasure={handleSelectMeasure}
                 onSelectEvent={(eventId, pitchIndex) => {
@@ -1224,6 +1401,74 @@ function App() {
               />
             </div>
           </div>
+          {measureContextMenu ? (
+            <div
+              className="measure-context-menu"
+              data-testid="measure-context-menu"
+              role="menu"
+              style={{
+                left: measureContextMenu.clientX,
+                top: measureContextMenu.clientY,
+              }}
+            >
+              <p>
+                Measure {measureContextMenu.measureIndex + 1} {measureContextMenu.staffId}
+              </p>
+              <button type="button" role="menuitem" onClick={handleClearMeasureContent}>
+                Clear content
+              </button>
+              <button type="button" role="menuitem" onClick={handleInsertMeasureBefore}>
+                Add measure before
+              </button>
+              <button type="button" role="menuitem" onClick={handleInsertMeasureAfter}>
+                Add measure after
+              </button>
+              <button
+                type="button"
+                disabled={getMeasureCount() <= 1}
+                role="menuitem"
+                onClick={handleRequestDeleteMeasure}
+              >
+                Delete measure
+              </button>
+            </div>
+          ) : null}
+          {pendingMeasureDelete ? (
+            <div
+              className="measure-warning-backdrop"
+              data-testid="measure-delete-warning"
+              role="presentation"
+            >
+              <div
+                aria-label="Delete measure warning"
+                aria-modal="true"
+                className="measure-warning-dialog"
+                role="dialog"
+              >
+                <h2>Delete measure?</h2>
+                <p>
+                  This removes measure {pendingMeasureDelete.measureIndex + 1} from every
+                  staff. This action can be undone.
+                </p>
+                <div className="measure-warning-actions">
+                  <button
+                    type="button"
+                    className="tool-button"
+                    onClick={() => setPendingMeasureDelete(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="tool-button danger"
+                    onClick={handleConfirmDeleteMeasure}
+                  >
+                    Delete measure
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </section>
       </section>
     </main>

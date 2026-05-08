@@ -73,6 +73,12 @@ interface NotationOverlayProps {
   onPlaceAtPosition?: (position: MusicPosition) => void;
   onSelectEvent?: (eventId: string, pitchIndex?: number | null) => void;
   onDeleteEvent?: (eventId: string, pitchIndex?: number | null) => void;
+  onMeasureContextMenu?: (
+    staffId: StaffId,
+    measureIndex: number,
+    clientX: number,
+    clientY: number,
+  ) => void;
   onMoveEvent?: (
     eventId: string,
     position: MusicPosition,
@@ -701,6 +707,7 @@ function MeasureHitTarget({
   isInputArmed,
   isSelected,
   measureIndex,
+  onMeasureContextMenu,
   onSelectMeasure,
   staff,
   staffGap,
@@ -710,6 +717,12 @@ function MeasureHitTarget({
   isInputArmed?: boolean;
   isSelected: boolean;
   measureIndex: number;
+  onMeasureContextMenu?: (
+    staffId: StaffId,
+    measureIndex: number,
+    clientX: number,
+    clientY: number,
+  ) => void;
   onSelectMeasure?: (staffId: StaffId, measureIndex: number) => void;
   staff: Staff;
   staffGap: number;
@@ -740,6 +753,16 @@ function MeasureHitTarget({
       onClick={(eventClick) => {
         eventClick.stopPropagation();
         selectMeasure();
+      }}
+      onContextMenu={(contextMenuEvent) => {
+        contextMenuEvent.preventDefault();
+        contextMenuEvent.stopPropagation();
+        onMeasureContextMenu?.(
+          staff.id,
+          measureIndex,
+          contextMenuEvent.clientX,
+          contextMenuEvent.clientY,
+        );
       }}
       onKeyDown={(eventKey) => {
         if (eventKey.key === 'Enter' || eventKey.key === ' ') {
@@ -966,6 +989,7 @@ export function NotationOverlay({
   onMoveEvent,
   onPlaceAtPosition,
   onDeleteEvent,
+  onMeasureContextMenu,
   onSelectMeasure,
   onSelectEvent,
   playbackBeat,
@@ -1188,6 +1212,23 @@ export function NotationOverlay({
           onClearInteraction?.();
         }
       }}
+      onContextMenu={(event) => {
+        const position = getEventMusicPosition(event);
+
+        if (!position) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        onHoverPositionChange?.(null);
+        onMeasureContextMenu?.(
+          position.staffId,
+          position.measureIndex,
+          event.clientX,
+          event.clientY,
+        );
+      }}
     >
       <rect className="staff-page-bg" x={0} y={0} width={SVG_WIDTH} height={svgHeight} />
       <RhythmSlots
@@ -1251,6 +1292,7 @@ export function NotationOverlay({
                 selectedMeasure.measureIndex === measure.index
               }
               measureIndex={measure.index}
+              onMeasureContextMenu={onMeasureContextMenu}
               onSelectMeasure={onSelectMeasure}
               staff={staff}
               staffGap={staffGap}

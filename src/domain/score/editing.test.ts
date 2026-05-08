@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { createEmptyScore } from './factories';
 import {
   addMeasure,
+  clearMeasureContent,
   countScoreEvents,
+  deleteMeasureAt,
   deleteScoreEvent,
   deleteScoreEventPitch,
   findScoreEvent,
+  insertMeasureAt,
   placeScoreEvent,
   tryPlaceScoreEvent,
   tryInsertScoreEvent,
@@ -158,6 +161,80 @@ describe('score editing', () => {
     expect(nextScore.parts[0]?.staves[0]?.measures[2]).toMatchObject({
       id: 'measure-treble-3',
       index: 2,
+    });
+  });
+
+  it('inserts an empty measure before the requested index on every staff', () => {
+    const score = placeScoreEvent(createEmptyScore('grand', { measureCount: 2 }), {
+      eventId: 'event-after-insert',
+      staffId: 'treble',
+      measureIndex: 1,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const nextScore = insertMeasureAt(score, 1);
+
+    expect(nextScore.parts[0]?.staves[0]?.measures).toHaveLength(3);
+    expect(nextScore.parts[0]?.staves[1]?.measures).toHaveLength(3);
+    expect(getVoiceEvents(nextScore, 'treble', 1)).toEqual([]);
+    expect(findScoreEvent(nextScore, 'event-after-insert')).toMatchObject({
+      measureIndex: 2,
+      staffId: 'treble',
+    });
+  });
+
+  it('clears one selected staff measure without deleting the measure column', () => {
+    const trebleScore = placeScoreEvent(createEmptyScore('grand', { measureCount: 2 }), {
+      eventId: 'treble-clear-me',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const score = placeScoreEvent(trebleScore, {
+      eventId: 'bass-keep-me',
+      staffId: 'bass',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 3 },
+    });
+    const nextScore = clearMeasureContent(score, 'treble', 0);
+
+    expect(getVoiceEvents(nextScore, 'treble', 0)).toEqual([]);
+    expect(findScoreEvent(nextScore, 'bass-keep-me')).toMatchObject({
+      measureIndex: 0,
+      staffId: 'bass',
+    });
+    expect(nextScore.parts[0]?.staves[0]?.measures).toHaveLength(2);
+  });
+
+  it('deletes a measure column across every staff and reindexes the tail', () => {
+    const score = placeScoreEvent(createEmptyScore('grand', { measureCount: 3 }), {
+      eventId: 'event-tail',
+      staffId: 'treble',
+      measureIndex: 2,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const nextScore = deleteMeasureAt(score, 1);
+
+    expect(nextScore.parts[0]?.staves[0]?.measures).toHaveLength(2);
+    expect(nextScore.parts[0]?.staves[1]?.measures).toHaveLength(2);
+    expect(nextScore.parts[0]?.staves[0]?.measures[1]).toMatchObject({
+      id: 'measure-treble-2',
+      index: 1,
+    });
+    expect(findScoreEvent(nextScore, 'event-tail')).toMatchObject({
+      measureIndex: 1,
+      staffId: 'treble',
     });
   });
 
