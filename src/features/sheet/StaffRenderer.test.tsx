@@ -25,6 +25,10 @@ import {
 } from './layout';
 import { getBeatX, getPitchY } from './notationGeometry';
 import { StaffRenderer } from './StaffRenderer';
+import {
+  DEFAULT_INPUT_SLOT_WIDTH,
+  MIN_INPUT_SLOT_WIDTH,
+} from './inputSlotLayout';
 
 const trebleHover: MusicPosition = {
   staffId: 'treble',
@@ -187,7 +191,7 @@ describe('StaffRenderer', () => {
     expect(screen.getByTestId('rhythm-slot')).toHaveAttribute('data-beat', '1');
   });
 
-  it('renders the active highlighted input slot at the current duration width', () => {
+  it('centers the active highlighted input slot around the input column', () => {
     render(
       <StaffRenderer
         duration="quarter"
@@ -212,12 +216,15 @@ describe('StaffRenderer', () => {
       'data-duration',
       'quarter',
     );
-    expect(
-      Number(screen.getByTestId('rhythm-slot').getAttribute('x')),
-    ).toBeCloseTo(getBeatX(1, 2, 4), 2);
-    expect(
-      Number(screen.getByTestId('rhythm-slot').getAttribute('width')),
-    ).toBeCloseTo(getBeatX(1, 3, 4) - getBeatX(1, 2, 4), 2);
+    const slot = screen.getByTestId('rhythm-slot');
+    const slotX = Number(slot.getAttribute('x'));
+    const slotWidth = Number(slot.getAttribute('width'));
+    const centerX = Number(slot.getAttribute('data-slot-center-x'));
+
+    expect(centerX).toBeCloseTo(getBeatX(1, 2, 4), 2);
+    expect(slotX).toBeLessThan(centerX);
+    expect(slotX + slotWidth).toBeGreaterThan(centerX);
+    expect(slotWidth).toBe(DEFAULT_INPUT_SLOT_WIDTH);
     expect(document.querySelectorAll('.rhythm-slot.is-active')).toHaveLength(1);
   });
 
@@ -263,7 +270,7 @@ describe('StaffRenderer', () => {
 
     expect(slotX).toBeLessThan(noteX);
     expect(slotX + slotWidth).toBeGreaterThan(noteX);
-    expect(slotWidth).toBeLessThan(getBeatX(0, 1, 4) - getBeatX(0, 0, 4));
+    expect(slotWidth).toBeGreaterThanOrEqual(MIN_INPUT_SLOT_WIDTH);
   });
 
   it('uses beat-grid geometry for generated rest slots after a short placed note', async () => {
@@ -303,14 +310,14 @@ describe('StaffRenderer', () => {
     const slot = screen.getByTestId('rhythm-slot');
 
     expect(getMeasureWidth(0, score)).toBeGreaterThan(getMeasureWidth(1, score));
-    expect(Number(slot.getAttribute('x'))).toBeCloseTo(
-      getBeatX(0, 0.5, 4, score),
-      2,
-    );
-    expect(Number(slot.getAttribute('width'))).toBeCloseTo(
-      getBeatX(0, 1, 4, score) - getBeatX(0, 0.5, 4, score),
-      2,
-    );
+    const centerX = Number(slot.getAttribute('data-slot-center-x'));
+    const slotX = Number(slot.getAttribute('x'));
+    const slotWidth = Number(slot.getAttribute('width'));
+
+    expect(centerX).toBeCloseTo(getBeatX(0, 0.5, 4, score), 2);
+    expect(slotX).toBeLessThan(centerX);
+    expect(slotX + slotWidth).toBeGreaterThan(centerX);
+    expect(slotWidth).toBe(DEFAULT_INPUT_SLOT_WIDTH);
   });
 
   it('renders an empty grand staff system', () => {

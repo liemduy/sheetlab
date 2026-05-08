@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
-import { getDurationBeats } from '../../domain/score/durations';
 import type { Score, ScoreEvent, Staff } from '../../domain/score/types';
 import type { DurationValue, StaffId } from '../../domain/score/types';
 import { clampPitchToClefRange } from '../../domain/score/pitchRange';
@@ -38,10 +37,8 @@ import { snapInsertPositionToEventBoundary } from './insertPosition';
 import { getBeatX, getPitchY } from './notationGeometry';
 import { ChordGlyph, NoteGlyph, RestGlyph } from './notationGlyph';
 import { getMeasureKey } from './measureKey';
-import {
-  getRhythmSlotsForMeasure,
-  snapPositionToRhythmSlot,
-} from './rhythmSlots';
+import { snapPositionToRhythmSlot } from './rhythmSlots';
+import { getInputSlotLayout } from './inputSlotLayout';
 
 export interface RenderedEventLayout {
   beat: number;
@@ -594,23 +591,6 @@ function getTimelineYRange(
   };
 }
 
-function getStaffSlotYRange(
-  score: Score,
-  staffIndex: number,
-  staffGap: number,
-  measureIndex: number,
-) {
-  const systemGap = getScoreSystemGap(score);
-
-  return {
-    y1: getStaffTop(staffIndex, staffGap, measureIndex, systemGap) - 16,
-    y2:
-      getStaffTop(staffIndex, staffGap, measureIndex, systemGap) +
-      STAFF_LINE_SPACING * 4 +
-      16,
-  };
-}
-
 function StaffHoverGuide({
   position,
   score,
@@ -823,51 +803,11 @@ function RhythmSlots({
     return null;
   }
 
-  const staffGap = getScoreStaffGap(score);
-  const activeSlot = getRhythmSlotsForMeasure(
+  const slotLayout = getInputSlotLayout({
+    cursor: inputCursor,
+    eventLayouts,
     score,
-    inputCursor.staffId,
-    inputCursor.measureIndex,
-  ).find((slot) => Math.abs(slot.beat - inputCursor.beat) <= BEAT_MATCH_EPSILON);
-  const activeSlotLayout = activeSlot
-    ? eventLayouts?.[activeSlot.eventId]
-    : undefined;
-  const visibleSlotLayout =
-    activeSlotLayout &&
-    activeSlotLayout.kind !== 'rest' &&
-    !activeSlotLayout.isGeneratedRest
-      ? activeSlotLayout
-      : undefined;
-  const fallbackSlotStartX = getBeatX(
-    inputCursor.measureIndex,
-    inputCursor.beat,
-    score.timeSignature.beats,
-    score,
-  );
-  const slotEndBeat = Math.min(
-    score.timeSignature.beats,
-    inputCursor.beat +
-      getDurationBeats(inputCursor.duration, inputCursor.dots ?? 0),
-  );
-  const fallbackSlotEndX = getBeatX(
-    inputCursor.measureIndex,
-    slotEndBeat,
-    score.timeSignature.beats,
-    score,
-  );
-  const slotPaddingX = 7;
-  const slotStartX = visibleSlotLayout
-    ? visibleSlotLayout.minX - slotPaddingX
-    : fallbackSlotStartX;
-  const slotWidth = visibleSlotLayout
-    ? Math.max(18, visibleSlotLayout.maxX - visibleSlotLayout.minX + slotPaddingX * 2)
-    : Math.max(6, fallbackSlotEndX - fallbackSlotStartX);
-  const yRange = getStaffSlotYRange(
-    score,
-    inputCursor.staffIndex,
-    staffGap,
-    inputCursor.measureIndex,
-  );
+  });
 
   return (
     <g className="rhythm-slots" data-testid="rhythm-slots">
@@ -883,16 +823,17 @@ function RhythmSlots({
           className="rhythm-slot timeline-slot is-active"
           data-beat={inputCursor.beat}
           data-duration={inputCursor.duration}
-          data-layout-source={visibleSlotLayout ? 'vexflow' : 'beat-grid'}
+          data-layout-source={slotLayout.layoutSource}
           data-measure-index={inputCursor.measureIndex}
-          data-slot-end-beat={slotEndBeat}
+          data-slot-center-x={slotLayout.centerX}
+          data-slot-end-beat={slotLayout.slotEndBeat}
           data-staff-id={inputCursor.staffId}
           data-testid="rhythm-slot"
-          height={yRange.y2 - yRange.y1}
+          height={slotLayout.height}
           rx={7}
-          width={slotWidth}
-          x={slotStartX}
-          y={yRange.y1}
+          width={slotLayout.boxWidth}
+          x={slotLayout.boxX}
+          y={slotLayout.y}
         />
       </g>
     </g>
