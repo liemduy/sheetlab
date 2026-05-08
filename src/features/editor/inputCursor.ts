@@ -1,7 +1,13 @@
 import { getDurationBeats } from '../../domain/score/durations';
+import {
+  getInputSlotBeats,
+  snapBeatToInputSlot,
+} from '../../domain/score/inputGrid';
 import type { DurationValue, Pitch, Score, StaffId } from '../../domain/score/types';
 import type { MusicPosition } from '../sheet/interaction';
 import { formatPitch } from '../sheet/interaction';
+
+export { getInputSlotBeats, snapBeatToInputSlot } from '../../domain/score/inputGrid';
 
 export type InputCursorMode = 'note-input' | 'select' | 'delete-hover';
 
@@ -16,10 +22,6 @@ export interface InputCursor {
   pitchPreview: Pitch;
   staffId: StaffId;
   staffIndex: number;
-}
-
-function roundBeat(beat: number) {
-  return Number(beat.toFixed(4));
 }
 
 function getMeasureCount(score: Score, staffId: StaffId) {
@@ -69,7 +71,7 @@ export function advanceInputCursor(score: Score, cursor: InputCursor): InputCurs
 
   return {
     ...cursor,
-    beat: roundBeat(nextBeat),
+    beat: Number(nextBeat.toFixed(4)),
     measureIndex: nextMeasureIndex,
     mode: 'note-input',
   };
@@ -89,32 +91,6 @@ export function updateInputCursorDuration(
         duration,
       }
     : null;
-}
-
-export function getInputSlotBeats(
-  duration: DurationValue,
-  beatsPerMeasure: number,
-  dots = 0,
-) {
-  const durationBeats = getDurationBeats(duration, dots);
-  const slotCount = Math.max(1, Math.floor(beatsPerMeasure / durationBeats));
-
-  return Array.from({ length: slotCount }, (_, slotIndex) =>
-    roundBeat(slotIndex * durationBeats),
-  );
-}
-
-export function snapBeatToInputSlot(
-  beat: number,
-  duration: DurationValue,
-  beatsPerMeasure: number,
-  dots = 0,
-) {
-  const durationBeats = getDurationBeats(duration, dots);
-  const maxBeat = Math.max(0, beatsPerMeasure - durationBeats);
-  const snappedBeat = Math.round(beat / durationBeats) * durationBeats;
-
-  return roundBeat(Math.min(maxBeat, Math.max(0, snappedBeat)));
 }
 
 export function formatInputCursor(cursor: InputCursor | null) {

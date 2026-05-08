@@ -98,6 +98,41 @@ describe('sheet interaction mapping', () => {
     expect(result ? formatPitch(result.pitch) : null).toBe('B4');
   });
 
+  it('snaps pointer beats using the active input duration', () => {
+    const score = createEmptyScore('treble', { measureCount: 4 });
+    const result = mapPointToMusicPosition(
+      {
+        x: getBeatX(0, 1.25, score.timeSignature.beats),
+        y: getPitchY({ step: 'B', octave: 4 }, 'treble', 0),
+      },
+      score,
+      {
+        duration: 'sixteenth',
+      },
+    );
+    const thirtySecondResult = mapPointToMusicPosition(
+      {
+        x: getBeatX(0, 1.125, score.timeSignature.beats),
+        y: getPitchY({ step: 'B', octave: 4 }, 'treble', 0),
+      },
+      score,
+      {
+        duration: 'thirtySecond',
+      },
+    );
+
+    expect(result).toMatchObject({
+      beat: 1.25,
+      measureIndex: 0,
+      staffId: 'treble',
+    });
+    expect(thirtySecondResult).toMatchObject({
+      beat: 1.125,
+      measureIndex: 0,
+      staffId: 'treble',
+    });
+  });
+
   it('maps points through dynamically widened measure widths', () => {
     const score = placeScoreEvent(
       createEmptyScore('treble', { measureCount: 4 }),

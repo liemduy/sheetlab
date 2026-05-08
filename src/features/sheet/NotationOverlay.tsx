@@ -1072,7 +1072,14 @@ export function NotationOverlay({
         : null;
 
   function getEventMusicPosition(event: MouseEvent<SVGSVGElement>) {
-    const position = mapPointToMusicPosition(getSvgPoint(event, svgHeight), score);
+    const position = mapPointToMusicPosition(
+      getSvgPoint(event, svgHeight),
+      score,
+      {
+        dots,
+        duration,
+      },
+    );
 
     return position
       ? {
@@ -1087,7 +1094,10 @@ export function NotationOverlay({
     const point = getSvgPoint(event, svgHeight);
 
     if (!dragState?.originPosition) {
-      const position = mapPointToMusicPosition(point, score);
+      const position = mapPointToMusicPosition(point, score, {
+        dots: draggedEvent ? getEventDots(draggedEvent) : dots,
+        duration: draggedEvent?.duration ?? duration,
+      });
 
       return position
         ? {
@@ -1105,6 +1115,10 @@ export function NotationOverlay({
         x: origin.x,
       },
       score,
+      {
+        dots: draggedEvent ? getEventDots(draggedEvent) : dots,
+        duration: draggedEvent?.duration ?? duration,
+      },
     );
     const targetStaffIndex = mappedPosition?.staffIndex ?? origin.staffIndex;
     const staff = staves[targetStaffIndex];

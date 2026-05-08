@@ -1,4 +1,11 @@
-import type { Pitch, Score, Staff, StaffId } from '../../domain/score/types';
+import { snapBeatToInputSlot } from '../../domain/score/inputGrid';
+import type {
+  DurationValue,
+  Pitch,
+  Score,
+  Staff,
+  StaffId,
+} from '../../domain/score/types';
 import {
   TOP_LINE_BY_CLEF,
   clampPitchToClefRange,
@@ -37,8 +44,12 @@ export interface MusicPosition {
   y: number;
 }
 
-const SNAP_BEAT = 0.5;
 const STAFF_VERTICAL_PADDING = 78;
+
+interface MusicPositionOptions {
+  dots?: number;
+  duration?: DurationValue;
+}
 
 export function mapStaffYToPitch(
   y: number,
@@ -123,6 +134,7 @@ function findMeasureIndexAtX(
 export function mapPointToMusicPosition(
   point: SvgPoint,
   score: Score,
+  options: MusicPositionOptions = {},
 ): MusicPosition | null {
   const staves = score.parts[0]?.staves ?? [];
   const staffGap = getScoreStaffGap(score);
@@ -156,9 +168,11 @@ export function mapPointToMusicPosition(
   const rawBeat =
     ((clampedContentX - measureContentLeft) / measureContentWidth) *
     score.timeSignature.beats;
-  const beat = Math.min(
-    score.timeSignature.beats - SNAP_BEAT,
-    Math.max(0, Math.round(rawBeat / SNAP_BEAT) * SNAP_BEAT),
+  const beat = snapBeatToInputSlot(
+    rawBeat,
+    options.duration ?? 'eighth',
+    score.timeSignature.beats,
+    options.dots ?? 0,
   );
   const pitch = mapStaffYToPitch(
     point.y,
