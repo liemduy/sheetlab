@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import type {
-  CSSProperties,
   MouseEvent as ReactMouseEvent,
 } from 'react';
-import { createEmptyScore, deserializeScore } from '../../domain/score/factories';
+import { createEmptyScore } from '../../domain/score/factories';
 import { isPitchedScoreEvent } from '../../domain/score/events';
 import {
   addMeasure,
@@ -40,11 +39,7 @@ import {
 } from '../editor/inputCursor';
 import type { InputCursor } from '../editor/inputCursor';
 import {
-  DEFAULT_CANVAS_ZOOM,
   EditorToolbar,
-  ZOOM_MAX,
-  ZOOM_MIN,
-  ZOOM_STEP,
   type ToolbarPalette,
 } from '../editor/EditorToolbar';
 import { ScoreSettingsPanel } from '../editor/ScoreSettingsPanel';
@@ -52,7 +47,6 @@ import type {
   DurationValue,
   KeySignature,
   PageSize,
-  Pitch,
   RepeatJumpKind,
   Score,
   ScoreType,
@@ -68,160 +62,29 @@ import {
   getRepeatJumpOption,
 } from '../../domain/score/repeatJumps';
 import { getScoreRhythmIssues } from '../../domain/score/rhythm';
-import { StaffRenderer } from '../sheet/StaffRenderer';
 import type { MusicPosition } from '../sheet/interaction';
 import { snapInsertPositionToEventBoundary } from '../sheet/insertPosition';
 import { getMeasureKey } from '../sheet/measureKey';
-import { findNextRhythmSlotAfter } from '../sheet/rhythmSlots';
 import {
   playPitchPreview,
-  playTimelineAudio,
 } from '../playback/audioEngine';
+import { usePlaybackController } from './usePlaybackController';
+import { useProjectActions } from './useProjectActions';
+import { SheetSurface } from './SheetSurface';
+import { useCanvasZoom } from './useCanvasZoom';
+import { useEditorShortcuts } from './useEditorShortcuts';
+import { useScoreHistory } from './useScoreHistory';
 import {
-  buildPlaybackTimeline,
-  getActiveTimelineEvent,
-  getPlaybackBeatAtSeconds,
-  getTimelineDurationSeconds,
-} from '../playback/timeline';
+  isPdfExportMode,
+  loadInitialScoreForApp,
+} from './appBootstrap';
 import {
-  createProjectJsonBlob,
-  loadProjectFromStorage,
-  saveProjectToStorage,
-  SHEETLAB_PDF_EXPORT_SCORE_KEY,
-} from '../persistence/projectStorage';
-import {
-  createAbcNotationBlob,
-  getAbcNotationFileName,
-  importScoreFromAbc,
-} from '../../domain/score/abcNotation';
-
-function isPdfExportMode() {
-  return (
-    typeof window !== 'undefined' &&
-    new URLSearchParams(window.location.search).has('pdf-export')
-  );
-}
-
-function loadInitialScoreForApp() {
-  if (isPdfExportMode()) {
-    try {
-      const serializedExportScore = window.sessionStorage.getItem(
-        SHEETLAB_PDF_EXPORT_SCORE_KEY,
-      );
-
-      if (serializedExportScore) {
-        return deserializeScore(serializedExportScore);
-      }
-    } catch {
-      // Fall through to the default score if the export payload is invalid.
-    }
-  }
-
-  return createEmptyScore(DEFAULT_EDITOR_TOOL_STATE.scoreType, {
-    tempo: DEFAULT_EDITOR_TOOL_STATE.tempo,
-  });
-}
-
-function pitchesMatch(first: Pitch, second: Pitch) {
-  return (
-    first.step === second.step &&
-    first.octave === second.octave &&
-    first.accidental === second.accidental
-  );
-}
-
-function musicPositionFromCursor(
-  cursor: InputCursor,
-  pointerPosition: MusicPosition,
-): MusicPosition {
-  return {
-    ...pointerPosition,
-    beat: cursor.beat,
-    measureIndex: cursor.measureIndex,
-    pitch: pointerPosition.pitch,
-    staffId: cursor.staffId,
-    staffIndex: cursor.staffIndex,
-  };
-}
-
-function hasPitchedEventAtPosition(score: Score, position: MusicPosition) {
-  const voice = score.parts
-    .flatMap((part) => part.staves)
-    .find((staff) => staff.id === position.staffId)
-    ?.measures.find((measure) => measure.index === position.measureIndex)
-    ?.voices[0];
-
-  return (
-    voice?.events.some(
-      (event) => isPitchedScoreEvent(event) && event.beat === position.beat,
-    ) ?? false
-  );
-}
-
-const SEQUENTIAL_CLICK_CLIENT_RADIUS = 32;
-
-function isNearSequentialCursor(
-  cursor: InputCursor,
-  position: MusicPosition,
-) {
-  if (cursor.clientX === undefined || position.clientX === undefined) {
-    return false;
-  }
-
-  return (
-    Math.abs(position.clientX - cursor.clientX) <=
-    SEQUENTIAL_CLICK_CLIENT_RADIUS
-  );
-}
-
-function shouldUseSequentialCursor(
-  cursor: InputCursor,
-  isSequenceLocked: boolean,
-  position: MusicPosition,
-) {
-  return (
-    isSequenceLocked &&
-    cursor.mode === 'note-input' &&
-    cursor.staffId === position.staffId &&
-    (cursor.measureIndex === position.measureIndex ||
-      isNearSequentialCursor(cursor, position))
-  );
-}
-
-function createCursorAfterPlacement(
-  score: Score,
-  placementPosition: MusicPosition,
-  duration: DurationValue,
-  dots: number,
-) {
-  const nextSlot = findNextRhythmSlotAfter(
-    score,
-    placementPosition.staffId,
-    placementPosition.measureIndex,
-    placementPosition.beat,
-  );
-  const nextPosition = nextSlot
-    ? {
-        ...placementPosition,
-        beat: nextSlot.beat,
-        clientX: undefined,
-        clientY: undefined,
-        measureIndex: nextSlot.measureIndex,
-      }
-    : {
-        ...placementPosition,
-        clientX: undefined,
-        clientY: undefined,
-      };
-
-  return createInputCursorFromPosition(
-    nextPosition,
-    duration,
-    'note-input',
-    getMeasureBeats(score.timeSignature),
-    dots,
-  );
-}
+  createCursorAfterPlacement,
+  hasPitchedEventAtPosition,
+  musicPositionFromCursor,
+  pitchesMatch,
+  shouldUseSequentialCursor,
+} from './inputCursorFlow';
 
 function SheetLabApp() {
   type SelectionSource = 'manual';
@@ -234,13 +97,22 @@ function SheetLabApp() {
       tempo: initialScore.tempo,
     }),
   );
+  const {
+    commitScoreChange,
+    editorMessage,
+    futureScores,
+    invalidMeasureKeys,
+    markInvalidMeasure,
+    pastScores,
+    score,
+    setEditorMessage,
+    setFutureScores,
+    setInvalidMeasureKeys,
+    setPastScores,
+    setScore,
+  } = useScoreHistory(initialScore);
   const [hoverPosition, setHoverPosition] = useState<MusicPosition | null>(null);
   const [inputCursor, setInputCursor] = useState<InputCursor | null>(null);
-  const [score, setScore] = useState(initialScore);
-  const [invalidMeasureKeys, setInvalidMeasureKeys] = useState<string[]>([]);
-  const [pastScores, setPastScores] = useState<Score[]>([]);
-  const [futureScores, setFutureScores] = useState<Score[]>([]);
-  const [editorMessage, setEditorMessage] = useState('Ready');
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [selectedMeasure, setSelectedMeasure] = useState<{
     staffId: StaffId;
@@ -263,29 +135,15 @@ function SheetLabApp() {
   const [selectedPitchIndex, setSelectedPitchIndex] = useState<number | null>(null);
   const [selectedEventSource, setSelectedEventSource] =
     useState<SelectionSource | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [playbackElapsedSeconds, setPlaybackElapsedSeconds] = useState(0);
-  const [canvasZoom, setCanvasZoom] = useState(DEFAULT_CANVAS_ZOOM);
   const [openPalette, setOpenPalette] = useState<ToolbarPalette>(null);
   const eventCounter = useRef(1);
-  const importInputRef = useRef<HTMLInputElement | null>(null);
-  const importAbcInputRef = useRef<HTMLInputElement | null>(null);
   const notationViewportRef = useRef<HTMLDivElement | null>(null);
-  const playbackController = useRef<{ stop: () => void } | null>(null);
-  const playbackEndTimer = useRef<number | null>(null);
-  const playbackInterval = useRef<number | null>(null);
   const isCursorSequenceLockedRef = useRef(false);
+  const { canvasZoom, handleCanvasZoomChange } =
+    useCanvasZoom(notationViewportRef);
 
   function setCursorSequenceLocked(isLocked: boolean) {
     isCursorSequenceLockedRef.current = isLocked;
-  }
-
-  function commitScoreChange(nextScore: Score, message: string) {
-    setPastScores((currentPast) => [...currentPast, score]);
-    setFutureScores([]);
-    setScore(nextScore);
-    setInvalidMeasureKeys([]);
-    setEditorMessage(message);
   }
 
   function updateScoreMetadata(update: Partial<Pick<Score, 'composer' | 'title'>>) {
@@ -300,21 +158,6 @@ function SheetLabApp() {
       ...current,
       ...update,
     }));
-  }
-
-  function markInvalidMeasure(
-    staffId: StaffId,
-    measureIndex: number,
-    message: string,
-  ) {
-    const measureKey = getMeasureKey(staffId, measureIndex);
-
-    setInvalidMeasureKeys((currentKeys) =>
-      currentKeys.includes(measureKey)
-        ? currentKeys
-        : [...currentKeys, measureKey],
-    );
-    setEditorMessage(message);
   }
 
   function scrollNotationIntoView() {
@@ -724,24 +567,6 @@ function SheetLabApp() {
     setSelectedEventSource(null);
   }
 
-  function clampCanvasZoom(value: number) {
-    return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, value));
-  }
-
-  function handleCanvasZoomChange(value: string) {
-    const nextZoom = Number(value);
-
-    if (!Number.isNaN(nextZoom)) {
-      setCanvasZoom(clampCanvasZoom(nextZoom));
-    }
-  }
-
-  function zoomCanvasByWheelDelta(deltaY: number) {
-    setCanvasZoom((currentZoom) =>
-      clampCanvasZoom(currentZoom + (deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP)),
-    );
-  }
-
   function handleMoveKeySignatureSymbol(
     sourceMeasureIndex: number,
     symbolIndex: number,
@@ -934,6 +759,22 @@ function SheetLabApp() {
     setEditorMessage('Measure selected');
   }
 
+  function handleSelectEvent(eventId: string, pitchIndex?: number | null) {
+    updateToolState({ isInputArmed: false });
+    setHoverPosition(null);
+    setInputCursor(null);
+    setCursorSequenceLocked(false);
+    setSelectedEventId(eventId);
+    setSelectedMeasure(null);
+    setSelectedPitchIndex(pitchIndex ?? null);
+    setSelectedEventSource('manual');
+    setEditorMessage(
+      pitchIndex !== null && pitchIndex !== undefined
+        ? 'Notehead selected'
+        : 'Event selected',
+    );
+  }
+
   function handleDeleteEvent(eventId: string, pitchIndex = selectedPitchIndex) {
     commitScoreChange(
       pitchIndex !== null && pitchIndex !== undefined
@@ -1062,24 +903,16 @@ function SheetLabApp() {
     setEditorMessage('Redo');
   }
 
-  function handleSaveProject() {
-    saveProjectToStorage(score);
-    setEditorMessage('Project saved');
-  }
-
-  function handleLoadProject() {
-    const storedScore = loadProjectFromStorage();
-
-    if (!storedScore) {
-      setEditorMessage('No saved project');
-      return;
-    }
-
-    commitScoreChange(storedScore, 'Project loaded');
+  function handleLoadedScoreFromFile(
+    loadedScore: Score,
+    message: string,
+    options?: { closePalette?: boolean },
+  ) {
+    commitScoreChange(loadedScore, message);
     setToolState((current) => ({
       ...current,
-      scoreType: storedScore.type,
-      tempo: storedScore.tempo,
+      scoreType: loadedScore.type,
+      tempo: loadedScore.tempo,
       isInputArmed: false,
     }));
     setSelectedEventId(null);
@@ -1092,216 +925,35 @@ function SheetLabApp() {
     setInputCursor(null);
     setCursorSequenceLocked(false);
     setHoverPosition(null);
-  }
-
-  async function handleImportProjectFile(fileList: FileList | null) {
-    const file = fileList?.[0];
-
-    if (!file) {
-      return;
-    }
-
-    try {
-      const importedScore = deserializeScore(await file.text());
-
-      commitScoreChange(importedScore, 'Project imported');
-      setToolState((current) => ({
-        ...current,
-        scoreType: importedScore.type,
-        tempo: importedScore.tempo,
-        isInputArmed: false,
-      }));
-      setSelectedEventId(null);
-      setSelectedMeasure(null);
-      setMeasureContextMenu(null);
-      setPendingMeasureDelete(null);
-      setPendingMeasureClear(null);
-      setSelectedPitchIndex(null);
-      setSelectedEventSource(null);
-      setInputCursor(null);
-      setCursorSequenceLocked(false);
-      setHoverPosition(null);
+    if (options?.closePalette) {
       setOpenPalette(null);
-    } catch {
-      setEditorMessage('Invalid JSON project');
-    } finally {
-      if (importInputRef.current) {
-        importInputRef.current.value = '';
-      }
     }
   }
 
-  async function handleImportAbcFile(fileList: FileList | null) {
-    const file = fileList?.[0];
-
-    if (!file) {
-      return;
-    }
-
-    try {
-      const { score: importedScore, warnings } = importScoreFromAbc(
-        await file.text(),
-      );
-
-      commitScoreChange(
-        importedScore,
-        warnings.length > 0
-          ? `ABC imported with ${warnings.length} warning${
-              warnings.length === 1 ? '' : 's'
-            }`
-          : 'ABC imported',
-      );
-      setToolState((current) => ({
-        ...current,
-        scoreType: importedScore.type,
-        tempo: importedScore.tempo,
-        isInputArmed: false,
-      }));
-      setSelectedEventId(null);
-      setSelectedMeasure(null);
-      setMeasureContextMenu(null);
-      setPendingMeasureDelete(null);
-      setPendingMeasureClear(null);
-      setSelectedPitchIndex(null);
-      setSelectedEventSource(null);
-      setInputCursor(null);
-      setCursorSequenceLocked(false);
-      setHoverPosition(null);
-      setOpenPalette(null);
-    } catch {
-      setEditorMessage('Invalid ABC notation');
-    } finally {
-      if (importAbcInputRef.current) {
-        importAbcInputRef.current.value = '';
-      }
-    }
-  }
-
-  function handleDownloadProject() {
-    const blob = createProjectJsonBlob(score);
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-
-    link.href = url;
-    link.download = `${score.title || 'sheetlab-project'}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-    setEditorMessage('JSON downloaded');
-  }
-
-  function handleDownloadAbc() {
-    const blob = createAbcNotationBlob(score);
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-
-    link.href = url;
-    link.download = getAbcNotationFileName(score);
-    link.click();
-    URL.revokeObjectURL(url);
-    setEditorMessage('ABC downloaded');
-  }
-
-  function getDownloadBaseName() {
-    return (
-      score.title
-        .trim()
-        .replace(/[^a-z0-9-_]+/gi, '-')
-        .replace(/^-+|-+$/g, '')
-        .toLowerCase() || 'sheetlab-score'
-    );
-  }
-
-  async function handleExportPdf() {
-    setEditorMessage('Exporting PDF');
-
-    try {
-      const response = await fetch('/api/export-pdf', {
-        body: JSON.stringify(score),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        method: 'POST',
-      });
-
-      if (!response.ok) {
-        throw new Error('PDF export failed');
-      }
-
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-
-      link.href = url;
-      link.download = `${getDownloadBaseName()}.pdf`;
-      link.click();
-      URL.revokeObjectURL(url);
-      setEditorMessage('PDF downloaded');
-    } catch {
-      setEditorMessage('PDF export failed');
-    }
-  }
-
-  function stopPlayback() {
-    playbackController.current?.stop();
-    playbackController.current = null;
-
-    if (playbackEndTimer.current !== null) {
-      window.clearTimeout(playbackEndTimer.current);
-      playbackEndTimer.current = null;
-    }
-
-    if (playbackInterval.current !== null) {
-      window.clearInterval(playbackInterval.current);
-      playbackInterval.current = null;
-    }
-
-    setIsPlaying(false);
-    setPlaybackElapsedSeconds(0);
-    setEditorMessage('Playback stopped');
-  }
-
-  async function handlePlaybackToggle() {
-    if (isPlaying) {
-      stopPlayback();
-      return;
-    }
-
-    const timeline = buildPlaybackTimeline(score);
-
-    if (timeline.length === 0) {
-      setEditorMessage('Nothing to play');
-      return;
-    }
-
-    setIsPlaying(true);
-    setPlaybackElapsedSeconds(0);
-    setEditorMessage('Playback started');
-    const startedAt = performance.now();
-    playbackInterval.current = window.setInterval(() => {
-      setPlaybackElapsedSeconds((performance.now() - startedAt) / 1000);
-    }, 50);
-    playbackController.current = await playTimelineAudio(timeline);
-    playbackEndTimer.current = window.setTimeout(() => {
-      playbackController.current?.stop();
-      playbackController.current = null;
-      playbackEndTimer.current = null;
-      if (playbackInterval.current !== null) {
-        window.clearInterval(playbackInterval.current);
-        playbackInterval.current = null;
-      }
-      setIsPlaying(false);
-      setPlaybackElapsedSeconds(0);
-      setEditorMessage('Playback finished');
-    }, getTimelineDurationSeconds(timeline) * 1000 + 120);
-  }
-
-  const playbackTimeline = buildPlaybackTimeline(score);
-  const activePlaybackEvent = isPlaying
-    ? getActiveTimelineEvent(playbackTimeline, playbackElapsedSeconds)
-    : null;
-  const playbackBeat = isPlaying
-    ? getPlaybackBeatAtSeconds(score.tempo, playbackElapsedSeconds)
-    : null;
+  const {
+    handleDownloadAbc,
+    handleDownloadProject,
+    handleExportPdf,
+    handleImportAbcFile,
+    handleImportProjectFile,
+    handleLoadProject,
+    handleSaveProject,
+    importAbcInputRef,
+    importInputRef,
+  } = useProjectActions({
+    onScoreLoaded: handleLoadedScoreFromFile,
+    score,
+    setEditorMessage,
+  });
+  const {
+    activePlaybackEvent,
+    handlePlaybackToggle,
+    isPlaying,
+    playbackBeat,
+  } = usePlaybackController({
+    score,
+    setEditorMessage,
+  });
   const activeKeySignatureSelection = getActiveKeySignatureSelection(
     score,
     getKeySignatureTargetMeasureIndex(),
@@ -1320,85 +972,18 @@ function SheetLabApp() {
     ]),
   ];
 
-  useEffect(() => {
-    const viewport = notationViewportRef.current;
-
-    if (!viewport) {
-      return;
-    }
-
-    function handleNativeWheel(event: WheelEvent) {
-      if (!event.ctrlKey && !event.metaKey) {
-        return;
-      }
-
-      event.preventDefault();
-      zoomCanvasByWheelDelta(event.deltaY);
-    }
-
-    viewport.addEventListener('wheel', handleNativeWheel, { passive: false });
-
-    return () => viewport.removeEventListener('wheel', handleNativeWheel);
-  }, []);
-
-  useEffect(() => {
-    function isTypingTarget(target: EventTarget | null) {
-      return (
-        target instanceof HTMLElement &&
-        (target.isContentEditable ||
-          ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName))
-      );
-    }
-
-    function handleWindowKeyDown(event: KeyboardEvent) {
-      if (isTypingTarget(event.target)) {
-        return;
-      }
-
-      const key = event.key.toLowerCase();
-      const isModifierShortcut = event.ctrlKey || event.metaKey;
-
-      if (isModifierShortcut && key === 'z') {
-        event.preventDefault();
-        if (event.shiftKey) {
-          handleRedo();
-        } else {
-          handleUndo();
-        }
-        return;
-      }
-
-      if (isModifierShortcut && key === 'y') {
-        event.preventDefault();
-        handleRedo();
-        return;
-      }
-
-      if (event.key === 'Delete' || event.key === 'Backspace') {
-        event.preventDefault();
-
-        if (selectedEventId) {
-          handleDeleteEvent(selectedEventId, selectedPitchIndex);
-          return;
-        }
-
-        if (selectedMeasure) {
-          handleRequestClearMeasureContent();
-        }
-      }
-    }
-
-    window.addEventListener('keydown', handleWindowKeyDown);
-
-    return () => window.removeEventListener('keydown', handleWindowKeyDown);
-  }, [
+  useEditorShortcuts({
     futureScores,
+    onDeleteEvent: handleDeleteEvent,
+    onRedo: handleRedo,
+    onRequestClearMeasureContent: handleRequestClearMeasureContent,
+    onUndo: handleUndo,
     pastScores,
     score,
     selectedEventId,
     selectedMeasure,
     selectedPitchIndex,
-  ]);
+  });
 
   return (
     <main
@@ -1476,197 +1061,44 @@ function SheetLabApp() {
           onTimeSignatureChange={handleTimeSignatureChange}
         />
 
-        <section
-          className="sheet-stage"
-          aria-label="Sheet surface"
-          onClick={handleSheetStageClick}
-        >
-          <div
-            className={`paper paper-${score.pageSize}`}
-            style={
-              {
-                '--canvas-zoom': isPdfExportMode() ? 1 : canvasZoom / 100,
-              } as CSSProperties
-            }
-          >
-            <div className="paper-heading">
-              <input
-                aria-label="Score title"
-                className="score-title-input"
-                value={score.title}
-                onChange={(event) =>
-                  updateScoreMetadata({ title: event.target.value })
-                }
-                onClick={handleClearInteraction}
-                onFocus={handleClearInteraction}
-              />
-              <div className="score-meta-row">
-                <span>Moderato {'\u2669'} = {toolState.tempo}</span>
-                <input
-                  aria-label="Composer"
-                  className="score-composer-input"
-                  placeholder="Composer"
-                  value={score.composer}
-                  onChange={(event) =>
-                    updateScoreMetadata({ composer: event.target.value })
-                  }
-                  onClick={handleClearInteraction}
-                  onFocus={handleClearInteraction}
-                />
-              </div>
-            </div>
-            <div
-              ref={notationViewportRef}
-              className="notation-scroll"
-              aria-label="Notation viewport"
-            >
-              <StaffRenderer
-                duration={toolState.duration}
-                dots={toolState.dots}
-                entryMode={toolState.entryMode}
-                activeEventId={activePlaybackEvent?.id ?? null}
-                hoverPosition={hoverPosition}
-                inputCursor={inputCursor}
-                isInputArmed={toolState.isInputArmed}
-                invalidMeasureKeys={activeInvalidMeasureKeys}
-                playbackBeat={playbackBeat}
-                placementMode={toolState.placementMode}
-                selectedEventId={selectedEventId}
-                selectedPitchIndex={selectedPitchIndex}
-                score={score}
-                onClearInteraction={handleClearInteraction}
-                onHoverPositionChange={handleHoverPositionChange}
-                onPlaceAtPosition={handlePlaceAtPosition}
-                onDeleteEvent={handleDeleteEvent}
-                onMoveKeySignatureSymbol={handleMoveKeySignatureSymbol}
-                onMeasureContextMenu={handleMeasureContextMenu}
-                onMoveEvent={handleMoveEvent}
-                onSelectMeasure={handleSelectMeasure}
-                onSelectEvent={(eventId, pitchIndex) => {
-                  updateToolState({ isInputArmed: false });
-                  setHoverPosition(null);
-                  setInputCursor(null);
-                  setCursorSequenceLocked(false);
-                  setSelectedEventId(eventId);
-                  setSelectedMeasure(null);
-                  setSelectedPitchIndex(pitchIndex ?? null);
-                  setSelectedEventSource('manual');
-                  setEditorMessage(
-                    pitchIndex !== null && pitchIndex !== undefined
-                      ? 'Notehead selected'
-                      : 'Event selected',
-                  );
-                }}
-                selectedMeasure={selectedMeasure}
-              />
-            </div>
-          </div>
-          {measureContextMenu ? (
-            <div
-              className="measure-context-menu"
-              data-testid="measure-context-menu"
-              role="menu"
-              style={{
-                left: measureContextMenu.clientX,
-                top: measureContextMenu.clientY,
-              }}
-            >
-              <p>
-                Measure {measureContextMenu.measureIndex + 1} {measureContextMenu.staffId}
-              </p>
-              <button type="button" role="menuitem" onClick={handleClearMeasureContent}>
-                Clear content
-              </button>
-              <button type="button" role="menuitem" onClick={handleInsertMeasureBefore}>
-                Add measure before
-              </button>
-              <button type="button" role="menuitem" onClick={handleInsertMeasureAfter}>
-                Add measure after
-              </button>
-              <button
-                type="button"
-                disabled={getMeasureCount() <= 1}
-                role="menuitem"
-                onClick={handleRequestDeleteMeasure}
-              >
-                Delete measure
-              </button>
-            </div>
-          ) : null}
-          {pendingMeasureDelete ? (
-            <div
-              className="measure-warning-backdrop"
-              data-testid="measure-delete-warning"
-              role="presentation"
-            >
-              <div
-                aria-label="Delete measure warning"
-                aria-modal="true"
-                className="measure-warning-dialog"
-                role="dialog"
-              >
-                <h2>Delete measure?</h2>
-                <p>
-                  This removes measure {pendingMeasureDelete.measureIndex + 1} from every
-                  staff. This action can be undone.
-                </p>
-                <div className="measure-warning-actions">
-                  <button
-                    type="button"
-                    className="tool-button"
-                    onClick={() => setPendingMeasureDelete(null)}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="tool-button danger"
-                    onClick={handleConfirmDeleteMeasure}
-                  >
-                    Delete measure
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : null}
-          {pendingMeasureClear ? (
-            <div
-              className="measure-warning-backdrop"
-              data-testid="measure-clear-warning"
-              role="presentation"
-            >
-              <div
-                aria-label="Clear measure content warning"
-                aria-modal="true"
-                className="measure-warning-dialog"
-                role="dialog"
-              >
-                <h2>Clear measure content?</h2>
-                <p>
-                  This removes notes and rests from measure{' '}
-                  {pendingMeasureClear.measureIndex + 1} on the selected staff.
-                  This action can be undone.
-                </p>
-                <div className="measure-warning-actions">
-                  <button
-                    type="button"
-                    className="tool-button"
-                    onClick={() => setPendingMeasureClear(null)}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="tool-button danger"
-                    onClick={handleConfirmClearMeasureContent}
-                  >
-                    Clear content
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </section>
+        <SheetSurface
+          activeEventId={activePlaybackEvent?.id ?? null}
+          activeInvalidMeasureKeys={activeInvalidMeasureKeys}
+          canvasZoom={canvasZoom}
+          getMeasureCount={getMeasureCount}
+          hoverPosition={hoverPosition}
+          inputCursor={inputCursor}
+          isPdfExportMode={isPdfExportMode()}
+          measureContextMenu={measureContextMenu}
+          notationViewportRef={notationViewportRef}
+          pendingMeasureClear={pendingMeasureClear}
+          pendingMeasureDelete={pendingMeasureDelete}
+          playbackBeat={playbackBeat}
+          score={score}
+          selectedEventId={selectedEventId}
+          selectedMeasure={selectedMeasure}
+          selectedPitchIndex={selectedPitchIndex}
+          toolState={toolState}
+          onClearInteraction={handleClearInteraction}
+          onClearMeasureContent={handleClearMeasureContent}
+          onConfirmClearMeasureContent={handleConfirmClearMeasureContent}
+          onConfirmDeleteMeasure={handleConfirmDeleteMeasure}
+          onDeleteEvent={handleDeleteEvent}
+          onHoverPositionChange={handleHoverPositionChange}
+          onInsertMeasureAfter={handleInsertMeasureAfter}
+          onInsertMeasureBefore={handleInsertMeasureBefore}
+          onMeasureContextMenu={handleMeasureContextMenu}
+          onMoveEvent={handleMoveEvent}
+          onMoveKeySignatureSymbol={handleMoveKeySignatureSymbol}
+          onPlaceAtPosition={handlePlaceAtPosition}
+          onRequestDeleteMeasure={handleRequestDeleteMeasure}
+          onSelectEvent={handleSelectEvent}
+          onSelectMeasure={handleSelectMeasure}
+          onSetPendingMeasureClear={setPendingMeasureClear}
+          onSetPendingMeasureDelete={setPendingMeasureDelete}
+          onSheetStageClick={handleSheetStageClick}
+          onUpdateScoreMetadata={updateScoreMetadata}
+        />
       </section>
     </main>
   );
