@@ -501,9 +501,11 @@ function GhostEvent({
         <NoteGlyph
           duration={duration}
           dots={dots}
+          measureIndex={position.measureIndex}
           pitch={position.pitch}
           staffGap={staffGap}
           staffIndex={position.staffIndex}
+          systemGap={systemGap}
           variant="ghost"
           x={x}
           y={noteY}
@@ -512,8 +514,10 @@ function GhostEvent({
         <RestGlyph
           duration={duration}
           dots={dots}
+          measureIndex={position.measureIndex}
           staffGap={staffGap}
           staffIndex={position.staffIndex}
+          systemGap={systemGap}
           variant="ghost"
           x={x}
           y={restY}

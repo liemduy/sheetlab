@@ -19,6 +19,7 @@ import {
   STAFF_LINE_SPACING,
   getMeasureWidth,
   getScoreStaffGap,
+  getScoreSystemGap,
   getScoreSvgHeight,
   getStaffTop,
   SVG_WIDTH,
@@ -1102,6 +1103,35 @@ describe('StaffRenderer', () => {
         .getByTestId('ghost-event')
         .querySelectorAll('[data-testid="ledger-line"]').length,
     ).toBeGreaterThan(0);
+  });
+
+  it('renders ghost ledger lines against the hovered system instead of system one', () => {
+    const score = createEmptyScore('treble', { measureCount: 8 });
+    const staffGap = getScoreStaffGap(score);
+    const systemGap = getScoreSystemGap(score);
+    const pitch: Pitch = { step: 'C', octave: 4 };
+    const measureIndex = MEASURES_PER_SYSTEM;
+    const hoverPosition: MusicPosition = {
+      staffId: 'treble',
+      staffIndex: 0,
+      measureIndex,
+      beat: 0,
+      pitch,
+      x: getBeatX(measureIndex, 0, score.timeSignature.beats, score),
+      y: getPitchY(pitch, 'treble', 0, staffGap, measureIndex, systemGap),
+    };
+
+    render(<StaffRenderer hoverPosition={hoverPosition} score={score} />);
+
+    const ledgerLine = screen
+      .getByTestId('ghost-event')
+      .querySelector('[data-testid="ledger-line"]');
+
+    expect(Number(ledgerLine?.getAttribute('y1'))).toBeCloseTo(
+      getStaffTop(0, staffGap, measureIndex, systemGap) +
+        STAFF_LINE_SPACING * 5,
+      2,
+    );
   });
 
   it('expands the grand staff gap when ledger lines from both staves need more room', () => {
