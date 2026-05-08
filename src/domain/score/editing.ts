@@ -1,11 +1,7 @@
 import type {
   Accidental,
   DurationValue,
-  KeySignature,
-  KeySignatureSymbol,
-  Measure,
   Pitch,
-  RepeatJumpKind,
   Score,
   ScoreEvent,
   Staff,
@@ -21,18 +17,27 @@ import {
 } from './events';
 import { clampPitchToClefRange } from './pitchRange';
 import {
-  beatToTick,
-  getDurationTicks,
-  getMeasureTicks,
-  splitTicksIntoDurations,
-  tickToBeat,
-} from './ticks';
-import {
-  createKeySignatureSymbols,
-  getKeySignatureSymbolMoveIssue,
-  inferKeySignatureFromSymbols,
-} from './keySignatures';
+  eventsOverlapByTick,
+  getEventEnd,
+  getEventStartTick,
+  materializeMeasureEvents,
+} from './measureEvents';
+import { ensureMeasureCount } from './measureEditing';
 import { getMeasureBeats } from './timeSignatures';
+
+export {
+  addMeasure,
+  clearMeasureContent,
+  deleteMeasureAt,
+  insertMeasureAt,
+} from './measureEditing';
+export {
+  setMeasureKeySignature,
+  setMeasureRepeatJump,
+  setScoreTimeSignature,
+  tryMoveKeySignatureSymbol,
+} from './signatureEditing';
+export type { MoveKeySignatureSymbolResult } from './signatureEditing';
 
 export interface PlaceScoreEventRequest {
   eventId: string;
@@ -67,12 +72,6 @@ export interface UpdateScoreEventResult {
   score: Score;
   updated: boolean;
   reason?: PlaceScoreEventResult['reason'] | 'missing-event';
-}
-
-export interface MoveKeySignatureSymbolResult {
-  moved: boolean;
-  reason?: 'duplicate-step' | 'missing-target';
-  score: Score;
 }
 
 function createScoreEvent(request: PlaceScoreEventRequest): ScoreEvent {
@@ -247,162 +246,6 @@ function createUpdatedScoreEvent(
   };
 }
 
-function getEventEnd(event: ScoreEvent) {
-  return event.beat + getDurationBeats(event.duration, getEventDots(event));
-}
-
-function overlaps(candidate: ScoreEvent, existing: ScoreEvent) {
-  return candidate.beat < getEventEnd(existing) && getEventEnd(candidate) > existing.beat;
-}
-
-function getEventStartTick(event: ScoreEvent) {
-  return beatToTick(event.beat);
-}
-
-function getEventEndTick(event: ScoreEvent) {
-  return getEventStartTick(event) + getDurationTicks(event.duration, getEventDots(event));
-}
-
-function eventsOverlapByTick(candidate: ScoreEvent, existing: ScoreEvent) {
-  return (
-    getEventStartTick(candidate) < getEventEndTick(existing) &&
-    getEventEndTick(candidate) > getEventStartTick(existing)
-  );
-}
-
-function createRestId(
-  staffId: StaffId,
-  measureIndex: number,
-  startTick: number,
-  duration: DurationValue,
-) {
-  return `rest-${staffId}-m${measureIndex + 1}-t${startTick}-${duration}`;
-}
-
-function createRestEventsForTickRange(
-  staffId: StaffId,
-  measureIndex: number,
-  startTick: number,
-  endTick: number,
-): ScoreEvent[] {
-  const events: ScoreEvent[] = [];
-  let cursorTick = startTick;
-
-  for (const duration of splitTicksIntoDurations(endTick - startTick)) {
-    events.push({
-      id: createRestId(staffId, measureIndex, cursorTick, duration),
-      kind: 'rest',
-      beat: tickToBeat(cursorTick),
-      duration,
-    });
-    cursorTick += getDurationTicks(duration);
-  }
-
-  return events;
-}
-
-function compactRestRuns(
-  events: ScoreEvent[],
-  staffId: StaffId,
-  measureIndex: number,
-) {
-  const compactedEvents: ScoreEvent[] = [];
-  let restRunStartTick: number | null = null;
-  let restRunEndTick: number | null = null;
-
-  function flushRestRun() {
-    if (restRunStartTick === null || restRunEndTick === null) {
-      return;
-    }
-
-    compactedEvents.push(
-      ...createRestEventsForTickRange(
-        staffId,
-        measureIndex,
-        restRunStartTick,
-        restRunEndTick,
-      ),
-    );
-    restRunStartTick = null;
-    restRunEndTick = null;
-  }
-
-  for (const event of [...events].sort((a, b) => getEventStartTick(a) - getEventStartTick(b))) {
-    if (event.kind === 'rest') {
-      if (!isGeneratedRestEvent(event)) {
-        flushRestRun();
-        compactedEvents.push(event);
-        continue;
-      }
-
-      restRunStartTick = restRunStartTick ?? getEventStartTick(event);
-      restRunEndTick = getEventEndTick(event);
-      continue;
-    }
-
-    flushRestRun();
-    compactedEvents.push(event);
-  }
-
-  flushRestRun();
-
-  return compactedEvents.sort((a, b) => getEventStartTick(a) - getEventStartTick(b));
-}
-
-function materializeMeasureEvents(
-  events: ScoreEvent[],
-  score: Score,
-  staffId: StaffId,
-  measureIndex: number,
-) {
-  const measureTicks = getMeasureTicks(score.timeSignature);
-  const sortedEvents = [...events].sort(
-    (a, b) => getEventStartTick(a) - getEventStartTick(b),
-  );
-  const materializedEvents: ScoreEvent[] = [];
-  let cursorTick = 0;
-
-  for (const event of sortedEvents) {
-    const eventStartTick = getEventStartTick(event);
-    const eventEndTick = getEventEndTick(event);
-
-    if (eventStartTick < cursorTick) {
-      throw new Error('Rhythm event overlap');
-    }
-
-    if (eventEndTick > measureTicks) {
-      throw new Error('Rhythm event overflows measure');
-    }
-
-    if (eventStartTick > cursorTick) {
-      materializedEvents.push(
-        ...createRestEventsForTickRange(
-          staffId,
-          measureIndex,
-          cursorTick,
-          eventStartTick,
-        ),
-      );
-    }
-
-    materializedEvents.push(event);
-    cursorTick = eventEndTick;
-  }
-
-  if (cursorTick < measureTicks) {
-    materializedEvents.push(
-      ...createRestEventsForTickRange(
-        staffId,
-        measureIndex,
-        cursorTick,
-        measureTicks,
-      ),
-    );
-  }
-
-  return compactRestRuns(materializedEvents, staffId, measureIndex);
-}
-
 function getTargetVoice(
   score: Score,
   staffId: StaffId,
@@ -567,312 +410,6 @@ export function tryPlaceScoreEvent(
 
 export function placeScoreEvent(score: Score, request: PlaceScoreEventRequest) {
   return tryPlaceScoreEvent(score, request).score;
-}
-
-function createEmptyMeasure(staff: Staff, index: number): Measure {
-  return {
-    id: `measure-${staff.id}-${index + 1}`,
-    index,
-    voices: [
-      {
-        id: `voice-${staff.id}-${index + 1}-main`,
-        events: [],
-      },
-    ],
-  };
-}
-
-function ensureMeasureCount(score: Score, measureCount: number): Score {
-  return {
-    ...score,
-    parts: score.parts.map((part) => ({
-      ...part,
-      staves: part.staves.map((staff) => ({
-        ...staff,
-        measures:
-          staff.measures.length >= measureCount
-            ? staff.measures
-            : [
-                ...staff.measures,
-                ...Array.from(
-                  { length: measureCount - staff.measures.length },
-                  (_, offset) =>
-                    createEmptyMeasure(staff, staff.measures.length + offset),
-                ),
-              ],
-      })),
-    })),
-  };
-}
-
-export function addMeasure(score: Score): Score {
-  const measureCount = Math.max(
-    0,
-    ...score.parts.flatMap((part) =>
-      part.staves.map((staff) => staff.measures.length),
-    ),
-  );
-
-  return ensureMeasureCount(score, measureCount + 1);
-}
-
-function getScoreMeasureCount(score: Score) {
-  return Math.max(
-    0,
-    ...score.parts.flatMap((part) =>
-      part.staves.map((staff) => staff.measures.length),
-    ),
-  );
-}
-
-function reindexStaffMeasures(
-  score: Score,
-  staff: Staff,
-  measures: Measure[],
-) {
-  return measures.map((measure, index) => ({
-    ...measure,
-    id: `measure-${staff.id}-${index + 1}`,
-    index,
-    voices: measure.voices.map((voice, voiceIndex) => ({
-      ...voice,
-      id:
-        voiceIndex === 0
-          ? `voice-${staff.id}-${index + 1}-main`
-          : `${voice.id}-m${index + 1}`,
-      events:
-        voice.events.length > 0
-          ? materializeMeasureEvents(voice.events, score, staff.id, index)
-          : [],
-    })),
-  }));
-}
-
-export function insertMeasureAt(score: Score, measureIndex: number): Score {
-  const measureCount = getScoreMeasureCount(score);
-  const targetIndex = Math.max(0, Math.min(measureIndex, measureCount));
-  const normalizedScore = ensureMeasureCount(score, measureCount);
-
-  return {
-    ...normalizedScore,
-    parts: normalizedScore.parts.map((part) => ({
-      ...part,
-      staves: part.staves.map((staff) => {
-        const nextMeasures = [
-          ...staff.measures.slice(0, targetIndex),
-          createEmptyMeasure(staff, targetIndex),
-          ...staff.measures.slice(targetIndex),
-        ];
-
-        return {
-          ...staff,
-          measures: reindexStaffMeasures(normalizedScore, staff, nextMeasures),
-        };
-      }),
-    })),
-  };
-}
-
-export function deleteMeasureAt(score: Score, measureIndex: number): Score {
-  const measureCount = getScoreMeasureCount(score);
-
-  if (measureCount <= 1) {
-    return score;
-  }
-
-  const targetIndex = Math.max(0, Math.min(measureIndex, measureCount - 1));
-  const normalizedScore = ensureMeasureCount(score, measureCount);
-
-  return {
-    ...normalizedScore,
-    parts: normalizedScore.parts.map((part) => ({
-      ...part,
-      staves: part.staves.map((staff) => {
-        const nextMeasures = staff.measures.filter(
-          (measure) => measure.index !== targetIndex,
-        );
-
-        return {
-          ...staff,
-          measures: reindexStaffMeasures(normalizedScore, staff, nextMeasures),
-        };
-      }),
-    })),
-  };
-}
-
-export function clearMeasureContent(
-  score: Score,
-  staffId: StaffId,
-  measureIndex: number,
-): Score {
-  return {
-    ...score,
-    parts: score.parts.map((part) => ({
-      ...part,
-      staves: part.staves.map((staff) =>
-        staff.id === staffId
-          ? {
-              ...staff,
-              measures: staff.measures.map((measure) =>
-                measure.index === measureIndex
-                  ? {
-                      ...measure,
-                      voices: measure.voices.map((voice) => ({
-                        ...voice,
-                        events: [],
-                      })),
-                    }
-                  : measure,
-              ),
-            }
-          : staff,
-      ),
-    })),
-  };
-}
-
-export function setMeasureKeySignature(
-  score: Score,
-  measureIndex: number,
-  keySignature: KeySignature,
-): Score {
-  const keySignatureSymbols = createKeySignatureSymbols(keySignature);
-
-  return {
-    ...score,
-    parts: score.parts.map((part) => ({
-      ...part,
-      staves: part.staves.map((staff) => ({
-        ...staff,
-        measures: staff.measures.map((measure) =>
-          measure.index === measureIndex
-            ? {
-                ...measure,
-                keySignature,
-                keySignatureSymbols,
-              }
-            : measure,
-        ),
-      })),
-    })),
-  };
-}
-
-function getMeasureKeySignatureSymbols(
-  measure: Measure,
-  fallbackKeySignature: KeySignature,
-) {
-  return measure.keySignatureSymbols !== undefined
-    ? measure.keySignatureSymbols
-    : createKeySignatureSymbols(measure.keySignature ?? fallbackKeySignature);
-}
-
-export function tryMoveKeySignatureSymbol(
-  score: Score,
-  sourceMeasureIndex: number,
-  symbolIndex: number,
-  pitch: Pitch,
-): MoveKeySignatureSymbolResult {
-  const sourceMeasure = score.parts[0]?.staves[0]?.measures.find(
-    (measure) => measure.index === sourceMeasureIndex,
-  );
-
-  if (!sourceMeasure) {
-    return {
-      moved: false,
-      reason: 'missing-target',
-      score,
-    };
-  }
-
-  const moveIssue = getKeySignatureSymbolMoveIssue(
-    score,
-    sourceMeasureIndex,
-    symbolIndex,
-    pitch,
-  );
-
-  if (moveIssue) {
-    return {
-      moved: false,
-      reason: moveIssue,
-      score,
-    };
-  }
-
-  const fallbackKeySignature = sourceMeasure.keySignature ?? 'C';
-  const currentSymbols = getMeasureKeySignatureSymbols(
-    sourceMeasure,
-    fallbackKeySignature,
-  );
-
-  const nextSymbols = currentSymbols.map((symbol, index) =>
-    index === symbolIndex
-      ? {
-          ...symbol,
-          step: pitch.step,
-        }
-      : symbol,
-  ) satisfies KeySignatureSymbol[];
-  const inferredKeySignature = inferKeySignatureFromSymbols(nextSymbols);
-  const nextKeySignature = inferredKeySignature ?? fallbackKeySignature;
-
-  return {
-    moved: true,
-    score: {
-      ...score,
-      parts: score.parts.map((part) => ({
-        ...part,
-        staves: part.staves.map((staff) => ({
-          ...staff,
-          measures: staff.measures.map((measure) =>
-            measure.index === sourceMeasureIndex
-              ? {
-                  ...measure,
-                  keySignature: nextKeySignature,
-                  keySignatureSymbols: nextSymbols,
-                }
-              : measure,
-          ),
-        })),
-      })),
-    },
-  };
-}
-
-export function setMeasureRepeatJump(
-  score: Score,
-  measureIndex: number,
-  repeatJump: RepeatJumpKind | null,
-): Score {
-  return {
-    ...score,
-    parts: score.parts.map((part) => ({
-      ...part,
-      staves: part.staves.map((staff) => ({
-        ...staff,
-        measures: staff.measures.map((measure) =>
-          measure.index === measureIndex
-            ? {
-                ...measure,
-                repeatJump: repeatJump ?? undefined,
-              }
-            : measure,
-        ),
-      })),
-    })),
-  };
-}
-
-export function setScoreTimeSignature(
-  score: Score,
-  timeSignature: Score['timeSignature'],
-): Score {
-  return {
-    ...score,
-    timeSignature,
-  };
 }
 
 function toLocalBeat(globalBeat: number, beatsPerMeasure: number) {
