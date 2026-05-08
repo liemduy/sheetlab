@@ -95,6 +95,11 @@ import {
   saveProjectToStorage,
   SHEETLAB_PDF_EXPORT_SCORE_KEY,
 } from './features/persistence/projectStorage';
+import {
+  createAbcNotationBlob,
+  getAbcNotationFileName,
+  importScoreFromAbc,
+} from './domain/score/abcNotation';
 
 function isPdfExportMode() {
   return (
@@ -162,13 +167,83 @@ function KeySignatureThumbnail({ keySignature }: { keySignature: KeySignature })
   );
 }
 
+function RepeatThumbnailStaff() {
+  return (
+    <>
+      {[7, 12, 17, 22, 27].map((y) => (
+        <line key={y} className="repeat-thumbnail-staff-line" x1={4} x2={68} y1={y} y2={y} />
+      ))}
+    </>
+  );
+}
+
+function RepeatDots({ x }: { x: number }) {
+  return (
+    <>
+      <circle className="repeat-thumbnail-dot" cx={x} cy={14} r={1.7} />
+      <circle className="repeat-thumbnail-dot" cx={x} cy={20} r={1.7} />
+    </>
+  );
+}
+
+function RepeatBarlinePreview({ kind }: { kind: RepeatJumpKind }) {
+  const showStart = kind === 'repeat-start' || kind === 'repeat-both';
+  const showEnd = kind === 'repeat-end' || kind === 'repeat-both';
+
+  return (
+    <>
+      {showStart ? (
+        <>
+          <line className="repeat-thumbnail-thick-bar" x1={12} x2={12} y1={6} y2={28} />
+          <line className="repeat-thumbnail-thin-bar" x1={17} x2={17} y1={6} y2={28} />
+          <RepeatDots x={22} />
+        </>
+      ) : null}
+      {showEnd ? (
+        <>
+          <RepeatDots x={50} />
+          <line className="repeat-thumbnail-thin-bar" x1={55} x2={55} y1={6} y2={28} />
+          <line className="repeat-thumbnail-thick-bar" x1={60} x2={60} y1={6} y2={28} />
+        </>
+      ) : null}
+    </>
+  );
+}
+
+function isEndingRepeat(kind: RepeatJumpKind) {
+  return kind === 'ending-1' || kind === 'ending-2' || kind === 'ending-3';
+}
+
 function RepeatJumpThumbnail({ kind }: { kind: RepeatJumpKind }) {
   const option = getRepeatJumpOption(kind);
+  const endingLabel =
+    kind === 'ending-1'
+      ? '1.'
+      : kind === 'ending-2'
+        ? '2.'
+        : kind === 'ending-3'
+          ? '3.'
+          : '';
 
   return (
     <span className="repeat-thumbnail" aria-hidden="true">
-      <span className="signature-staff-lines" />
-      <span className="repeat-thumbnail-symbol">{option?.symbol ?? kind}</span>
+      <svg className="repeat-thumbnail-svg" viewBox="0 0 72 34">
+        <RepeatThumbnailStaff />
+        {kind.startsWith('repeat') ? <RepeatBarlinePreview kind={kind} /> : null}
+        {isEndingRepeat(kind) ? (
+          <>
+            <path className="repeat-thumbnail-volta" d="M 14 8 H 54 V 18" />
+            <text className="repeat-thumbnail-text" x={20} y={16}>
+              {endingLabel}
+            </text>
+          </>
+        ) : null}
+        {!kind.startsWith('repeat') && !isEndingRepeat(kind) ? (
+          <text className="repeat-thumbnail-text repeat-thumbnail-main-text" x={36} y={20}>
+            {option?.symbol ?? kind}
+          </text>
+        ) : null}
+      </svg>
     </span>
   );
 }
@@ -306,6 +381,7 @@ function App() {
   const [openPalette, setOpenPalette] = useState<ToolbarPalette>(null);
   const eventCounter = useRef(1);
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const importAbcInputRef = useRef<HTMLInputElement | null>(null);
   const notationViewportRef = useRef<HTMLDivElement | null>(null);
   const playbackController = useRef<{ stop: () => void } | null>(null);
   const playbackEndTimer = useRef<number | null>(null);
@@ -1131,11 +1207,58 @@ function App() {
       setInputCursor(null);
       setCursorSequenceLocked(false);
       setHoverPosition(null);
+      setOpenPalette(null);
     } catch {
       setEditorMessage('Invalid JSON project');
     } finally {
       if (importInputRef.current) {
         importInputRef.current.value = '';
+      }
+    }
+  }
+
+  async function handleImportAbcFile(fileList: FileList | null) {
+    const file = fileList?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      const { score: importedScore, warnings } = importScoreFromAbc(
+        await file.text(),
+      );
+
+      commitScoreChange(
+        importedScore,
+        warnings.length > 0
+          ? `ABC imported with ${warnings.length} warning${
+              warnings.length === 1 ? '' : 's'
+            }`
+          : 'ABC imported',
+      );
+      setToolState((current) => ({
+        ...current,
+        scoreType: importedScore.type,
+        tempo: importedScore.tempo,
+        isInputArmed: false,
+      }));
+      setSelectedEventId(null);
+      setSelectedMeasure(null);
+      setMeasureContextMenu(null);
+      setPendingMeasureDelete(null);
+      setPendingMeasureClear(null);
+      setSelectedPitchIndex(null);
+      setSelectedEventSource(null);
+      setInputCursor(null);
+      setCursorSequenceLocked(false);
+      setHoverPosition(null);
+      setOpenPalette(null);
+    } catch {
+      setEditorMessage('Invalid ABC notation');
+    } finally {
+      if (importAbcInputRef.current) {
+        importAbcInputRef.current.value = '';
       }
     }
   }
@@ -1150,6 +1273,18 @@ function App() {
     link.click();
     URL.revokeObjectURL(url);
     setEditorMessage('JSON downloaded');
+  }
+
+  function handleDownloadAbc() {
+    const blob = createAbcNotationBlob(score);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+
+    link.href = url;
+    link.download = getAbcNotationFileName(score);
+    link.click();
+    URL.revokeObjectURL(url);
+    setEditorMessage('ABC downloaded');
   }
 
   function getDownloadBaseName() {
@@ -1528,8 +1663,16 @@ function App() {
                     onClick={() => handleRepeatJumpChange(null)}
                   >
                     <span className="repeat-thumbnail" aria-hidden="true">
-                      <span className="signature-staff-lines" />
-                      <span className="repeat-thumbnail-symbol">Ø</span>
+                      <svg className="repeat-thumbnail-svg" viewBox="0 0 72 34">
+                        <RepeatThumbnailStaff />
+                        <text
+                          className="repeat-thumbnail-text repeat-thumbnail-main-text"
+                          x={36}
+                          y={20}
+                        >
+                          {ACCIDENTAL_SYMBOL.none}
+                        </text>
+                      </svg>
                     </span>
                     <span>Clear</span>
                   </button>
@@ -1695,6 +1838,24 @@ function App() {
             />
             <button type="button" className="tool-button" onClick={handleDownloadProject}>
               Download JSON
+            </button>
+            <button
+              type="button"
+              className="tool-button"
+              onClick={() => importAbcInputRef.current?.click()}
+            >
+              Import ABC
+            </button>
+            <input
+              ref={importAbcInputRef}
+              aria-label="Import ABC notation file"
+              className="file-input"
+              type="file"
+              accept=".abc,text/vnd.abc,text/plain"
+              onChange={(event) => void handleImportAbcFile(event.target.files)}
+            />
+            <button type="button" className="tool-button" onClick={handleDownloadAbc}>
+              Download ABC
             </button>
             <button type="button" className="tool-button" onClick={() => void handleExportPdf()}>
               Export PDF

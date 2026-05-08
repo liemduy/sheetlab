@@ -1285,6 +1285,107 @@ describe('App editor state', () => {
     });
   });
 
+  it('imports ABC notation files into the editor', async () => {
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText('Import ABC notation file'), {
+      target: {
+        files: [
+          new File(
+            [
+              `X:1
+T:Imported ABC Tune
+C:ABC Composer
+M:3/4
+L:1/32
+Q:1/4=112
+K:D
+C8 D8 z4 | [EGB]8 |`,
+            ],
+            'imported.abc',
+            {
+              type: 'text/vnd.abc',
+            },
+          ),
+        ],
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Score title')).toHaveValue(
+        'Imported ABC Tune',
+      );
+    });
+    expect(screen.getByDisplayValue('ABC Composer')).toBeInTheDocument();
+    expect(screen.getAllByTestId('score-event').length).toBeGreaterThan(0);
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'ABC imported',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('downloads the current score as ABC notation', () => {
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined);
+    const createObjectUrlSpy = vi.fn().mockReturnValue('blob:sheetlab-abc');
+    const revokeObjectUrlSpy = vi.fn();
+    const originalCreateObjectUrl = URL.createObjectURL;
+    const originalRevokeObjectUrl = URL.revokeObjectURL;
+
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: createObjectUrlSpy,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: revokeObjectUrlSpy,
+    });
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Download ABC' }));
+
+    expect(createObjectUrlSpy).toHaveBeenCalledWith(expect.any(Blob));
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(revokeObjectUrlSpy).toHaveBeenCalledWith('blob:sheetlab-abc');
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'ABC downloaded',
+      ),
+    ).toBeInTheDocument();
+
+    if (originalCreateObjectUrl) {
+      Object.defineProperty(URL, 'createObjectURL', {
+        configurable: true,
+        value: originalCreateObjectUrl,
+      });
+    } else {
+      Reflect.deleteProperty(URL, 'createObjectURL');
+    }
+    if (originalRevokeObjectUrl) {
+      Object.defineProperty(URL, 'revokeObjectURL', {
+        configurable: true,
+        value: originalRevokeObjectUrl,
+      });
+    } else {
+      Reflect.deleteProperty(URL, 'revokeObjectURL');
+    }
+    clickSpy.mockRestore();
+  });
+
+  it('renders repeat and jump thumbnails as notation-style SVG previews', () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Repeat and jump menu' }));
+
+    const menu = screen.getByTestId('repeat-jump-thumbnail-menu');
+
+    expect(menu.querySelector('.repeat-thumbnail-svg')).toBeInTheDocument();
+    expect(menu.querySelector('.repeat-thumbnail-thick-bar')).toBeInTheDocument();
+    expect(menu.querySelector('.repeat-thumbnail-volta')).toBeInTheDocument();
+  });
+
   it('exports PDF through the backend endpoint', async () => {
     const fetchSpy = vi.fn().mockResolvedValue({
       blob: vi

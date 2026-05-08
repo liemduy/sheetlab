@@ -260,15 +260,41 @@ button {
   transform: translate(-50%, -50%);
 }
 
-.repeat-thumbnail-symbol {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  color: #ffffff;
-  font-family: Bravura, "Noto Music", "Segoe UI Symbol", Georgia, serif;
-  font-size: 1rem;
-  text-align: center;
+.repeat-thumbnail-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.repeat-thumbnail-staff-line,
+.repeat-thumbnail-thin-bar,
+.repeat-thumbnail-volta {
+  vector-effect: non-scaling-stroke;
+  stroke: rgb(255 255 255 / 48%);
+  stroke-width: 1;
+}
+
+.repeat-thumbnail-thick-bar {
+  vector-effect: non-scaling-stroke;
+  stroke: #ffffff;
+  stroke-linecap: round;
+  stroke-width: 3;
+}
+
+.repeat-thumbnail-dot {
+  fill: #ffffff;
+}
+
+.repeat-thumbnail-text {
+  fill: #ffffff;
+  font: 700 0.78rem Bravura, "Noto Music", "Segoe UI Symbol", Georgia, serif;
+  text-anchor: start;
+}
+
+.repeat-thumbnail-main-text {
+  dominant-baseline: middle;
+  font-size: 0.68rem;
+  text-anchor: middle;
 }
 
 .zoom-toolbar {
