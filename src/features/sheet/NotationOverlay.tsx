@@ -45,6 +45,8 @@ import {
 
 export interface RenderedEventLayout {
   beat: number;
+  isGeneratedRest: boolean;
+  kind: ScoreEvent['kind'];
   maxX: number;
   maxY: number;
   measureIndex: number;
@@ -820,6 +822,12 @@ function RhythmSlots({
   const activeSlotLayout = activeSlot
     ? eventLayouts?.[activeSlot.eventId]
     : undefined;
+  const visibleSlotLayout =
+    activeSlotLayout &&
+    activeSlotLayout.kind !== 'rest' &&
+    !activeSlotLayout.isGeneratedRest
+      ? activeSlotLayout
+      : undefined;
   const fallbackSlotStartX = getBeatX(
     inputCursor.measureIndex,
     inputCursor.beat,
@@ -836,11 +844,11 @@ function RhythmSlots({
     score.timeSignature.beats,
   );
   const slotPaddingX = 7;
-  const slotStartX = activeSlotLayout
-    ? activeSlotLayout.minX - slotPaddingX
+  const slotStartX = visibleSlotLayout
+    ? visibleSlotLayout.minX - slotPaddingX
     : fallbackSlotStartX;
-  const slotWidth = activeSlotLayout
-    ? Math.max(18, activeSlotLayout.maxX - activeSlotLayout.minX + slotPaddingX * 2)
+  const slotWidth = visibleSlotLayout
+    ? Math.max(18, visibleSlotLayout.maxX - visibleSlotLayout.minX + slotPaddingX * 2)
     : Math.max(6, fallbackSlotEndX - fallbackSlotStartX);
   const yRange = getStaffSlotYRange(
     score,
@@ -863,7 +871,7 @@ function RhythmSlots({
           className="rhythm-slot timeline-slot is-active"
           data-beat={inputCursor.beat}
           data-duration={inputCursor.duration}
-          data-layout-source={activeSlotLayout ? 'vexflow' : 'beat-grid'}
+          data-layout-source={visibleSlotLayout ? 'vexflow' : 'beat-grid'}
           data-measure-index={inputCursor.measureIndex}
           data-slot-end-beat={slotEndBeat}
           data-staff-id={inputCursor.staffId}
@@ -951,6 +959,8 @@ function snapPositionToInputGrid(
     .filter(
       (layout) =>
         layout.measureIndex === snappedPosition.measureIndex &&
+        layout.kind !== 'rest' &&
+        !layout.isGeneratedRest &&
         Math.abs(layout.beat - snappedPosition.beat) <= BEAT_MATCH_EPSILON &&
         Math.abs(layout.x - position.x) <= RENDERED_COLUMN_SNAP_RADIUS,
     )

@@ -197,6 +197,8 @@ function drawVexFlowMeasureEvents({
 
     eventLayouts[event.id] = {
       beat: event.beat,
+      isGeneratedRest: isGeneratedRestEvent(event),
+      kind: event.kind,
       maxX: Number.isFinite(maxX) ? maxX : renderedX + 10,
       maxY,
       measureIndex,

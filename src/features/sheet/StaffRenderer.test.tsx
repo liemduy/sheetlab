@@ -265,6 +265,49 @@ describe('StaffRenderer', () => {
     expect(slotWidth).toBeLessThan(getBeatX(0, 1, 4) - getBeatX(0, 0, 4));
   });
 
+  it('uses beat-grid geometry for generated rest slots after a short placed note', async () => {
+    const score = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'eighth-note-1',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+
+    render(
+      <StaffRenderer
+        duration="eighth"
+        inputCursor={{
+          beat: 0.5,
+          duration: 'eighth',
+          measureIndex: 0,
+          mode: 'note-input',
+          pitchPreview: { step: 'F', octave: 4 },
+          staffId: 'treble',
+          staffIndex: 0,
+        }}
+        score={score}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rhythm-slot')).toHaveAttribute(
+        'data-layout-source',
+        'beat-grid',
+      );
+    });
+
+    const slot = screen.getByTestId('rhythm-slot');
+
+    expect(Number(slot.getAttribute('x'))).toBeCloseTo(getBeatX(0, 0.5, 4), 2);
+    expect(Number(slot.getAttribute('width'))).toBeCloseTo(
+      getBeatX(0, 1, 4) - getBeatX(0, 0.5, 4),
+      2,
+    );
+  });
+
   it('renders an empty grand staff system', () => {
     render(<StaffRenderer score={createEmptyScore('grand', { measureCount: 4 })} />);
 
