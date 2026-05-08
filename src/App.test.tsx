@@ -544,7 +544,7 @@ describe('App editor state', () => {
     ).toBeInTheDocument();
   });
 
-  it('lets the hover cursor return to an earlier rhythm slot after placement', () => {
+  it('keeps hover on the advanced slot while preserving chord entry on occupied slots', () => {
     render(<App />);
     startWriting('Eighth');
 
@@ -567,13 +567,21 @@ describe('App editor state', () => {
 
     expect(screen.getByTestId('active-input-cursor')).toHaveAttribute(
       'data-beat',
-      '0',
+      '0.5',
     );
     expect(
       within(screen.getByLabelText('Current editor state')).getAllByText(
-        'treble M1 B1 G4',
+        'treble M1 B1.5 G4',
       ).length,
     ).toBeGreaterThan(0);
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.getByLabelText('Chord E4 G4 measure 1 beat 1')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Note G4 measure 1 beat 1.5')).not.toBeInTheDocument();
   });
 
   it('clears the advanced cursor when the pointer moves into the grand-staff dead zone', () => {

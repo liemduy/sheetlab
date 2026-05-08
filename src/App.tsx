@@ -301,6 +301,20 @@ function isNearSequentialCursor(
   );
 }
 
+function shouldUseSequentialCursor(
+  cursor: InputCursor,
+  isSequenceLocked: boolean,
+  position: MusicPosition,
+) {
+  return (
+    isSequenceLocked &&
+    cursor.mode === 'note-input' &&
+    cursor.staffId === position.staffId &&
+    (cursor.measureIndex === position.measureIndex ||
+      isNearSequentialCursor(cursor, position))
+  );
+}
+
 function createCursorAfterPlacement(
   score: Score,
   placementPosition: MusicPosition,
@@ -535,15 +549,27 @@ function App() {
     }
 
     setInputCursor(() => {
+      const sequentialCursor =
+        inputCursor &&
+        shouldUseSequentialCursor(
+          inputCursor,
+          isCursorSequenceLockedRef.current,
+          nextHoverPosition,
+        )
+          ? inputCursor
+          : null;
+      const cursorPosition = sequentialCursor
+        ? musicPositionFromCursor(sequentialCursor, nextHoverPosition)
+        : nextHoverPosition;
       const nextCursor = createInputCursorFromPosition(
-        nextHoverPosition,
+        cursorPosition,
         toolState.duration,
         'note-input',
         getMeasureBeats(score.timeSignature),
         toolState.dots,
       );
 
-      setHoverPosition(musicPositionFromCursor(nextCursor, nextHoverPosition));
+      setHoverPosition(musicPositionFromCursor(nextCursor, cursorPosition));
 
       return nextCursor;
     });
@@ -906,14 +932,19 @@ function App() {
       return;
     }
 
-    const sequentialPlacementPosition =
-      isCursorSequenceLockedRef.current &&
-      inputCursor !== null &&
-      inputCursor.staffId === position.staffId &&
-      (inputCursor.measureIndex === position.measureIndex ||
-        isNearSequentialCursor(inputCursor, position)) &&
+    const sequentialCursor =
+      inputCursor &&
+      shouldUseSequentialCursor(
+        inputCursor,
+        isCursorSequenceLockedRef.current,
+        position,
+      ) &&
       !hasPitchedEventAtPosition(score, position)
-        ? musicPositionFromCursor(inputCursor, position)
+        ? inputCursor
+        : null;
+    const sequentialPlacementPosition =
+      sequentialCursor
+        ? musicPositionFromCursor(sequentialCursor, position)
         : position;
     const placementPosition =
       toolState.placementMode === 'insert'
