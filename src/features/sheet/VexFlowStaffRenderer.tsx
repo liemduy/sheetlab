@@ -28,7 +28,7 @@ import { getMeasureRepeatJump } from '../../domain/score/repeatJumps';
 import { clampPitchToClefRange } from '../../domain/score/pitchRange';
 import type { StaffRendererProps } from './StaffRenderer';
 import { NotationOverlay } from './NotationOverlay';
-import type { RenderedEventLayout } from './NotationOverlay';
+import type { RenderedEventLayout } from './renderedEventLayout';
 import {
   STAFF_LINE_SPACING,
   SVG_WIDTH,
