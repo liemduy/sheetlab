@@ -6,12 +6,9 @@ import { createEmptyScore } from '../../domain/score/factories';
 import { isPitchedScoreEvent } from '../../domain/score/events';
 import {
   addMeasure,
-  clearMeasureContent,
-  deleteMeasureAt,
   deleteScoreEvent,
   deleteScoreEventPitch,
   findScoreEvent,
-  insertMeasureAt,
   setMeasureKeySignature,
   setMeasureRepeatJump,
   setScoreTimeSignature,
@@ -73,7 +70,10 @@ import { useProjectActions } from './useProjectActions';
 import { SheetSurface } from './SheetSurface';
 import { useCanvasZoom } from './useCanvasZoom';
 import { useEditorShortcuts } from './useEditorShortcuts';
+import { useEditorSelection } from './useEditorSelection';
+import { useMeasureEditing } from './useMeasureEditing';
 import { useScoreHistory } from './useScoreHistory';
+import { useUndoRedoControls } from './useUndoRedoControls';
 import {
   isPdfExportMode,
   loadInitialScoreForApp,
@@ -87,8 +87,6 @@ import {
 } from './inputCursorFlow';
 
 function SheetLabApp() {
-  type SelectionSource = 'manual';
-
   const [initialScore] = useState(loadInitialScoreForApp);
   const [toolState, setToolState] = useState<EditorToolState>(
     () => ({
@@ -113,28 +111,39 @@ function SheetLabApp() {
   } = useScoreHistory(initialScore);
   const [hoverPosition, setHoverPosition] = useState<MusicPosition | null>(null);
   const [inputCursor, setInputCursor] = useState<InputCursor | null>(null);
-  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [selectedMeasure, setSelectedMeasure] = useState<{
-    staffId: StaffId;
-    measureIndex: number;
-  } | null>(null);
-  const [measureContextMenu, setMeasureContextMenu] = useState<{
-    clientX: number;
-    clientY: number;
-    staffId: StaffId;
-    measureIndex: number;
-  } | null>(null);
-  const [pendingMeasureDelete, setPendingMeasureDelete] = useState<{
-    staffId: StaffId;
-    measureIndex: number;
-  } | null>(null);
-  const [pendingMeasureClear, setPendingMeasureClear] = useState<{
-    staffId: StaffId;
-    measureIndex: number;
-  } | null>(null);
-  const [selectedPitchIndex, setSelectedPitchIndex] = useState<number | null>(null);
-  const [selectedEventSource, setSelectedEventSource] =
-    useState<SelectionSource | null>(null);
+  const {
+    clearSelection,
+    selectedEventId,
+    selectedEventSource,
+    selectedMeasure,
+    selectedPitchIndex,
+    selectEvent,
+    selectMeasure,
+    setSelectedMeasure,
+  } = useEditorSelection();
+  const {
+    clearMeasureUiState,
+    getMeasureCount,
+    handleClearMeasureContent,
+    handleConfirmClearMeasureContent,
+    handleConfirmDeleteMeasure,
+    handleInsertMeasureAfter,
+    handleInsertMeasureBefore,
+    handleRequestClearMeasureContent,
+    handleRequestDeleteMeasure,
+    measureContextMenu,
+    openMeasureContextMenu,
+    pendingMeasureClear,
+    pendingMeasureDelete,
+    setPendingMeasureClear,
+    setPendingMeasureDelete,
+  } = useMeasureEditing({
+    clearSelection,
+    commitScoreChange,
+    score,
+    selectedMeasure,
+    selectMeasure,
+  });
   const [openPalette, setOpenPalette] = useState<ToolbarPalette>(null);
   const eventCounter = useRef(1);
   const notationViewportRef = useRef<HTMLDivElement | null>(null);
@@ -144,6 +153,18 @@ function SheetLabApp() {
 
   function setCursorSequenceLocked(isLocked: boolean) {
     isCursorSequenceLockedRef.current = isLocked;
+  }
+
+  function clearPointerState() {
+    setHoverPosition(null);
+    setInputCursor(null);
+    setCursorSequenceLocked(false);
+  }
+
+  function clearTransientInteraction() {
+    clearPointerState();
+    clearMeasureUiState();
+    clearSelection();
   }
 
   function updateScoreMetadata(update: Partial<Pick<Score, 'composer' | 'title'>>) {
@@ -223,16 +244,7 @@ function SheetLabApp() {
 
   function handleClearInteraction() {
     updateToolState({ isInputArmed: false });
-    setHoverPosition(null);
-    setInputCursor(null);
-    setCursorSequenceLocked(false);
-    setSelectedEventId(null);
-    setSelectedMeasure(null);
-    setMeasureContextMenu(null);
-    setPendingMeasureDelete(null);
-    setPendingMeasureClear(null);
-    setSelectedPitchIndex(null);
-    setSelectedEventSource(null);
+    clearTransientInteraction();
     setEditorMessage('Select mode');
   }
 
@@ -301,16 +313,7 @@ function SheetLabApp() {
       }),
       'New score',
     );
-    setHoverPosition(null);
-    setInputCursor(null);
-    setCursorSequenceLocked(false);
-    setSelectedEventId(null);
-    setSelectedMeasure(null);
-    setMeasureContextMenu(null);
-    setPendingMeasureDelete(null);
-    setPendingMeasureClear(null);
-    setSelectedPitchIndex(null);
-    setSelectedEventSource(null);
+    clearTransientInteraction();
     scrollNotationIntoView();
   }
 
@@ -324,25 +327,12 @@ function SheetLabApp() {
       }),
       'Score reset',
     );
-    setHoverPosition(null);
-    setInputCursor(null);
-    setCursorSequenceLocked(false);
-    setSelectedEventId(null);
-    setSelectedMeasure(null);
-    setMeasureContextMenu(null);
-    setPendingMeasureDelete(null);
-    setPendingMeasureClear(null);
-    setSelectedPitchIndex(null);
-    setSelectedEventSource(null);
+    clearTransientInteraction();
     scrollNotationIntoView();
   }
 
   function handleAddMeasure() {
     commitScoreChange(addMeasure(score), 'Measure added');
-  }
-
-  function getMeasureCount() {
-    return score.parts[0]?.staves[0]?.measures.length ?? 0;
   }
 
   function getKeySignatureTargetMeasureIndex() {
@@ -368,148 +358,9 @@ function SheetLabApp() {
     clientY: number,
   ) {
     updateToolState({ isInputArmed: false });
-    setHoverPosition(null);
-    setInputCursor(null);
-    setCursorSequenceLocked(false);
-    setSelectedEventId(null);
-    setSelectedMeasure({ staffId, measureIndex });
-    setMeasureContextMenu({ clientX, clientY, staffId, measureIndex });
-    setPendingMeasureDelete(null);
-    setPendingMeasureClear(null);
-    setSelectedPitchIndex(null);
-    setSelectedEventSource(null);
+    clearPointerState();
+    openMeasureContextMenu({ staffId, measureIndex }, clientX, clientY);
     setEditorMessage('Measure selected');
-  }
-
-  function closeMeasureContextMenu() {
-    setMeasureContextMenu(null);
-  }
-
-  function handleClearMeasureContent() {
-    const targetMeasure = measureContextMenu ?? selectedMeasure;
-
-    if (!targetMeasure) {
-      return;
-    }
-
-    commitScoreChange(
-      clearMeasureContent(
-        score,
-        targetMeasure.staffId,
-        targetMeasure.measureIndex,
-      ),
-      'Measure content cleared',
-    );
-    setSelectedMeasure({
-      staffId: targetMeasure.staffId,
-      measureIndex: targetMeasure.measureIndex,
-    });
-    closeMeasureContextMenu();
-  }
-
-  function handleRequestClearMeasureContent() {
-    const targetMeasure = measureContextMenu ?? selectedMeasure;
-
-    if (!targetMeasure) {
-      return;
-    }
-
-    setPendingMeasureClear(targetMeasure);
-    closeMeasureContextMenu();
-  }
-
-  function handleConfirmClearMeasureContent() {
-    if (!pendingMeasureClear) {
-      return;
-    }
-
-    commitScoreChange(
-      clearMeasureContent(
-        score,
-        pendingMeasureClear.staffId,
-        pendingMeasureClear.measureIndex,
-      ),
-      'Measure content cleared',
-    );
-    setSelectedMeasure({
-      staffId: pendingMeasureClear.staffId,
-      measureIndex: pendingMeasureClear.measureIndex,
-    });
-    setPendingMeasureClear(null);
-  }
-
-  function handleInsertMeasureBefore() {
-    const targetMeasure = measureContextMenu ?? selectedMeasure;
-
-    if (!targetMeasure) {
-      return;
-    }
-
-    commitScoreChange(
-      insertMeasureAt(score, targetMeasure.measureIndex),
-      'Measure inserted before',
-    );
-    setSelectedMeasure({
-      staffId: targetMeasure.staffId,
-      measureIndex: targetMeasure.measureIndex,
-    });
-    closeMeasureContextMenu();
-  }
-
-  function handleInsertMeasureAfter() {
-    const targetMeasure = measureContextMenu ?? selectedMeasure;
-
-    if (!targetMeasure) {
-      return;
-    }
-
-    commitScoreChange(
-      insertMeasureAt(score, targetMeasure.measureIndex + 1),
-      'Measure inserted after',
-    );
-    setSelectedMeasure({
-      staffId: targetMeasure.staffId,
-      measureIndex: targetMeasure.measureIndex + 1,
-    });
-    closeMeasureContextMenu();
-  }
-
-  function handleRequestDeleteMeasure() {
-    const targetMeasure = measureContextMenu ?? selectedMeasure;
-
-    if (!targetMeasure) {
-      return;
-    }
-
-    setPendingMeasureDelete(targetMeasure);
-    setPendingMeasureClear(null);
-    closeMeasureContextMenu();
-  }
-
-  function handleConfirmDeleteMeasure() {
-    if (!pendingMeasureDelete) {
-      return;
-    }
-
-    const measureCount = getMeasureCount();
-    const nextSelectedIndex = Math.min(
-      pendingMeasureDelete.measureIndex,
-      Math.max(0, measureCount - 2),
-    );
-
-    commitScoreChange(
-      deleteMeasureAt(score, pendingMeasureDelete.measureIndex),
-      'Measure deleted',
-    );
-    setSelectedMeasure(
-      measureCount > 1
-        ? {
-            staffId: pendingMeasureDelete.staffId,
-            measureIndex: nextSelectedIndex,
-          }
-        : null,
-    );
-    setPendingMeasureDelete(null);
   }
 
   function handleKeySignatureChange(keySignature: KeySignature) {
@@ -558,13 +409,10 @@ function SheetLabApp() {
         : `Repeat/jump cleared at measure ${measureIndex + 1}`,
     );
     setOpenPalette(null);
-    setSelectedMeasure({
+    selectMeasure({
       staffId: selectedMeasure?.staffId ?? 'treble',
       measureIndex,
     });
-    setSelectedEventId(null);
-    setSelectedPitchIndex(null);
-    setSelectedEventSource(null);
   }
 
   function handleMoveKeySignatureSymbol(
@@ -581,16 +429,11 @@ function SheetLabApp() {
 
     if (result.moved) {
       commitScoreChange(result.score, 'Key signature symbol moved');
-      setHoverPosition(null);
-      setInputCursor(null);
-      setCursorSequenceLocked(false);
-      setSelectedEventId(null);
-      setSelectedMeasure({
+      clearPointerState();
+      selectMeasure({
         staffId: position.staffId,
         measureIndex: sourceMeasureIndex,
       });
-      setSelectedPitchIndex(null);
-      setSelectedEventSource(null);
     } else {
       setEditorMessage(`Cannot move key signature: ${result.reason}`);
     }
@@ -706,10 +549,7 @@ function SheetLabApp() {
         ),
       );
       setCursorSequenceLocked(true);
-      setSelectedEventId(null);
-      setSelectedMeasure(null);
-      setSelectedPitchIndex(null);
-      setSelectedEventSource(null);
+      clearSelection();
     } else {
       markInvalidMeasure(
         placementPosition.staffId,
@@ -735,39 +575,22 @@ function SheetLabApp() {
         : deleteScoreEvent(score, selectedEventId),
       'Event deleted',
     );
-    setSelectedEventId(null);
-    setSelectedMeasure(null);
-    setMeasureContextMenu(null);
-    setPendingMeasureDelete(null);
-    setPendingMeasureClear(null);
-    setSelectedPitchIndex(null);
-    setSelectedEventSource(null);
+    clearMeasureUiState();
+    clearSelection();
   }
 
   function handleSelectMeasure(staffId: StaffId, measureIndex: number) {
     updateToolState({ isInputArmed: false });
-    setHoverPosition(null);
-    setInputCursor(null);
-    setCursorSequenceLocked(false);
-    setSelectedEventId(null);
-    setSelectedMeasure({ staffId, measureIndex });
-    setMeasureContextMenu(null);
-    setPendingMeasureDelete(null);
-    setPendingMeasureClear(null);
-    setSelectedPitchIndex(null);
-    setSelectedEventSource(null);
+    clearPointerState();
+    clearMeasureUiState();
+    selectMeasure({ staffId, measureIndex });
     setEditorMessage('Measure selected');
   }
 
   function handleSelectEvent(eventId: string, pitchIndex?: number | null) {
     updateToolState({ isInputArmed: false });
-    setHoverPosition(null);
-    setInputCursor(null);
-    setCursorSequenceLocked(false);
-    setSelectedEventId(eventId);
-    setSelectedMeasure(null);
-    setSelectedPitchIndex(pitchIndex ?? null);
-    setSelectedEventSource('manual');
+    clearPointerState();
+    selectEvent(eventId, pitchIndex ?? null);
     setEditorMessage(
       pitchIndex !== null && pitchIndex !== undefined
         ? 'Notehead selected'
@@ -783,13 +606,8 @@ function SheetLabApp() {
       'Event deleted',
     );
     if (selectedEventId === eventId) {
-      setSelectedEventId(null);
-      setSelectedMeasure(null);
-      setMeasureContextMenu(null);
-      setPendingMeasureDelete(null);
-      setPendingMeasureClear(null);
-      setSelectedPitchIndex(null);
-      setSelectedEventSource(null);
+      clearMeasureUiState();
+      clearSelection();
     }
   }
 
@@ -838,14 +656,12 @@ function SheetLabApp() {
           ? movedEvent.pitches.findIndex((pitch) => pitchesMatch(pitch, position.pitch))
           : null;
 
-      setSelectedEventId(eventId);
-      setSelectedMeasure(null);
-      setSelectedPitchIndex(
+      selectEvent(
+        eventId,
         typeof movedPitchIndex === 'number' && movedPitchIndex >= 0
           ? movedPitchIndex
           : null,
       );
-      setSelectedEventSource('manual');
     } else {
       markInvalidMeasure(
         position.staffId,
@@ -855,53 +671,18 @@ function SheetLabApp() {
     }
   }
 
-  function handleUndo() {
-    const previousScore = pastScores.at(-1);
-
-    if (!previousScore) {
-      return;
-    }
-
-    setPastScores((currentPast) => currentPast.slice(0, -1));
-    setFutureScores((currentFuture) => [score, ...currentFuture]);
-    setScore(previousScore);
-    setSelectedEventId(null);
-    setSelectedMeasure(null);
-    setMeasureContextMenu(null);
-    setPendingMeasureDelete(null);
-    setPendingMeasureClear(null);
-    setSelectedPitchIndex(null);
-    setSelectedEventSource(null);
-    setInputCursor(null);
-    setCursorSequenceLocked(false);
-    setInvalidMeasureKeys([]);
-    updateToolState({ isInputArmed: false });
-    setEditorMessage('Undo');
-  }
-
-  function handleRedo() {
-    const [nextScore, ...remainingFuture] = futureScores;
-
-    if (!nextScore) {
-      return;
-    }
-
-    setPastScores((currentPast) => [...currentPast, score]);
-    setFutureScores(remainingFuture);
-    setScore(nextScore);
-    setSelectedEventId(null);
-    setSelectedMeasure(null);
-    setMeasureContextMenu(null);
-    setPendingMeasureDelete(null);
-    setPendingMeasureClear(null);
-    setSelectedPitchIndex(null);
-    setSelectedEventSource(null);
-    setInputCursor(null);
-    setCursorSequenceLocked(false);
-    setInvalidMeasureKeys([]);
-    updateToolState({ isInputArmed: false });
-    setEditorMessage('Redo');
-  }
+  const { handleRedo, handleUndo } = useUndoRedoControls({
+    clearTransientInteraction,
+    futureScores,
+    pastScores,
+    score,
+    setEditorMessage,
+    setFutureScores,
+    setInvalidMeasureKeys,
+    setPastScores,
+    setScore,
+    updateToolState,
+  });
 
   function handleLoadedScoreFromFile(
     loadedScore: Score,
@@ -915,16 +696,7 @@ function SheetLabApp() {
       tempo: loadedScore.tempo,
       isInputArmed: false,
     }));
-    setSelectedEventId(null);
-    setSelectedMeasure(null);
-    setMeasureContextMenu(null);
-    setPendingMeasureDelete(null);
-    setPendingMeasureClear(null);
-    setSelectedPitchIndex(null);
-    setSelectedEventSource(null);
-    setInputCursor(null);
-    setCursorSequenceLocked(false);
-    setHoverPosition(null);
+    clearTransientInteraction();
     if (options?.closePalette) {
       setOpenPalette(null);
     }

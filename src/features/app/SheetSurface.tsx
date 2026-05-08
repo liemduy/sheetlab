@@ -8,16 +8,7 @@ import type { InputCursor } from '../editor/inputCursor';
 import { StaffRenderer } from '../sheet/StaffRenderer';
 import type { MusicPosition } from '../sheet/interaction';
 import type { Score, StaffId } from '../../domain/score/types';
-
-export interface MeasureTarget {
-  staffId: StaffId;
-  measureIndex: number;
-}
-
-export interface MeasureContextMenuState extends MeasureTarget {
-  clientX: number;
-  clientY: number;
-}
+import type { MeasureContextMenuState, MeasureTarget } from './selectionTypes';
 
 interface SheetSurfaceProps {
   activeEventId: string | null;
