@@ -485,6 +485,14 @@ describe('StaffRenderer', () => {
       'data-staff-id',
       'bass',
     );
+    expect(
+      Number(
+        screen
+          .getByTestId('staff-hover-guide')
+          .querySelector('rect')
+          ?.getAttribute('width'),
+      ),
+    ).toBe(DEFAULT_INPUT_SLOT_WIDTH);
     expect(screen.queryByText('Bass')).not.toBeInTheDocument();
   });
 

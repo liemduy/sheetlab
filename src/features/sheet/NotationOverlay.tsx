@@ -43,7 +43,10 @@ import {
   getRhythmSlotsForMeasure,
   snapPositionToRhythmSlot,
 } from './rhythmSlots';
-import { getInputSlotLayout } from './inputSlotLayout';
+import {
+  DEFAULT_INPUT_SLOT_WIDTH,
+  getInputSlotLayout,
+} from './inputSlotLayout';
 import {
   getKeySignatureSymbolLayouts,
   type KeySignatureSymbolLayout,
@@ -634,6 +637,12 @@ function StaffHoverGuide({
     systemGap,
   );
   const measureCount = staff.measures.length;
+  const staffRight = getStaffRight(measureCount, position.measureIndex, score);
+  const guideWidth = DEFAULT_INPUT_SLOT_WIDTH;
+  const guideX = Math.min(
+    Math.max(STAFF_LEFT, position.x - guideWidth / 2),
+    Math.max(STAFF_LEFT, staffRight - guideWidth),
+  );
 
   return (
     <g
@@ -644,8 +653,8 @@ function StaffHoverGuide({
       <rect
         height={STAFF_LINE_SPACING * 4 + 34}
         rx={8}
-        width={getStaffRight(measureCount, position.measureIndex, score) - STAFF_LEFT}
-        x={STAFF_LEFT}
+        width={guideWidth}
+        x={guideX}
         y={staffTop - 17}
       />
     </g>
