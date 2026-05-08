@@ -68,6 +68,45 @@ describe('input slot layout', () => {
     expect(layout.boxWidth).toBe(DEFAULT_INPUT_SLOT_WIDTH);
   });
 
+  it('keeps visual slot width stable while measure width expands', () => {
+    const firstScore = placeScoreEvent(createEmptyScore('treble', { measureCount: 4 }), {
+      eventId: 'eighth-note-1',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+    const expandedScore = placeScoreEvent(firstScore, {
+      eventId: 'sixteenth-note-1',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 1,
+      duration: 'sixteenth',
+      entryMode: 'note',
+      pitch: { step: 'G', octave: 4 },
+    });
+    const firstLayout = getInputSlotLayout({
+      cursor: createCursor({ beat: 0.5 }),
+      score: firstScore,
+    });
+    const expandedLayout = getInputSlotLayout({
+      cursor: createCursor({
+        beat: 1.25,
+        duration: 'sixteenth',
+      }),
+      score: expandedScore,
+    });
+
+    expect(getBeatX(0, 0.5, 4, expandedScore)).not.toBeCloseTo(
+      getBeatX(0, 0.5, 4, firstScore),
+      2,
+    );
+    expect(firstLayout.boxWidth).toBe(DEFAULT_INPUT_SLOT_WIDTH);
+    expect(expandedLayout.boxWidth).toBe(DEFAULT_INPUT_SLOT_WIDTH);
+  });
+
   it('uses visible event bounds only for real note columns', () => {
     const score = placeScoreEvent(createEmptyScore('treble'), {
       eventId: 'quarter-note-1',
