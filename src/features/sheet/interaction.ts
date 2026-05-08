@@ -44,7 +44,8 @@ export interface MusicPosition {
   y: number;
 }
 
-const STAFF_VERTICAL_PADDING = 78;
+const STAFF_VERTICAL_PADDING = 74;
+const GRAND_STAFF_DEAD_ZONE_PADDING = 34;
 
 interface MusicPositionOptions {
   dots?: number;
@@ -87,6 +88,32 @@ function findStaffAtY(
 ) {
   const measureCount = staves[0]?.measures.length ?? 0;
   const systemCount = Math.max(1, Math.ceil(measureCount / MEASURES_PER_SYSTEM));
+  const isInsideGrandStaffDeadZone = (systemIndex: number) => {
+    if (staves.length < 2) {
+      return false;
+    }
+
+    for (let staffIndex = 0; staffIndex < staves.length - 1; staffIndex += 1) {
+      const measureIndex = systemIndex * MEASURES_PER_SYSTEM;
+      const upperStaffBottom =
+        getStaffTop(staffIndex, staffGap, measureIndex, systemGap) +
+        STAFF_LINE_SPACING * 4;
+      const lowerStaffTop = getStaffTop(
+        staffIndex + 1,
+        staffGap,
+        measureIndex,
+        systemGap,
+      );
+      const deadZoneTop = upperStaffBottom + GRAND_STAFF_DEAD_ZONE_PADDING;
+      const deadZoneBottom = lowerStaffTop - GRAND_STAFF_DEAD_ZONE_PADDING;
+
+      if (deadZoneTop < deadZoneBottom && y > deadZoneTop && y < deadZoneBottom) {
+        return true;
+      }
+    }
+
+    return false;
+  };
   const candidates = staves
     .flatMap((staff, staffIndex) =>
       Array.from({ length: systemCount }, (_, systemIndex) => {
@@ -94,10 +121,12 @@ function findStaffAtY(
         const staffTop = getStaffTop(staffIndex, staffGap, measureIndex, systemGap);
         const staffBottom = staffTop + STAFF_LINE_SPACING * 4;
         const staffCenter = staffTop + STAFF_LINE_SPACING * 2;
+        const isInDeadZone = isInsideGrandStaffDeadZone(systemIndex);
 
         return {
           distance: Math.abs(y - staffCenter),
           isInsideEditableBand:
+            !isInDeadZone &&
             y >= staffTop - STAFF_VERTICAL_PADDING &&
             y <= staffBottom + STAFF_VERTICAL_PADDING,
           staff,

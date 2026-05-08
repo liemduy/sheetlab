@@ -5,7 +5,9 @@ import {
   MEASURES_PER_SYSTEM,
   STAFF_LEFT,
   STAFF_GAP,
+  STAFF_LINE_SPACING,
   getMeasureContentLeft,
+  getScoreStaffGap,
   getScoreSystemGap,
   getStaffTop,
 } from './layout';
@@ -53,6 +55,61 @@ describe('sheet interaction mapping', () => {
       beat: 2,
     });
     expect(result ? formatPitch(result.pitch) : null).toBe('D3');
+  });
+
+  it('keeps a dead zone between grand-staff staves', () => {
+    const score = createEmptyScore('grand', { measureCount: 4 });
+    const staffGap = getScoreStaffGap(score);
+    const systemGap = getScoreSystemGap(score);
+    const trebleBottom = getStaffTop(0, staffGap, 0, systemGap) + STAFF_LINE_SPACING * 4;
+    const bassTop = getStaffTop(1, staffGap, 0, systemGap);
+    const result = mapPointToMusicPosition(
+      {
+        x: getBeatX(0, 0, score.timeSignature.beats),
+        y: (trebleBottom + bassTop) / 2,
+      },
+      score,
+      {
+        duration: 'eighth',
+      },
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it('still accepts intentional ledger hover near each grand-staff staff', () => {
+    const score = createEmptyScore('grand', { measureCount: 4 });
+    const staffGap = getScoreStaffGap(score);
+    const systemGap = getScoreSystemGap(score);
+    const trebleTop = getStaffTop(0, staffGap, 0, systemGap);
+    const bassTop = getStaffTop(1, staffGap, 0, systemGap);
+    const trebleResult = mapPointToMusicPosition(
+      {
+        x: getBeatX(0, 0, score.timeSignature.beats),
+        y: trebleTop - 66,
+      },
+      score,
+      {
+        duration: 'eighth',
+      },
+    );
+    const bassResult = mapPointToMusicPosition(
+      {
+        x: getBeatX(0, 0, score.timeSignature.beats),
+        y: bassTop - 5,
+      },
+      score,
+      {
+        duration: 'eighth',
+      },
+    );
+
+    expect(trebleResult).toMatchObject({
+      staffId: 'treble',
+    });
+    expect(bassResult).toMatchObject({
+      staffId: 'bass',
+    });
   });
 
   it('clamps pointer positions before the note content area to beat zero', () => {
