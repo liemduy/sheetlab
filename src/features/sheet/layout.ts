@@ -11,11 +11,11 @@ import {
   pitchToDiatonicValue,
 } from '../../domain/score/pitchRange';
 
-export const STAFF_LEFT = 76;
+export const STAFF_LEFT = 36;
 export const STAFF_RIGHT = 884;
 export const STAFF_LINE_SPACING = 11;
 export const STAFF_GAP = 132;
-export const MEASURE_WIDTH = 202;
+export const MEASURE_WIDTH = 212;
 export const MEASURES_PER_SYSTEM = 4;
 export const MEASURE_LEFT_PADDING = 20;
 export const FIRST_MEASURE_LEFT_PADDING = 78;

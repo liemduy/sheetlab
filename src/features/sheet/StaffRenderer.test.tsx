@@ -543,14 +543,15 @@ describe('StaffRenderer', () => {
     );
   });
 
-  it('snaps the insert preview to the active rhythm slot boundary', () => {
+  it('snaps the insert preview to the active rhythm slot boundary', async () => {
     render(
       <StaffRenderer
         duration="quarter"
         entryMode="note"
         hoverPosition={{
           ...trebleHover,
-          beat: 0.5,
+          beat: 0.25,
+          x: getBeatX(0, 0.25, trebleStudyFixture.timeSignature.beats),
         }}
         placementMode="insert"
         score={trebleStudyFixture}

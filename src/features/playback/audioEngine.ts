@@ -1,5 +1,6 @@
 import type { PlaybackTimelineEvent } from './timeline';
 import { pitchToToneNote } from './pitch';
+import type { Pitch } from '../../domain/score/types';
 
 export interface PlaybackController {
   stop: () => void;
@@ -41,4 +42,33 @@ export async function playTimelineAudio(
       synth.dispose();
     },
   };
+}
+
+export async function playPitchPreview(
+  pitches: Pitch[],
+  durationSeconds = 0.24,
+): Promise<void> {
+  type AudioGlobal = typeof globalThis & {
+    webkitAudioContext?: typeof AudioContext;
+  };
+  const AudioContextConstructor =
+    globalThis.AudioContext ?? (globalThis as AudioGlobal).webkitAudioContext;
+
+  if (!AudioContextConstructor || pitches.length === 0) {
+    return;
+  }
+
+  const Tone = await import('tone');
+  await Tone.start();
+  const synth = new Tone.PolySynth(Tone.Synth).toDestination();
+
+  synth.triggerAttackRelease(
+    pitches.map(pitchToToneNote),
+    durationSeconds,
+    Tone.now(),
+  );
+  globalThis.setTimeout(() => {
+    synth.releaseAll();
+    synth.dispose();
+  }, (durationSeconds + 0.18) * 1000);
 }

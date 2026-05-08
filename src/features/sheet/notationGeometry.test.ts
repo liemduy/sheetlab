@@ -8,6 +8,7 @@ import {
   STAFF_GAP,
   STAFF_LEFT,
   STAFF_RIGHT,
+  SVG_WIDTH,
   getMeasureContentLeft,
   getMeasureContentWidth,
   getMeasureRight,
@@ -36,6 +37,13 @@ describe('notation geometry', () => {
     expect(getBeatX(0, 0, 4)).toBe(getMeasureContentLeft(0));
     expect(getBeatX(0, 0, 4)).toBeGreaterThan(STAFF_LEFT);
     expect(getBeatX(0, 0, 4) - STAFF_LEFT).toBe(FIRST_MEASURE_LEFT_PADDING);
+  });
+
+  it('keeps staff systems near 1.2cm paper margins on the 920-unit page', () => {
+    const expectedMargin = 36;
+
+    expect(STAFF_LEFT).toBe(expectedMargin);
+    expect(SVG_WIDTH - STAFF_RIGHT).toBe(expectedMargin);
   });
 
   it('widens a measure when short note boundaries add extra input slots', () => {

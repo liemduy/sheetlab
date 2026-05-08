@@ -1,6 +1,13 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('./features/playback/audioEngine', () => ({
+  playPitchPreview: vi.fn(() => Promise.resolve()),
+  playTimelineAudio: vi.fn(() => Promise.resolve({ stop: vi.fn() })),
+}));
+
 import App from './App';
+import { playPitchPreview } from './features/playback/audioEngine';
 import {
   STAFF_LEFT,
   STAFF_LINE_SPACING,
@@ -10,6 +17,10 @@ import {
 } from './features/sheet/layout';
 import { SHEETLAB_PROJECT_KEY } from './features/persistence/projectStorage';
 import { getBeatX, getPitchY } from './features/sheet/notationGeometry';
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 function setVisibleSheetBounds(element: Element) {
   const bounds = {
@@ -213,6 +224,23 @@ describe('App editor state', () => {
     ).toBeInTheDocument();
   });
 
+  it('does not recenter the notation viewport when changing write toolbar options', () => {
+    const scrollIntoView = vi.fn();
+
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    });
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Eighth' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rest' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Insert' }));
+
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
   it('returns to place mode after reset so a new score starts safely', () => {
     render(<App />);
 
@@ -396,6 +424,9 @@ describe('App editor state', () => {
     });
 
     expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toBeInTheDocument();
+    expect(playPitchPreview).toHaveBeenCalledWith([
+      expect.objectContaining({ octave: 4, step: 'E' }),
+    ]);
     expect(
       within(screen.getByLabelText('Current editor state')).getByText(
         'treble M1 B2 E4',

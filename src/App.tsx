@@ -51,7 +51,10 @@ import type { MusicPosition } from './features/sheet/interaction';
 import { snapInsertPositionToEventBoundary } from './features/sheet/insertPosition';
 import { getMeasureKey } from './features/sheet/measureKey';
 import { findNextRhythmSlotAfter } from './features/sheet/rhythmSlots';
-import { playTimelineAudio } from './features/playback/audioEngine';
+import {
+  playPitchPreview,
+  playTimelineAudio,
+} from './features/playback/audioEngine';
 import {
   buildPlaybackTimeline,
   getActiveTimelineEvent,
@@ -595,6 +598,14 @@ function App() {
         result.score,
         toolState.placementMode === 'insert' ? 'Event inserted' : 'Event placed',
       );
+      if (toolState.entryMode === 'note') {
+        void playPitchPreview([
+          {
+            ...placementPosition.pitch,
+            accidental,
+          },
+        ]);
+      }
       setHoverPosition(null);
       setInputCursor(
         createCursorAfterPlacement(
@@ -1021,10 +1032,7 @@ function App() {
                 }`}
                 aria-pressed={toolState.isInputArmed && toolState.duration === duration}
                 title={DURATION_LABEL[duration]}
-                onClick={() => {
-                  handleDurationChange(duration);
-                  scrollNotationIntoView();
-                }}
+                onClick={() => handleDurationChange(duration)}
               >
                 <span className="tool-symbol" aria-hidden="true">
                   {DURATION_SYMBOL[duration]}
@@ -1080,7 +1088,6 @@ function App() {
                 title={entryMode === 'note' ? 'Note' : 'Rest'}
                 onClick={() => {
                   updateToolState({ entryMode });
-                  scrollNotationIntoView();
                 }}
               >
                 <span className="tool-symbol" aria-hidden="true">
@@ -1109,7 +1116,6 @@ function App() {
                   onClick={() => {
                     updateToolState({ placementMode });
                     setCursorSequenceLocked(false);
-                    scrollNotationIntoView();
                   }}
                 >
                   {PLACEMENT_MODE_LABEL[placementMode]}
