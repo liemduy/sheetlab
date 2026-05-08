@@ -335,6 +335,8 @@ function App() {
 
     if (!nextHoverPosition) {
       setHoverPosition(null);
+      setInputCursor(null);
+      setCursorSequenceLocked(false);
       return;
     }
 

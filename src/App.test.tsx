@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import App from './App';
 import {
   STAFF_LEFT,
+  STAFF_LINE_SPACING,
   SVG_WIDTH,
   getScoreSvgHeight,
+  getStaffTop,
 } from './features/sheet/layout';
 import { SHEETLAB_PROJECT_KEY } from './features/persistence/projectStorage';
 import { getBeatX, getPitchY } from './features/sheet/notationGeometry';
@@ -537,6 +539,40 @@ describe('App editor state', () => {
         'treble M1 B1 G4',
       ).length,
     ).toBeGreaterThan(0);
+  });
+
+  it('clears the advanced cursor when the pointer moves into the grand-staff dead zone', () => {
+    render(<App />);
+    startWriting('Eighth');
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.getByTestId('active-input-cursor')).toHaveAttribute(
+      'data-beat',
+      '0.5',
+    );
+
+    const deadZoneY =
+      (getStaffTop(0) + STAFF_LINE_SPACING * 4 + getStaffTop(1)) / 2;
+
+    fireEvent.mouseMove(overlay, {
+      clientX: getBeatX(0, 0.5, 4),
+      clientY: deadZoneY,
+    });
+
+    expect(screen.queryByTestId('ghost-event')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('active-input-cursor')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('rhythm-slot')).not.toBeInTheDocument();
+    const cursorRow = [
+      ...screen.getByLabelText('Current editor state').querySelectorAll('div'),
+    ].find((row) => row.textContent?.startsWith('Cursor'));
+
+    expect(cursorRow?.textContent).toBe('CursorNone');
   });
 
   it('previews and places the note the user points at on a real-sized sheet', async () => {
