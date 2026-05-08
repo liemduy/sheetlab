@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { placeScoreEvent } from '../../domain/score/editing';
+import { placeScoreEvent, setMeasureKeySignature } from '../../domain/score/editing';
 import { createEmptyScore } from '../../domain/score/factories';
 import { trebleStudyFixture } from '../../domain/score/fixtures';
 import type {
@@ -17,6 +17,7 @@ import {
   STAFF_GAP,
   STAFF_LEFT,
   STAFF_LINE_SPACING,
+  getMeasureX,
   getMeasureWidth,
   getScoreStaffGap,
   getScoreSystemGap,
@@ -803,6 +804,73 @@ describe('StaffRenderer', () => {
     expect(screen.queryByTestId('ghost-event')).not.toBeInTheDocument();
     expect(screen.queryByTestId('active-input-cursor')).not.toBeInTheDocument();
     expect(screen.getByTestId('score-event-delete')).toBeInTheDocument();
+  });
+
+  it('lets users drag an individual key-signature symbol vertically', () => {
+    const score = setMeasureKeySignature(
+      createEmptyScore('grand', { measureCount: 4 }),
+      0,
+      'G',
+    );
+    const onMoveKeySignatureSymbol = vi.fn();
+
+    render(
+      <StaffRenderer
+        onMoveKeySignatureSymbol={onMoveKeySignatureSymbol}
+        score={score}
+      />,
+    );
+
+    const overlay = screen.getByTestId('staff-renderer');
+    const bounds = setVisibleSheetBounds(overlay);
+    const startPoint = svgToClientPoint(
+      bounds,
+      getMeasureX(0, score) + 55,
+      getPitchY(
+        { step: 'F', octave: 5 },
+        'treble',
+        0,
+        getScoreStaffGap(score),
+        0,
+        getScoreSystemGap(score),
+      ),
+      getScoreSvgHeight(score),
+    );
+    const targetPoint = svgToClientPoint(
+      bounds,
+      getMeasureX(0, score) + 55,
+      getPitchY(
+        { step: 'E', octave: 5 },
+        'treble',
+        0,
+        getScoreStaffGap(score),
+        0,
+        getScoreSystemGap(score),
+      ),
+      getScoreSvgHeight(score),
+    );
+
+    fireEvent.mouseDown(
+      screen.getByRole('button', {
+        name: 'Key signature sharp F measure 1 treble',
+      }),
+      startPoint,
+    );
+    fireEvent.mouseMove(overlay, targetPoint);
+
+    expect(screen.getByTestId('key-signature-symbol-preview')).toBeInTheDocument();
+
+    fireEvent.mouseUp(overlay, targetPoint);
+
+    expect(onMoveKeySignatureSymbol).toHaveBeenCalledWith(
+      0,
+      0,
+      expect.objectContaining({
+        measureIndex: 0,
+        pitch: { step: 'E', octave: 5 },
+        staffId: 'treble',
+      }),
+    );
   });
 
   it('locks notehead drag to the original rhythm column while changing pitch', () => {

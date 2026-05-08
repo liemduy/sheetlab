@@ -44,11 +44,16 @@ import {
 } from './vexflowAdapter';
 import { getBeatX, getPitchY } from './notationGeometry';
 import { getMeasureKey } from './measureKey';
+import { getKeySignatureSymbolLayouts } from './keySignatureLayout';
 
 const REST_KEY_BY_CLEF = {
   treble: 'b/4',
   bass: 'd/3',
 } satisfies Record<Staff['clef'], string>;
+const KEY_SIGNATURE_SYMBOL_TEXT = {
+  flat: '♭',
+  sharp: '♯',
+} as const;
 
 function getVexFlowEventClasses(event: ScoreEvent) {
   return isGeneratedRestEvent(event)
@@ -328,7 +333,48 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
     });
   });
 
+  drawKeySignatureSymbols(container, score);
+
   return eventLayouts;
+}
+
+function drawKeySignatureSymbols(
+  container: HTMLDivElement,
+  score: StaffRendererProps['score'],
+) {
+  const svg = container.querySelector('svg');
+
+  if (!svg) {
+    return;
+  }
+
+  svg
+    .querySelectorAll('.sheetlab-key-signature-symbol')
+    .forEach((element) => element.remove());
+  svg
+    .querySelectorAll('.vf-keysignature')
+    .forEach((element) =>
+      element.setAttribute('data-sheetlab-hidden-standard-key-signature', 'true'),
+    );
+
+  getKeySignatureSymbolLayouts(score).forEach((layout) => {
+    const symbol = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+
+    symbol.classList.add('sheetlab-key-signature-symbol');
+    symbol.setAttribute('data-testid', 'rendered-key-signature-symbol');
+    symbol.setAttribute('data-source-measure-index', String(layout.sourceMeasureIndex));
+    symbol.setAttribute('data-measure-index', String(layout.measureIndex));
+    symbol.setAttribute('data-staff-id', layout.staffId);
+    symbol.setAttribute('data-symbol-index', String(layout.symbolIndex));
+    symbol.setAttribute('data-step', layout.pitch.step);
+    symbol.setAttribute('data-accidental', layout.accidental);
+    symbol.setAttribute('x', layout.x.toFixed(2));
+    symbol.setAttribute('y', layout.y.toFixed(2));
+    symbol.setAttribute('dominant-baseline', 'central');
+    symbol.setAttribute('text-anchor', 'middle');
+    symbol.textContent = KEY_SIGNATURE_SYMBOL_TEXT[layout.accidental];
+    svg.appendChild(symbol);
+  });
 }
 
 function syncVexFlowSelection(
@@ -434,6 +480,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         onHoverPositionChange={props.onHoverPositionChange}
         onMeasureContextMenu={props.onMeasureContextMenu}
         onMoveEvent={props.onMoveEvent}
+        onMoveKeySignatureSymbol={props.onMoveKeySignatureSymbol}
         onPlaceAtPosition={props.onPlaceAtPosition}
         onSelectMeasure={props.onSelectMeasure}
         onSelectEvent={props.onSelectEvent}

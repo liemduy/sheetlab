@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { createEmptyScore } from './factories';
 import {
   applyKeySignatureToPitch,
+  createKeySignatureSymbols,
   getActiveKeySignature,
+  getActiveKeySignatureAccidentalMap,
+  getActiveKeySignatureSelection,
   getKeySignatureAccidentalCount,
   getKeySignatureAccidentalMap,
+  inferKeySignatureFromSymbols,
 } from './keySignatures';
-import { setMeasureKeySignature } from './editing';
+import { setMeasureKeySignature, tryMoveKeySignatureSymbol } from './editing';
 
 describe('key signatures', () => {
   it('maps common sharp and flat keys to the correct accidental sets', () => {
@@ -54,5 +58,39 @@ describe('key signatures', () => {
       octave: 4,
       step: 'F',
     });
+  });
+
+  it('marks edited key-signature symbols as custom but preserves playback accidentals', () => {
+    const symbols = createKeySignatureSymbols('G');
+    const customSymbols = symbols.map((symbol, index) =>
+      index === 0
+        ? {
+            ...symbol,
+            step: 'E' as const,
+          }
+        : symbol,
+    );
+
+    expect(inferKeySignatureFromSymbols(symbols)).toBe('G');
+    expect(inferKeySignatureFromSymbols(customSymbols)).toBeNull();
+  });
+
+  it('uses dragged key-signature symbols as the active accidental map', () => {
+    const scoreWithKey = setMeasureKeySignature(
+      createEmptyScore('treble', { measureCount: 2 }),
+      0,
+      'G',
+    );
+    const result = tryMoveKeySignatureSymbol(scoreWithKey, 0, 0, {
+      octave: 5,
+      step: 'E',
+    });
+
+    expect(result.moved).toBe(true);
+    expect(getActiveKeySignatureSelection(result.score, 0)).toBe('custom');
+    expect(getActiveKeySignatureSelection(result.score, 1)).toBe('custom');
+    expect(getActiveKeySignatureAccidentalMap(result.score, 1)).toEqual(
+      new Map([['E', 'sharp']]),
+    );
   });
 });

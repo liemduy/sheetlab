@@ -12,13 +12,14 @@ import {
   findScoreEvent,
   insertMeasureAt,
   setMeasureKeySignature,
+  tryMoveKeySignatureSymbol,
   tryInsertScoreEvent,
   tryPlaceScoreEvent,
   tryUpdateScoreEvent,
 } from './domain/score/editing';
 import {
-  applyKeySignatureToPitch,
-  getActiveKeySignature,
+  applyActiveKeySignatureToPitch,
+  getActiveKeySignatureSelection,
   getKeySignatureLabel,
   KEY_SIGNATURE_OPTIONS,
 } from './domain/score/keySignatures';
@@ -632,6 +633,35 @@ function App() {
     );
   }
 
+  function handleMoveKeySignatureSymbol(
+    sourceMeasureIndex: number,
+    symbolIndex: number,
+    position: MusicPosition,
+  ) {
+    const result = tryMoveKeySignatureSymbol(
+      score,
+      sourceMeasureIndex,
+      symbolIndex,
+      position.pitch,
+    );
+
+    if (result.moved) {
+      commitScoreChange(result.score, 'Key signature symbol moved');
+      setHoverPosition(null);
+      setInputCursor(null);
+      setCursorSequenceLocked(false);
+      setSelectedEventId(null);
+      setSelectedMeasure({
+        staffId: position.staffId,
+        measureIndex: sourceMeasureIndex,
+      });
+      setSelectedPitchIndex(null);
+      setSelectedEventSource(null);
+    } else {
+      setEditorMessage(`Cannot move key signature: ${result.reason}`);
+    }
+  }
+
   function handleTempoChange(value: string) {
     const nextTempo = Number(value);
 
@@ -711,9 +741,10 @@ function App() {
         };
 
         void playPitchPreview([
-          applyKeySignatureToPitch(
+          applyActiveKeySignatureToPitch(
+            result.score,
+            placementPosition.measureIndex,
             placedPitch,
-            getActiveKeySignature(result.score, placementPosition.measureIndex),
           ),
         ]);
       }
@@ -1089,7 +1120,7 @@ function App() {
   const playbackBeat = isPlaying
     ? getPlaybackBeatAtSeconds(score.tempo, playbackElapsedSeconds)
     : null;
-  const activeKeySignature = getActiveKeySignature(
+  const activeKeySignatureSelection = getActiveKeySignatureSelection(
     score,
     getKeySignatureTargetMeasureIndex(),
   );
@@ -1244,11 +1275,16 @@ function App() {
               aria-label="Key signature"
               className="toolbar-select"
               title="Apply key signature at the selected measure or selected note measure"
-              value={activeKeySignature}
+              value={activeKeySignatureSelection}
               onChange={(event) =>
-                handleKeySignatureChange(event.target.value as KeySignature)
+                event.target.value !== 'custom'
+                  ? handleKeySignatureChange(event.target.value as KeySignature)
+                  : undefined
               }
             >
+              {activeKeySignatureSelection === 'custom' ? (
+                <option value="custom">Custom key signature</option>
+              ) : null}
               {KEY_SIGNATURE_OPTIONS.map((keySignature) => (
                 <option key={keySignature} value={keySignature}>
                   {getKeySignatureLabel(keySignature)}
@@ -1569,6 +1605,7 @@ function App() {
                 onHoverPositionChange={handleHoverPositionChange}
                 onPlaceAtPosition={handlePlaceAtPosition}
                 onDeleteEvent={handleDeleteEvent}
+                onMoveKeySignatureSymbol={handleMoveKeySignatureSymbol}
                 onMeasureContextMenu={handleMeasureContextMenu}
                 onMoveEvent={handleMoveEvent}
                 onSelectMeasure={handleSelectMeasure}

@@ -556,6 +556,18 @@ button {
   stroke: #8da0b3 !important;
 }
 
+.vexflow-output [data-sheetlab-hidden-standard-key-signature] {
+  opacity: 0;
+}
+
+.vexflow-output .sheetlab-key-signature-symbol {
+  fill: #111111;
+  font-family: Bravura, "Noto Music", "Segoe UI Symbol", "Apple Symbols", serif;
+  font-size: 25px;
+  font-weight: 400;
+  pointer-events: none;
+}
+
 .vexflow-output .vf-user-event.is-selected,
 .vexflow-output .vf-user-event.is-selected * {
   fill: var(--accent-strong) !important;
@@ -829,6 +841,34 @@ button {
   stroke-linecap: round;
   stroke-width: 1.7;
   vector-effect: non-scaling-stroke;
+}
+
+.key-signature-symbol-hit {
+  cursor: grab;
+  outline: none;
+}
+
+.key-signature-symbol-target {
+  fill: transparent;
+  pointer-events: all;
+  stroke: transparent;
+  vector-effect: non-scaling-stroke;
+}
+
+.key-signature-symbol-hit:hover .key-signature-symbol-target,
+.key-signature-symbol-hit:focus-visible .key-signature-symbol-target {
+  fill: rgb(43 103 255 / 10%);
+  stroke: rgb(43 103 255 / 28%);
+  stroke-width: 1.2;
+}
+
+.key-signature-symbol-preview {
+  fill: var(--accent-strong);
+  font-family: Bravura, "Noto Music", "Segoe UI Symbol", "Apple Symbols", serif;
+  font-size: 25px;
+  font-weight: 400;
+  opacity: 0.72;
+  pointer-events: none;
 }
 
 .playhead {

@@ -42,6 +42,10 @@ import {
   snapPositionToRhythmSlot,
 } from './rhythmSlots';
 import { getInputSlotLayout } from './inputSlotLayout';
+import {
+  getKeySignatureSymbolLayouts,
+  type KeySignatureSymbolLayout,
+} from './keySignatureLayout';
 
 export interface RenderedEventLayout {
   beat: number;
@@ -84,6 +88,11 @@ interface NotationOverlayProps {
     eventId: string,
     position: MusicPosition,
     pitchIndex?: number | null,
+  ) => void;
+  onMoveKeySignatureSymbol?: (
+    sourceMeasureIndex: number,
+    symbolIndex: number,
+    position: MusicPosition,
   ) => void;
   onSelectMeasure?: (staffId: StaffId, measureIndex: number) => void;
   playbackBeat?: number | null;
@@ -794,6 +803,57 @@ function MeasureHitTarget({
   );
 }
 
+function KeySignatureSymbolTarget({
+  layout,
+  onStartDrag,
+}: {
+  layout: KeySignatureSymbolLayout;
+  onStartDrag: (
+    layout: KeySignatureSymbolLayout,
+    event: MouseEvent<SVGGElement>,
+  ) => void;
+}) {
+  const label = `Key signature ${layout.accidental} ${layout.pitch.step} measure ${
+    layout.sourceMeasureIndex + 1
+  } ${layout.staffId}`;
+
+  return (
+    <g
+      aria-label={label}
+      className="key-signature-symbol-hit"
+      data-accidental={layout.accidental}
+      data-measure-index={layout.measureIndex}
+      data-source-measure-index={layout.sourceMeasureIndex}
+      data-staff-id={layout.staffId}
+      data-step={layout.pitch.step}
+      data-symbol-index={layout.symbolIndex}
+      data-testid="key-signature-symbol-target"
+      role="button"
+      tabIndex={0}
+      onMouseDown={(eventMouseDown) => {
+        eventMouseDown.preventDefault();
+        eventMouseDown.stopPropagation();
+        onStartDrag(layout, eventMouseDown);
+      }}
+      onKeyDown={(eventKey) => {
+        if (eventKey.key === 'Enter' || eventKey.key === ' ') {
+          eventKey.preventDefault();
+          eventKey.stopPropagation();
+        }
+      }}
+    >
+      <rect
+        className="key-signature-symbol-target"
+        height={44}
+        rx={5}
+        width={24}
+        x={layout.x - 12}
+        y={layout.y - 22}
+      />
+    </g>
+  );
+}
+
 function RhythmSlots({
   entryMode,
   eventLayouts,
@@ -933,6 +993,11 @@ function snapPositionToInputGrid(
     : snappedPosition;
 }
 
+const KEY_SIGNATURE_SYMBOL_TEXT = {
+  flat: '♭',
+  sharp: '♯',
+} as const;
+
 export function NotationOverlay({
   activeEventId,
   dots,
@@ -946,6 +1011,7 @@ export function NotationOverlay({
   onClearInteraction,
   onHoverPositionChange,
   onMoveEvent,
+  onMoveKeySignatureSymbol,
   onPlaceAtPosition,
   onDeleteEvent,
   onMeasureContextMenu,
@@ -970,6 +1036,15 @@ export function NotationOverlay({
     startSvgX: number;
     startSvgY: number;
   } | null>(null);
+  const [keySignatureDragState, setKeySignatureDragState] = useState<{
+    hasMoved: boolean;
+    layout: KeySignatureSymbolLayout;
+    previewPosition: MusicPosition | null;
+    startClientX: number;
+    startClientY: number;
+    startSvgX: number;
+    startSvgY: number;
+  } | null>(null);
   const [deleteHoverEventId, setDeleteHoverEventId] = useState<string | null>(
     null,
   );
@@ -977,6 +1052,7 @@ export function NotationOverlay({
   const staves = score.parts[0]?.staves ?? [];
   const staffGap = getScoreStaffGap(score);
   const systemGap = getScoreSystemGap(score);
+  const keySignatureSymbolLayouts = getKeySignatureSymbolLayouts(score);
   const invalidMeasureKeySet = new Set(invalidMeasureKeys);
   const ariaLabel =
     score.type === 'grand' ? 'Grand staff notation system' : 'Treble staff notation system';
@@ -999,7 +1075,11 @@ export function NotationOverlay({
       )
     : null;
   const shouldShowInputPreview =
-    isInputArmed && !dragState && !deleteHoverEventId && !selectedEventId;
+    isInputArmed &&
+    !dragState &&
+    !keySignatureDragState &&
+    !deleteHoverEventId &&
+    !selectedEventId;
   const displayHoverPosition =
     shouldShowInputPreview && placementMode === 'insert' && snappedHoverPosition
       ? snapInsertPositionToEventBoundary(score, snappedHoverPosition)
@@ -1093,6 +1173,49 @@ export function NotationOverlay({
     };
   }
 
+  function getKeySignatureDragMusicPosition(event: MouseEvent<SVGSVGElement>) {
+    if (!keySignatureDragState) {
+      return null;
+    }
+
+    const layout = keySignatureDragState.layout;
+    const staff = staves[layout.staffIndex];
+
+    if (!staff) {
+      return null;
+    }
+
+    const point = getSvgPoint(event, svgHeight);
+    const pitch = mapStaffYToPitch(
+      point.y,
+      staff.clef,
+      layout.staffIndex,
+      staffGap,
+      layout.measureIndex,
+      systemGap,
+    );
+    const y = getPitchY(
+      pitch,
+      staff.clef,
+      layout.staffIndex,
+      staffGap,
+      layout.measureIndex,
+      systemGap,
+    );
+
+    return {
+      beat: 0,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      measureIndex: layout.sourceMeasureIndex,
+      pitch,
+      staffId: staff.id,
+      staffIndex: layout.staffIndex,
+      x: layout.x,
+      y,
+    };
+  }
+
   return (
     <svg
       aria-label={ariaLabel}
@@ -1101,9 +1224,33 @@ export function NotationOverlay({
       role="img"
       viewBox={`0 0 ${SVG_WIDTH} ${svgHeight}`}
       onMouseMove={(event) => {
-        const position = getDragMusicPosition(event);
+        if (keySignatureDragState) {
+          const point = getSvgPoint(event, svgHeight);
+          const clientMovement = Math.hypot(
+            event.clientX - keySignatureDragState.startClientX,
+            event.clientY - keySignatureDragState.startClientY,
+          );
+          const svgMovement = Math.hypot(
+            point.x - keySignatureDragState.startSvgX,
+            point.y - keySignatureDragState.startSvgY,
+          );
+          const hasMoved =
+            keySignatureDragState.hasMoved ||
+            Math.max(clientMovement, svgMovement) > 3;
+
+          setKeySignatureDragState({
+            ...keySignatureDragState,
+            hasMoved,
+            previewPosition: hasMoved
+              ? getKeySignatureDragMusicPosition(event)
+              : keySignatureDragState.previewPosition,
+          });
+          onHoverPositionChange?.(null);
+          return;
+        }
 
         if (dragState) {
+          const position = getDragMusicPosition(event);
           const point = getSvgPoint(event, svgHeight);
           const clientMovement = Math.hypot(
             event.clientX - dragState.startClientX,
@@ -1125,6 +1272,8 @@ export function NotationOverlay({
           return;
         }
 
+        const position = getDragMusicPosition(event);
+
         onHoverPositionChange?.(
           isInputArmed && position
             ? snapPositionToInputGrid(
@@ -1140,10 +1289,27 @@ export function NotationOverlay({
       }}
       onMouseLeave={() => {
         setDragState(null);
+        setKeySignatureDragState(null);
         setDeleteHoverEventId(null);
         onHoverPositionChange?.(null);
       }}
       onMouseUp={(event) => {
+        if (keySignatureDragState) {
+          const position = getKeySignatureDragMusicPosition(event);
+
+          if (keySignatureDragState.hasMoved && position) {
+            suppressNextPlaceRef.current = true;
+            onMoveKeySignatureSymbol?.(
+              keySignatureDragState.layout.sourceMeasureIndex,
+              keySignatureDragState.layout.symbolIndex,
+              position,
+            );
+          }
+
+          setKeySignatureDragState(null);
+          return;
+        }
+
         if (!dragState) {
           return;
         }
@@ -1365,6 +1531,26 @@ export function NotationOverlay({
           )}
         </g>
       ))}
+      {keySignatureSymbolLayouts.map((layout) => (
+        <KeySignatureSymbolTarget
+          key={layout.id}
+          layout={layout}
+          onStartDrag={(targetLayout, dragEvent) => {
+            const startPoint = getNestedSvgPoint(dragEvent);
+
+            setKeySignatureDragState({
+              hasMoved: false,
+              layout: targetLayout,
+              previewPosition: null,
+              startClientX: dragEvent.clientX,
+              startClientY: dragEvent.clientY,
+              startSvgX: startPoint.x,
+              startSvgY: startPoint.y,
+            });
+            onHoverPositionChange?.(null);
+          }}
+        />
+      ))}
       {playbackBeat !== null && playbackBeat !== undefined ? (
         <line
           className="playhead"
@@ -1410,6 +1596,18 @@ export function NotationOverlay({
           score={score}
           staffGap={staffGap}
         />
+      ) : null}
+      {keySignatureDragState?.previewPosition ? (
+        <text
+          className="key-signature-symbol-preview"
+          data-testid="key-signature-symbol-preview"
+          dominantBaseline="central"
+          textAnchor="middle"
+          x={keySignatureDragState.layout.x}
+          y={keySignatureDragState.previewPosition.y}
+        >
+          {KEY_SIGNATURE_SYMBOL_TEXT[keySignatureDragState.layout.accidental]}
+        </text>
       ) : null}
     </svg>
   );

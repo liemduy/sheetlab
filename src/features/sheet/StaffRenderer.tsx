@@ -28,6 +28,11 @@ export interface StaffRendererProps {
     position: MusicPosition,
     pitchIndex?: number | null,
   ) => void;
+  onMoveKeySignatureSymbol?: (
+    sourceMeasureIndex: number,
+    symbolIndex: number,
+    position: MusicPosition,
+  ) => void;
   onSelectMeasure?: (staffId: StaffId, measureIndex: number) => void;
   selectedEventId?: string | null;
   selectedPitchIndex?: number | null;

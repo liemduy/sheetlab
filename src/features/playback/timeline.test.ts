@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { createEmptyScore } from '../../domain/score/factories';
-import { placeScoreEvent, setMeasureKeySignature } from '../../domain/score/editing';
+import {
+  placeScoreEvent,
+  setMeasureKeySignature,
+  tryMoveKeySignatureSymbol,
+} from '../../domain/score/editing';
 import {
   buildPlaybackTimeline,
   getActiveTimelineEvent,
@@ -106,6 +110,41 @@ describe('playback timeline', () => {
       octave: 4,
       step: 'F',
     });
+  });
+
+  it('applies custom dragged key-signature symbols to playback pitches', () => {
+    const scoreWithKey = setMeasureKeySignature(
+      createEmptyScore('treble', { measureCount: 1 }),
+      0,
+      'G',
+    );
+    const movedKeySignature = tryMoveKeySignatureSymbol(scoreWithKey, 0, 0, {
+      octave: 5,
+      step: 'E',
+    });
+    const scoreWithF = placeScoreEvent(movedKeySignature.score, {
+      eventId: 'event-f-after-custom-key',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'F', octave: 4 },
+    });
+    const score = placeScoreEvent(scoreWithF, {
+      eventId: 'event-e-after-custom-key',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 1,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+
+    expect(buildPlaybackTimeline(score).map((event) => event.pitch)).toEqual([
+      { octave: 4, step: 'F' },
+      { accidental: 'sharp', octave: 4, step: 'E' },
+    ]);
   });
 
   it('finds the active event and playback beat at an elapsed time', () => {

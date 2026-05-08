@@ -2,8 +2,7 @@ import type { Pitch, Score, ScoreEvent, StaffId } from '../../domain/score/types
 import { getDurationBeats } from '../../domain/score/durations';
 import { getEventDots, getEventPitches } from '../../domain/score/events';
 import {
-  applyKeySignatureToPitch,
-  getActiveKeySignature,
+  applyActiveKeySignatureToPitch,
 } from '../../domain/score/keySignatures';
 
 export interface PlaybackTimelineEvent {
@@ -40,9 +39,8 @@ export function buildPlaybackTimeline(score: Score): PlaybackTimelineEvent[] {
               );
               const startBeat = measure.index * beatsPerMeasure + event.beat;
 
-              const keySignature = getActiveKeySignature(score, measure.index);
               const pitches = getEventPitches(event).map((pitch) =>
-                applyKeySignatureToPitch(pitch, keySignature),
+                applyActiveKeySignatureToPitch(score, measure.index, pitch),
               );
 
               return {

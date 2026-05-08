@@ -27,6 +27,8 @@ export type KeySignature =
   | 'Gb'
   | 'Cb';
 
+export type KeySignatureAccidental = 'sharp' | 'flat';
+
 export type DurationValue =
   | 'whole'
   | 'half'
@@ -44,6 +46,12 @@ export interface Pitch {
   step: NoteStep;
   octave: number;
   accidental?: Accidental;
+}
+
+export interface KeySignatureSymbol {
+  id: string;
+  accidental: KeySignatureAccidental;
+  step: NoteStep;
 }
 
 export interface BaseScoreEvent {
@@ -78,6 +86,7 @@ export interface Measure {
   id: string;
   index: number;
   keySignature?: KeySignature;
+  keySignatureSymbols?: KeySignatureSymbol[];
   voices: Voice[];
 }
 

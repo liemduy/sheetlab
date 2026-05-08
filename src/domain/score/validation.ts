@@ -3,6 +3,7 @@ import type {
   Clef,
   DurationValue,
   KeySignature,
+  KeySignatureAccidental,
   NoteStep,
   PageSize,
   Score,
@@ -17,6 +18,10 @@ const STAFF_IDS = new Set<StaffId>(['treble', 'bass']);
 const CLEFS = new Set<Clef>(['treble', 'bass']);
 const NOTE_STEPS = new Set<NoteStep>(['C', 'D', 'E', 'F', 'G', 'A', 'B']);
 const ACCIDENTALS = new Set<Accidental>(['natural', 'sharp', 'flat']);
+const KEY_SIGNATURE_ACCIDENTALS = new Set<KeySignatureAccidental>([
+  'sharp',
+  'flat',
+]);
 const DURATIONS = new Set<DurationValue>([
   'whole',
   'half',
@@ -62,6 +67,17 @@ function isPitch(value: unknown) {
     isNumber(value.octave) &&
     (value.accidental === undefined ||
       ACCIDENTALS.has(value.accidental as Accidental))
+  );
+}
+
+function isKeySignatureSymbol(value: unknown) {
+  return (
+    isRecord(value) &&
+    isString(value.id) &&
+    KEY_SIGNATURE_ACCIDENTALS.has(
+      value.accidental as KeySignatureAccidental,
+    ) &&
+    NOTE_STEPS.has(value.step as NoteStep)
   );
 }
 
@@ -129,6 +145,9 @@ export function isScore(value: unknown): value is Score {
                 isNumber(measure.index) &&
                 (measure.keySignature === undefined ||
                   KEY_SIGNATURES.has(measure.keySignature as KeySignature)) &&
+                (measure.keySignatureSymbols === undefined ||
+                  (Array.isArray(measure.keySignatureSymbols) &&
+                    measure.keySignatureSymbols.every(isKeySignatureSymbol))) &&
                 Array.isArray(measure.voices) &&
                 measure.voices.every(
                   (voice) =>

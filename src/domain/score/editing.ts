@@ -2,6 +2,7 @@ import type {
   Accidental,
   DurationValue,
   KeySignature,
+  KeySignatureSymbol,
   Measure,
   Pitch,
   Score,
@@ -25,6 +26,10 @@ import {
   splitTicksIntoDurations,
   tickToBeat,
 } from './ticks';
+import {
+  createKeySignatureSymbols,
+  inferKeySignatureFromSymbols,
+} from './keySignatures';
 
 export interface PlaceScoreEventRequest {
   eventId: string;
@@ -59,6 +64,12 @@ export interface UpdateScoreEventResult {
   score: Score;
   updated: boolean;
   reason?: PlaceScoreEventResult['reason'] | 'missing-event';
+}
+
+export interface MoveKeySignatureSymbolResult {
+  moved: boolean;
+  reason?: 'duplicate-step' | 'missing-target';
+  score: Score;
 }
 
 function createScoreEvent(request: PlaceScoreEventRequest): ScoreEvent {
@@ -723,6 +734,8 @@ export function setMeasureKeySignature(
   measureIndex: number,
   keySignature: KeySignature,
 ): Score {
+  const keySignatureSymbols = createKeySignatureSymbols(keySignature);
+
   return {
     ...score,
     parts: score.parts.map((part) => ({
@@ -734,11 +747,103 @@ export function setMeasureKeySignature(
             ? {
                 ...measure,
                 keySignature,
+                keySignatureSymbols,
               }
             : measure,
         ),
       })),
     })),
+  };
+}
+
+function getMeasureKeySignatureSymbols(
+  measure: Measure,
+  fallbackKeySignature: KeySignature,
+) {
+  return measure.keySignatureSymbols !== undefined
+    ? measure.keySignatureSymbols
+    : createKeySignatureSymbols(measure.keySignature ?? fallbackKeySignature);
+}
+
+export function tryMoveKeySignatureSymbol(
+  score: Score,
+  sourceMeasureIndex: number,
+  symbolIndex: number,
+  pitch: Pitch,
+): MoveKeySignatureSymbolResult {
+  const sourceMeasure = score.parts[0]?.staves[0]?.measures.find(
+    (measure) => measure.index === sourceMeasureIndex,
+  );
+
+  if (!sourceMeasure) {
+    return {
+      moved: false,
+      reason: 'missing-target',
+      score,
+    };
+  }
+
+  const fallbackKeySignature = sourceMeasure.keySignature ?? 'C';
+  const currentSymbols = getMeasureKeySignatureSymbols(
+    sourceMeasure,
+    fallbackKeySignature,
+  );
+  const targetSymbol = currentSymbols[symbolIndex];
+
+  if (!targetSymbol) {
+    return {
+      moved: false,
+      reason: 'missing-target',
+      score,
+    };
+  }
+
+  if (
+    currentSymbols.some(
+      (symbol, index) =>
+        index !== symbolIndex &&
+        symbol.step === pitch.step &&
+        symbol.accidental === targetSymbol.accidental,
+    )
+  ) {
+    return {
+      moved: false,
+      reason: 'duplicate-step',
+      score,
+    };
+  }
+
+  const nextSymbols = currentSymbols.map((symbol, index) =>
+    index === symbolIndex
+      ? {
+          ...symbol,
+          step: pitch.step,
+        }
+      : symbol,
+  ) satisfies KeySignatureSymbol[];
+  const inferredKeySignature = inferKeySignatureFromSymbols(nextSymbols);
+  const nextKeySignature = inferredKeySignature ?? fallbackKeySignature;
+
+  return {
+    moved: true,
+    score: {
+      ...score,
+      parts: score.parts.map((part) => ({
+        ...part,
+        staves: part.staves.map((staff) => ({
+          ...staff,
+          measures: staff.measures.map((measure) =>
+            measure.index === sourceMeasureIndex
+              ? {
+                  ...measure,
+                  keySignature: nextKeySignature,
+                  keySignatureSymbols: nextSymbols,
+                }
+              : measure,
+          ),
+        })),
+      })),
+    },
   };
 }
 
