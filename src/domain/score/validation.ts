@@ -6,11 +6,13 @@ import type {
   KeySignatureAccidental,
   NoteStep,
   PageSize,
+  RepeatJumpKind,
   Score,
   ScoreEvent,
   ScoreType,
   StaffId,
 } from './types';
+import { isRepeatJumpKind } from './repeatJumps';
 
 const SCORE_TYPES = new Set<ScoreType>(['treble', 'grand']);
 const PAGE_SIZES = new Set<PageSize>(['a4', 'letter']);
@@ -148,6 +150,8 @@ export function isScore(value: unknown): value is Score {
                 (measure.keySignatureSymbols === undefined ||
                   (Array.isArray(measure.keySignatureSymbols) &&
                     measure.keySignatureSymbols.every(isKeySignatureSymbol))) &&
+                (measure.repeatJump === undefined ||
+                  isRepeatJumpKind(measure.repeatJump as RepeatJumpKind)) &&
                 Array.isArray(measure.voices) &&
                 measure.voices.every(
                   (voice) =>

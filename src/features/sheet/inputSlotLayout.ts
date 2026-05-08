@@ -1,4 +1,5 @@
 import { getDurationBeats } from '../../domain/score/durations';
+import { getMeasureBeats } from '../../domain/score/timeSignatures';
 import type { Score, ScoreEvent } from '../../domain/score/types';
 import type { InputCursor } from '../editor/inputCursor';
 import {
@@ -134,12 +135,13 @@ export function getInputSlotLayout({
   score: Score;
 }): InputSlotLayout {
   const activeSlotLayout = getActiveSlotLayout(cursor, eventLayouts, score);
+  const beatsPerMeasure = getMeasureBeats(score.timeSignature);
   const centerX =
     activeSlotLayout?.x ??
     getBeatX(
       cursor.measureIndex,
       cursor.beat,
-      score.timeSignature.beats,
+      beatsPerMeasure,
       score,
     );
   const boxWidth = DEFAULT_INPUT_SLOT_WIDTH;
@@ -149,7 +151,7 @@ export function getInputSlotLayout({
     includePitchPreview,
   );
   const slotEndBeat = Math.min(
-    score.timeSignature.beats,
+    beatsPerMeasure,
     cursor.beat + getDurationBeats(cursor.duration, cursor.dots ?? 0),
   );
 

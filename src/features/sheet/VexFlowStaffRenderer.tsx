@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Accidental as VexFlowAccidental,
+  Barline,
   Beam,
   Dot,
   Formatter,
+  Repetition,
   Renderer,
   Stave,
   StaveConnector,
   StaveNote,
+  Volta,
 } from 'vexflow';
 import type { ScoreEvent, Staff } from '../../domain/score/types';
 import { getDurationBeats } from '../../domain/score/durations';
@@ -20,6 +23,8 @@ import {
   getActiveKeySignature,
   measureStartsKeySignatureChange,
 } from '../../domain/score/keySignatures';
+import { getMeasureBeats } from '../../domain/score/timeSignatures';
+import { getMeasureRepeatJump } from '../../domain/score/repeatJumps';
 import { clampPitchToClefRange } from '../../domain/score/pitchRange';
 import type { StaffRendererProps } from './StaffRenderer';
 import { NotationOverlay } from './NotationOverlay';
@@ -53,6 +58,18 @@ const REST_KEY_BY_CLEF = {
 const KEY_SIGNATURE_SYMBOL_TEXT = {
   flat: '♭',
   sharp: '♯',
+} as const;
+const REPETITION_TYPE_BY_REPEAT_JUMP = {
+  coda: Repetition.type.CODA_LEFT,
+  dc: Repetition.type.DC,
+  'dc-al-coda': Repetition.type.DC_AL_CODA,
+  'dc-al-fine': Repetition.type.DC_AL_FINE,
+  ds: Repetition.type.DS,
+  'ds-al-coda': Repetition.type.DS_AL_CODA,
+  'ds-al-fine': Repetition.type.DS_AL_FINE,
+  fine: Repetition.type.FINE,
+  segno: Repetition.type.SEGNO_LEFT,
+  'to-coda': Repetition.type.TO_CODA,
 } as const;
 
 function getVexFlowEventClasses(event: ScoreEvent) {
@@ -125,6 +142,57 @@ function createEmptyMeasureDisplayRests(
   });
 }
 
+function applyRepeatJumpToStave(
+  stave: Stave,
+  score: StaffRendererProps['score'],
+  measureIndex: number,
+  staffIndex: number,
+) {
+  const repeatJump = getMeasureRepeatJump(score, measureIndex);
+
+  if (!repeatJump) {
+    return;
+  }
+
+  if (repeatJump === 'repeat-start') {
+    stave.setBegBarType(Barline.type.REPEAT_BEGIN);
+    return;
+  }
+
+  if (repeatJump === 'repeat-end') {
+    stave.setEndBarType(Barline.type.REPEAT_END);
+    return;
+  }
+
+  if (repeatJump === 'repeat-both') {
+    stave.setBegBarType(Barline.type.REPEAT_BEGIN);
+    stave.setEndBarType(Barline.type.REPEAT_END);
+    return;
+  }
+
+  if (staffIndex !== 0) {
+    return;
+  }
+
+  if (repeatJump === 'ending-1' || repeatJump === 'ending-2' || repeatJump === 'ending-3') {
+    stave.setVoltaType(
+      Volta.type.BEGIN_END,
+      `${repeatJump.replace('ending-', '')}.`,
+      -20,
+    );
+    return;
+  }
+
+  const repetitionType =
+    REPETITION_TYPE_BY_REPEAT_JUMP[
+      repeatJump as keyof typeof REPETITION_TYPE_BY_REPEAT_JUMP
+    ];
+
+  if (repetitionType !== undefined) {
+    stave.setRepetitionType(repetitionType, -8);
+  }
+}
+
 function drawVexFlowMeasureEvents({
   beatsPerMeasure,
   context,
@@ -156,7 +224,9 @@ function drawVexFlowMeasureEvents({
   const eventLayouts: Record<string, RenderedEventLayout> = {};
   const beams = Beam.generateBeams(notes, {
     beamRests: false,
-    groups: Beam.getDefaultBeamGroups(`${beatsPerMeasure}/4`),
+    groups: Beam.getDefaultBeamGroups(
+      `${score.timeSignature.beats}/${score.timeSignature.beatUnit}`,
+    ),
   });
 
   Formatter.FormatAndDraw(context, stave, notes, {
@@ -234,6 +304,7 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
   const height = getScoreSvgHeight(score);
   const staffGap = getScoreStaffGap(score);
   const systemGap = getScoreSystemGap(score);
+  const beatsPerMeasure = getMeasureBeats(score.timeSignature);
 
   container.innerHTML = '';
 
@@ -270,6 +341,7 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
         stave.addKeySignature(getActiveKeySignature(score, measure.index));
       }
 
+      applyRepeatJumpToStave(stave, score, measure.index, staffIndex);
       stave.setAttribute('data-measure-index', String(measure.index));
       stave.setAttribute('data-staff-id', staff.id);
       stave.setContext(context).draw();
@@ -319,7 +391,7 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
       Object.assign(
         eventLayouts,
         drawVexFlowMeasureEvents({
-          beatsPerMeasure: score.timeSignature.beats,
+          beatsPerMeasure,
           context,
           measureIndex,
           score,

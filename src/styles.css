@@ -164,6 +164,128 @@ button {
   font: 700 0.78rem ui-sans-serif, "Segoe UI", sans-serif;
 }
 
+.compact-select {
+  min-width: 4.8rem;
+}
+
+.palette-host {
+  position: relative;
+}
+
+.palette-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 15rem;
+  cursor: pointer;
+  gap: 0.5rem;
+  text-align: left;
+}
+
+.palette-trigger::after {
+  color: var(--muted);
+  content: "▾";
+  font-size: 0.7rem;
+}
+
+.thumbnail-menu {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 0.45rem);
+  left: 0;
+  display: grid;
+  width: min(27rem, calc(100vw - 2rem));
+  grid-template-columns: repeat(5, minmax(4.6rem, 1fr));
+  overflow: hidden;
+  border: 1px solid rgb(31 41 55 / 18%);
+  border-radius: 0.8rem;
+  background: #202329;
+  box-shadow: 0 22px 60px rgb(17 24 39 / 32%);
+  color: #f7f2e9;
+}
+
+.repeat-menu {
+  grid-template-columns: repeat(4, minmax(5.2rem, 1fr));
+  width: min(30rem, calc(100vw - 2rem));
+}
+
+.thumbnail-option {
+  display: grid;
+  min-height: 4.7rem;
+  place-items: center;
+  gap: 0.2rem;
+  border: 0;
+  border-right: 1px solid rgb(255 255 255 / 8%);
+  border-bottom: 1px solid rgb(255 255 255 / 8%);
+  padding: 0.45rem 0.35rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: 700 0.74rem ui-serif, Georgia, serif;
+}
+
+.thumbnail-option:hover,
+.thumbnail-option:focus,
+.thumbnail-option.is-current {
+  background: rgb(255 255 255 / 12%);
+  outline: none;
+}
+
+.signature-thumbnail,
+.repeat-thumbnail {
+  position: relative;
+  display: block;
+  width: 4.3rem;
+  height: 2.1rem;
+}
+
+.signature-staff-lines {
+  position: absolute;
+  inset: 0.25rem 0.15rem;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgb(255 255 255 / 38%) 0,
+    rgb(255 255 255 / 38%) 1px,
+    transparent 1px,
+    transparent 6px
+  );
+}
+
+.signature-accidental {
+  position: absolute;
+  color: #ffffff;
+  font-family: Bravura, "Noto Music", "Segoe UI Symbol", "Apple Symbols", serif;
+  font-size: 1.05rem;
+  line-height: 1;
+  transform: translate(-50%, -50%);
+}
+
+.repeat-thumbnail-symbol {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #ffffff;
+  font-family: Bravura, "Noto Music", "Segoe UI Symbol", Georgia, serif;
+  font-size: 1rem;
+  text-align: center;
+}
+
+.zoom-toolbar {
+  min-width: 13rem;
+}
+
+.zoom-slider {
+  width: 7rem;
+  accent-color: var(--accent-strong);
+}
+
+.zoom-value {
+  min-width: 3.1rem;
+  color: var(--ink);
+  font: 700 0.78rem ui-sans-serif, "Segoe UI", sans-serif;
+}
+
 .tool-symbol {
   font-family: "Noto Music", "Segoe UI Symbol", Cambria, "Times New Roman", serif;
   font-size: 1.15rem;
@@ -250,7 +372,7 @@ button {
   display: flex;
   justify-content: center;
   min-width: 0;
-  overflow-x: hidden;
+  overflow-x: auto;
   overflow-y: auto;
   padding: 1rem 1.25rem 2.5rem;
 }
@@ -258,6 +380,7 @@ button {
 .paper {
   --paper-width: 794px;
   --paper-min-height: 1123px;
+  zoom: var(--canvas-zoom, 1);
   position: relative;
   width: min(100%, var(--paper-width));
   min-height: min(var(--paper-min-height), 142vw);
@@ -302,6 +425,7 @@ button {
 }
 
 .app-shell.is-pdf-export .paper {
+  zoom: 1;
   width: 210mm;
   min-height: 297mm;
   border-radius: 0;
@@ -869,6 +993,11 @@ button {
   font-weight: 400;
   opacity: 0.72;
   pointer-events: none;
+}
+
+.key-signature-symbol-preview.is-invalid {
+  fill: #b42318;
+  opacity: 0.88;
 }
 
 .playhead {

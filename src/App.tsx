@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import type { MouseEvent as ReactMouseEvent } from 'react';
+import type {
+  CSSProperties,
+  MouseEvent as ReactMouseEvent,
+} from 'react';
 import { createEmptyScore, deserializeScore } from './domain/score/factories';
 import { isPitchedScoreEvent } from './domain/score/events';
 import {
@@ -12,6 +15,8 @@ import {
   findScoreEvent,
   insertMeasureAt,
   setMeasureKeySignature,
+  setMeasureRepeatJump,
+  setScoreTimeSignature,
   tryMoveKeySignatureSymbol,
   tryInsertScoreEvent,
   tryPlaceScoreEvent,
@@ -19,6 +24,7 @@ import {
 } from './domain/score/editing';
 import {
   applyActiveKeySignatureToPitch,
+  createKeySignatureSymbols,
   getActiveKeySignatureSelection,
   getKeySignatureLabel,
   KEY_SIGNATURE_OPTIONS,
@@ -50,10 +56,23 @@ import type {
   KeySignature,
   PageSize,
   Pitch,
+  RepeatJumpKind,
   Score,
   ScoreType,
   StaffId,
 } from './domain/score/types';
+import {
+  getMeasureBeats,
+  getTimeSignatureId,
+  getTimeSignatureLabel,
+  parseTimeSignatureId,
+  TIME_SIGNATURE_OPTIONS,
+} from './domain/score/timeSignatures';
+import {
+  getMeasureRepeatJump,
+  getRepeatJumpOption,
+  REPEAT_JUMP_OPTIONS,
+} from './domain/score/repeatJumps';
 import { StaffRenderer } from './features/sheet/StaffRenderer';
 import { formatPitch } from './features/sheet/interaction';
 import type { MusicPosition } from './features/sheet/interaction';
@@ -102,6 +121,56 @@ function loadInitialScoreForApp() {
   return createEmptyScore(DEFAULT_EDITOR_TOOL_STATE.scoreType, {
     tempo: DEFAULT_EDITOR_TOOL_STATE.tempo,
   });
+}
+
+const ZOOM_MIN = 70;
+const ZOOM_MAX = 180;
+const ZOOM_STEP = 5;
+const DEFAULT_CANVAS_ZOOM = 100;
+
+type ToolbarPalette = 'key' | 'repeat' | null;
+
+const THUMBNAIL_ACCIDENTAL_Y = {
+  A: 21,
+  B: 11,
+  C: 18,
+  D: 9,
+  E: 15,
+  F: 6,
+  G: 24,
+} as const;
+
+function KeySignatureThumbnail({ keySignature }: { keySignature: KeySignature }) {
+  const symbols = createKeySignatureSymbols(keySignature);
+
+  return (
+    <span className="signature-thumbnail" aria-hidden="true">
+      <span className="signature-staff-lines" />
+      {symbols.map((symbol, symbolIndex) => (
+        <span
+          key={symbol.id}
+          className="signature-accidental"
+          style={{
+            left: `${16 + symbolIndex * 8}px`,
+            top: `${THUMBNAIL_ACCIDENTAL_Y[symbol.step]}px`,
+          }}
+        >
+          {symbol.accidental === 'sharp' ? '♯' : '♭'}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function RepeatJumpThumbnail({ kind }: { kind: RepeatJumpKind }) {
+  const option = getRepeatJumpOption(kind);
+
+  return (
+    <span className="repeat-thumbnail" aria-hidden="true">
+      <span className="signature-staff-lines" />
+      <span className="repeat-thumbnail-symbol">{option?.symbol ?? kind}</span>
+    </span>
+  );
 }
 
 function pitchesMatch(first: Pitch, second: Pitch) {
@@ -186,7 +255,7 @@ function createCursorAfterPlacement(
     nextPosition,
     duration,
     'note-input',
-    score.timeSignature.beats,
+    getMeasureBeats(score.timeSignature),
     dots,
   );
 }
@@ -233,6 +302,8 @@ function App() {
     useState<SelectionSource | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackElapsedSeconds, setPlaybackElapsedSeconds] = useState(0);
+  const [canvasZoom, setCanvasZoom] = useState(DEFAULT_CANVAS_ZOOM);
+  const [openPalette, setOpenPalette] = useState<ToolbarPalette>(null);
   const eventCounter = useRef(1);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const notationViewportRef = useRef<HTMLDivElement | null>(null);
@@ -391,7 +462,7 @@ function App() {
         nextHoverPosition,
         toolState.duration,
         'note-input',
-        score.timeSignature.beats,
+        getMeasureBeats(score.timeSignature),
         toolState.dots,
       );
 
@@ -407,6 +478,7 @@ function App() {
       createEmptyScore(scoreType, {
         pageSize: score.pageSize,
         tempo: toolState.tempo,
+        timeSignature: score.timeSignature,
       }),
       'New score',
     );
@@ -429,6 +501,7 @@ function App() {
       createEmptyScore(toolState.scoreType, {
         pageSize: score.pageSize,
         tempo: toolState.tempo,
+        timeSignature: score.timeSignature,
       }),
       'Score reset',
     );
@@ -463,6 +536,10 @@ function App() {
     }
 
     return inputCursor?.measureIndex ?? hoverPosition?.measureIndex ?? 0;
+  }
+
+  function getScoreEditTargetMeasureIndex() {
+    return getKeySignatureTargetMeasureIndex();
   }
 
   function handleMeasureContextMenu(
@@ -623,6 +700,7 @@ function App() {
       setMeasureKeySignature(score, measureIndex, keySignature),
       `Key signature set to ${keySignature}`,
     );
+    setOpenPalette(null);
     setSelectedMeasure((currentSelection) =>
       currentSelection
         ? {
@@ -630,6 +708,61 @@ function App() {
             measureIndex,
           }
         : currentSelection,
+    );
+  }
+
+  function handleTimeSignatureChange(value: string) {
+    const timeSignature = parseTimeSignatureId(value);
+
+    if (!timeSignature) {
+      return;
+    }
+
+    commitScoreChange(
+      setScoreTimeSignature(score, timeSignature),
+      `Time signature set to ${getTimeSignatureLabel(timeSignature)}`,
+    );
+    setHoverPosition(null);
+    setInputCursor(null);
+    setCursorSequenceLocked(false);
+  }
+
+  function handleRepeatJumpChange(repeatJump: RepeatJumpKind | null) {
+    const measureIndex = getScoreEditTargetMeasureIndex();
+
+    commitScoreChange(
+      setMeasureRepeatJump(score, measureIndex, repeatJump),
+      repeatJump
+        ? `${getRepeatJumpOption(repeatJump)?.label ?? repeatJump} set at measure ${
+            measureIndex + 1
+          }`
+        : `Repeat/jump cleared at measure ${measureIndex + 1}`,
+    );
+    setOpenPalette(null);
+    setSelectedMeasure({
+      staffId: selectedMeasure?.staffId ?? 'treble',
+      measureIndex,
+    });
+    setSelectedEventId(null);
+    setSelectedPitchIndex(null);
+    setSelectedEventSource(null);
+  }
+
+  function clampCanvasZoom(value: number) {
+    return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, value));
+  }
+
+  function handleCanvasZoomChange(value: string) {
+    const nextZoom = Number(value);
+
+    if (!Number.isNaN(nextZoom)) {
+      setCanvasZoom(clampCanvasZoom(nextZoom));
+    }
+  }
+
+  function zoomCanvasByWheelDelta(deltaY: number) {
+    setCanvasZoom((currentZoom) =>
+      clampCanvasZoom(currentZoom + (deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP)),
     );
   }
 
@@ -1124,6 +1257,31 @@ function App() {
     score,
     getKeySignatureTargetMeasureIndex(),
   );
+  const activeRepeatJump = getMeasureRepeatJump(
+    score,
+    getScoreEditTargetMeasureIndex(),
+  );
+
+  useEffect(() => {
+    const viewport = notationViewportRef.current;
+
+    if (!viewport) {
+      return;
+    }
+
+    function handleNativeWheel(event: WheelEvent) {
+      if (!event.ctrlKey && !event.metaKey) {
+        return;
+      }
+
+      event.preventDefault();
+      zoomCanvasByWheelDelta(event.deltaY);
+    }
+
+    viewport.addEventListener('wheel', handleNativeWheel, { passive: false });
+
+    return () => viewport.removeEventListener('wheel', handleNativeWheel);
+  }, []);
 
   useEffect(() => {
     function isTypingTarget(target: EventTarget | null) {
@@ -1271,26 +1429,128 @@ function App() {
           </div>
           <div className="toolbar-group" aria-label="Key signature tools">
             <span className="toolbar-group-label">Key</span>
-            <select
-              aria-label="Key signature"
-              className="toolbar-select"
-              title="Apply key signature at the selected measure or selected note measure"
-              value={activeKeySignatureSelection}
-              onChange={(event) =>
-                event.target.value !== 'custom'
-                  ? handleKeySignatureChange(event.target.value as KeySignature)
-                  : undefined
-              }
-            >
-              {activeKeySignatureSelection === 'custom' ? (
-                <option value="custom">Custom key signature</option>
+            <div className="palette-host">
+              <button
+                type="button"
+                aria-expanded={openPalette === 'key'}
+                aria-label="Key signature menu"
+                className="toolbar-select palette-trigger"
+                title="Apply key signature at the selected measure or selected note measure"
+                onClick={() =>
+                  setOpenPalette((current) => (current === 'key' ? null : 'key'))
+                }
+              >
+                {activeKeySignatureSelection === 'custom'
+                  ? 'Custom key signature'
+                  : getKeySignatureLabel(activeKeySignatureSelection)}
+              </button>
+              {openPalette === 'key' ? (
+                <div
+                  className="thumbnail-menu key-signature-menu"
+                  data-testid="key-signature-thumbnail-menu"
+                  role="menu"
+                >
+                  {activeKeySignatureSelection === 'custom' ? (
+                    <div className="thumbnail-option is-current" aria-hidden="true">
+                      <span className="signature-thumbnail">
+                        <span className="signature-staff-lines" />
+                      </span>
+                      <span>Custom</span>
+                    </div>
+                  ) : null}
+                  {KEY_SIGNATURE_OPTIONS.map((keySignature) => (
+                    <button
+                      key={keySignature}
+                      type="button"
+                      className={`thumbnail-option${
+                        activeKeySignatureSelection === keySignature
+                          ? ' is-current'
+                          : ''
+                      }`}
+                      role="menuitem"
+                      onClick={() => handleKeySignatureChange(keySignature)}
+                    >
+                      <KeySignatureThumbnail keySignature={keySignature} />
+                      <span>{keySignature}</span>
+                    </button>
+                  ))}
+                </div>
               ) : null}
-              {KEY_SIGNATURE_OPTIONS.map((keySignature) => (
-                <option key={keySignature} value={keySignature}>
-                  {getKeySignatureLabel(keySignature)}
+            </div>
+          </div>
+          <div className="toolbar-group" aria-label="Time signature tools">
+            <span className="toolbar-group-label">Time</span>
+            <select
+              aria-label="Time signature"
+              className="toolbar-select compact-select"
+              value={getTimeSignatureId(score.timeSignature)}
+              onChange={(event) => handleTimeSignatureChange(event.target.value)}
+            >
+              {TIME_SIGNATURE_OPTIONS.map((timeSignature) => (
+                <option
+                  key={getTimeSignatureId(timeSignature)}
+                  value={getTimeSignatureId(timeSignature)}
+                >
+                  {getTimeSignatureLabel(timeSignature)}
                 </option>
               ))}
             </select>
+          </div>
+          <div className="toolbar-group" aria-label="Repeat and jump tools">
+            <span className="toolbar-group-label">Repeats</span>
+            <div className="palette-host">
+              <button
+                type="button"
+                aria-expanded={openPalette === 'repeat'}
+                aria-label="Repeat and jump menu"
+                className="toolbar-select palette-trigger"
+                title="Apply repeat or jump to the selected measure"
+                onClick={() =>
+                  setOpenPalette((current) =>
+                    current === 'repeat' ? null : 'repeat',
+                  )
+                }
+              >
+                {activeRepeatJump
+                  ? getRepeatJumpOption(activeRepeatJump)?.label ?? activeRepeatJump
+                  : 'None'}
+              </button>
+              {openPalette === 'repeat' ? (
+                <div
+                  className="thumbnail-menu repeat-menu"
+                  data-testid="repeat-jump-thumbnail-menu"
+                  role="menu"
+                >
+                  <button
+                    type="button"
+                    className={`thumbnail-option${!activeRepeatJump ? ' is-current' : ''}`}
+                    role="menuitem"
+                    onClick={() => handleRepeatJumpChange(null)}
+                  >
+                    <span className="repeat-thumbnail" aria-hidden="true">
+                      <span className="signature-staff-lines" />
+                      <span className="repeat-thumbnail-symbol">Ø</span>
+                    </span>
+                    <span>Clear</span>
+                  </button>
+                  {REPEAT_JUMP_OPTIONS.map((option) => (
+                    <button
+                      key={option.kind}
+                      type="button"
+                      className={`thumbnail-option${
+                        activeRepeatJump === option.kind ? ' is-current' : ''
+                      }`}
+                      role="menuitem"
+                      title={option.description}
+                      onClick={() => handleRepeatJumpChange(option.kind)}
+                    >
+                      <RepeatJumpThumbnail kind={option.kind} />
+                      <span>{option.label}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </div>
           <div className="toolbar-group" aria-label="Entry tools">
             <span className="toolbar-group-label">Entry</span>
@@ -1394,6 +1654,22 @@ function App() {
               Delete
             </button>
           </div>
+          <div className="toolbar-group zoom-toolbar" aria-label="Canvas zoom tools">
+            <span className="toolbar-group-label">Zoom</span>
+            <input
+              aria-label="Canvas zoom"
+              className="zoom-slider"
+              type="range"
+              min={ZOOM_MIN}
+              max={ZOOM_MAX}
+              step={ZOOM_STEP}
+              value={canvasZoom}
+              onChange={(event) => handleCanvasZoomChange(event.target.value)}
+            />
+            <output className="zoom-value" aria-label="Current canvas zoom">
+              {canvasZoom}%
+            </output>
+          </div>
           <div className="toolbar-group" aria-label="Project tools">
             <span className="toolbar-group-label">File</span>
             <button type="button" className="tool-button" onClick={handleSaveProject}>
@@ -1464,6 +1740,22 @@ function App() {
               onChange={(event) => handleTempoChange(event.target.value)}
             />
           </label>
+          <label>
+            Time signature
+            <select
+              value={getTimeSignatureId(score.timeSignature)}
+              onChange={(event) => handleTimeSignatureChange(event.target.value)}
+            >
+              {TIME_SIGNATURE_OPTIONS.map((timeSignature) => (
+                <option
+                  key={getTimeSignatureId(timeSignature)}
+                  value={getTimeSignatureId(timeSignature)}
+                >
+                  {getTimeSignatureLabel(timeSignature)}
+                </option>
+              ))}
+            </select>
+          </label>
           <dl className="state-summary" aria-label="Current editor state">
             <div>
               <dt>Score</dt>
@@ -1499,6 +1791,14 @@ function App() {
             <div>
               <dt>Tempo</dt>
               <dd>{toolState.tempo} BPM</dd>
+            </div>
+            <div>
+              <dt>Time</dt>
+              <dd>{getTimeSignatureLabel(score.timeSignature)}</dd>
+            </div>
+            <div>
+              <dt>Zoom</dt>
+              <dd>{canvasZoom}%</dd>
             </div>
             <div>
               <dt>Measures</dt>
@@ -1555,7 +1855,14 @@ function App() {
           aria-label="Sheet surface"
           onClick={handleSheetStageClick}
         >
-          <div className={`paper paper-${score.pageSize}`}>
+          <div
+            className={`paper paper-${score.pageSize}`}
+            style={
+              {
+                '--canvas-zoom': isPdfExportMode() ? 1 : canvasZoom / 100,
+              } as CSSProperties
+            }
+          >
             <div className="paper-heading">
               <input
                 aria-label="Score title"

@@ -72,6 +72,10 @@ describe('App editor state', () => {
     expect(screen.getByLabelText('Duration tools')).toBeInTheDocument();
     expect(screen.getByLabelText('Modifier tools')).toBeInTheDocument();
     expect(screen.getByLabelText('Entry tools')).toBeInTheDocument();
+    expect(screen.getByLabelText('Key signature tools')).toBeInTheDocument();
+    expect(screen.getByLabelText('Time signature tools')).toBeInTheDocument();
+    expect(screen.getByLabelText('Repeat and jump tools')).toBeInTheDocument();
+    expect(screen.getByLabelText('Canvas zoom tools')).toBeInTheDocument();
     expect(screen.getByLabelText('Placement tools')).toBeInTheDocument();
     expect(screen.getByLabelText('Transport and history')).toBeInTheDocument();
     expect(screen.getByLabelText('Project tools')).toBeInTheDocument();
@@ -888,14 +892,21 @@ describe('App editor state', () => {
     fireEvent.keyDown(window, { ctrlKey: true, key: 'y' });
 
     expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { metaKey: true, key: 'z' });
+
+    expect(screen.queryByLabelText('Note E4 measure 1 beat 1')).not.toBeInTheDocument();
+
+    fireEvent.keyDown(window, { metaKey: true, key: 'y' });
+
+    expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toBeInTheDocument();
   });
 
   it('applies the selected key signature to new note preview audio', () => {
     render(<App />);
 
-    fireEvent.change(screen.getByLabelText('Key signature'), {
-      target: { value: 'G' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Key signature menu' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'G' }));
     startWriting();
     fireEvent.click(screen.getByTestId('staff-renderer'), {
       clientX: STAFF_LEFT,
@@ -909,7 +920,61 @@ describe('App editor state', () => {
         step: 'F',
       },
     ]);
-    expect(screen.getByLabelText('Key signature')).toHaveValue('G');
+    expect(screen.getByRole('button', { name: 'Key signature menu' })).toHaveTextContent(
+      'G (1 sharp)',
+    );
+  });
+
+  it('updates time signature from the toolbar', () => {
+    render(<App />);
+
+    fireEvent.change(screen.getAllByLabelText('Time signature')[0], {
+      target: { value: '3/4' },
+    });
+
+    expect(screen.getAllByText('3/4').length).toBeGreaterThan(0);
+    startWriting('Whole');
+    fireEvent.click(screen.getByTestId('staff-renderer'), {
+      clientX: STAFF_LEFT,
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.getByText('Cannot place: measure-overflow')).toBeInTheDocument();
+  });
+
+  it('applies repeat and jump symbols to the selected measure', () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select tool' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Measure 1 treble' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Repeat and jump menu' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Fine' }));
+
+    expect(screen.getByRole('button', { name: 'Repeat and jump menu' })).toHaveTextContent(
+      'Fine',
+    );
+    expect(screen.getByText('Fine set at measure 1')).toBeInTheDocument();
+  });
+
+  it('zooms the canvas with the slider and trackpad pinch wheel', () => {
+    render(<App />);
+
+    const paper = document.querySelector('.paper') as HTMLElement;
+    const zoomSlider = screen.getByLabelText('Canvas zoom');
+
+    fireEvent.change(zoomSlider, {
+      target: { value: '125' },
+    });
+
+    expect(paper.style.getPropertyValue('--canvas-zoom')).toBe('1.25');
+    expect(screen.getByLabelText('Current canvas zoom')).toHaveTextContent('125%');
+
+    fireEvent.wheel(screen.getByLabelText('Notation viewport'), {
+      ctrlKey: true,
+      deltaY: -100,
+    });
+
+    expect(screen.getByLabelText('Current canvas zoom')).toHaveTextContent('130%');
   });
 
   it('updates the selected score event from toolbar controls', () => {

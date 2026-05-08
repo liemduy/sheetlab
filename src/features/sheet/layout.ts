@@ -10,6 +10,7 @@ import {
   clampPitchToClefRange,
   pitchToDiatonicValue,
 } from '../../domain/score/pitchRange';
+import { getMeasureBeats } from '../../domain/score/timeSignatures';
 
 export const STAFF_LEFT = 36;
 export const STAFF_RIGHT = 884;
@@ -147,7 +148,7 @@ function normalizeBoundary(beat: number, beatsPerMeasure: number) {
 }
 
 function countMeasureRhythmIntervals(score: Score, measureIndex: number) {
-  const beatsPerMeasure = score.timeSignature.beats;
+  const beatsPerMeasure = getMeasureBeats(score.timeSignature);
   const boundaries = new Set<number>([
     0,
     beatsPerMeasure,
@@ -194,8 +195,10 @@ function countMeasureRhythmIntervals(score: Score, measureIndex: number) {
 }
 
 export function getMeasureSlotWeight(score: Score, measureIndex: number) {
+  const beatsPerMeasure = getMeasureBeats(score.timeSignature);
+
   return Math.max(
-    score.timeSignature.beats,
+    beatsPerMeasure,
     countMeasureRhythmIntervals(score, measureIndex),
   );
 }
@@ -230,8 +233,9 @@ export function getMeasureWidth(measureIndex: number, score?: Score) {
   );
   const totalWeight = weights.reduce((total, weight) => total + weight, 0);
   const measureOffset = systemMeasureIndexes.indexOf(measureIndex);
+  const beatsPerMeasure = getMeasureBeats(score.timeSignature);
   const measureWeight =
-    measureOffset >= 0 ? weights[measureOffset] ?? score.timeSignature.beats : score.timeSignature.beats;
+    measureOffset >= 0 ? weights[measureOffset] ?? beatsPerMeasure : beatsPerMeasure;
 
   return (SYSTEM_WIDTH * measureWeight) / Math.max(1, totalWeight);
 }

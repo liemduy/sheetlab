@@ -3,6 +3,7 @@ import {
   getInputSlotBeats,
   snapBeatToInputSlot,
 } from '../../domain/score/inputGrid';
+import { getMeasureBeats } from '../../domain/score/timeSignatures';
 import type { DurationValue, Pitch, Score, StaffId } from '../../domain/score/types';
 import type { MusicPosition } from '../sheet/interaction';
 import { formatPitch } from '../sheet/interaction';
@@ -54,7 +55,7 @@ export function createInputCursorFromPosition(
 }
 
 export function advanceInputCursor(score: Score, cursor: InputCursor): InputCursor {
-  const beatsPerMeasure = score.timeSignature.beats;
+  const beatsPerMeasure = getMeasureBeats(score.timeSignature);
   const durationBeats = getDurationBeats(cursor.duration, cursor.dots ?? 0);
   const globalBeat =
     cursor.measureIndex * beatsPerMeasure + cursor.beat + durationBeats;

@@ -238,6 +238,29 @@ export function getActiveKeySignatureSelection(score: Score, measureIndex: numbe
   return inferKeySignatureFromSymbols(symbols) ?? 'custom';
 }
 
+export function getKeySignatureSymbolMoveIssue(
+  score: Score,
+  sourceMeasureIndex: number,
+  symbolIndex: number,
+  pitch: Pitch,
+): 'duplicate-step' | 'missing-target' | null {
+  const { symbols } = getActiveKeySignatureSymbolState(score, sourceMeasureIndex);
+  const targetSymbol = symbols[symbolIndex];
+
+  if (!targetSymbol) {
+    return 'missing-target';
+  }
+
+  return symbols.some(
+    (symbol, index) =>
+      index !== symbolIndex &&
+      symbol.step === pitch.step &&
+      symbol.accidental === targetSymbol.accidental,
+  )
+    ? 'duplicate-step'
+    : null;
+}
+
 export function measureStartsKeySignatureChange(
   score: Score,
   measureIndex: number,

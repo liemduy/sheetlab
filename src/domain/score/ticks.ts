@@ -1,5 +1,6 @@
 import { getDurationBeats } from './durations';
 import type { DurationValue, TimeSignature } from './types';
+import { getMeasureBeats } from './timeSignatures';
 
 export const TICKS_PER_QUARTER = 480;
 
@@ -17,7 +18,7 @@ export function getDurationTicks(duration: DurationValue, dots = 0) {
 }
 
 export function getMeasureTicks(timeSignature: TimeSignature) {
-  return timeSignature.beats * TICKS_PER_QUARTER;
+  return getMeasureBeats(timeSignature) * TICKS_PER_QUARTER;
 }
 
 export function beatToTick(beat: number) {

@@ -6,6 +6,7 @@ import {
   splitTicksIntoDurations,
   tickToBeat,
 } from '../../domain/score/ticks';
+import { getMeasureBeats } from '../../domain/score/timeSignatures';
 import type { DurationValue, Score, ScoreEvent, StaffId } from '../../domain/score/types';
 import {
   getMeasureContentLeft,
@@ -102,11 +103,12 @@ export function getRhythmSlotsForMeasure(
 export function getRawBeatFromMeasureX(score: Score, measureIndex: number, x: number) {
   const contentLeft = getMeasureContentLeft(measureIndex, score);
   const contentWidth = getMeasureContentWidth(measureIndex, score);
+  const beatsPerMeasure = getMeasureBeats(score.timeSignature);
   const rawBeat =
-    ((x - contentLeft) / contentWidth) * score.timeSignature.beats;
+    ((x - contentLeft) / contentWidth) * beatsPerMeasure;
 
   return Math.min(
-    score.timeSignature.beats,
+    beatsPerMeasure,
     Math.max(0, rawBeat),
   );
 }

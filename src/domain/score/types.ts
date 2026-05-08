@@ -29,6 +29,24 @@ export type KeySignature =
 
 export type KeySignatureAccidental = 'sharp' | 'flat';
 
+export type RepeatJumpKind =
+  | 'repeat-start'
+  | 'repeat-end'
+  | 'repeat-both'
+  | 'ending-1'
+  | 'ending-2'
+  | 'ending-3'
+  | 'segno'
+  | 'coda'
+  | 'fine'
+  | 'to-coda'
+  | 'dc'
+  | 'dc-al-fine'
+  | 'dc-al-coda'
+  | 'ds'
+  | 'ds-al-fine'
+  | 'ds-al-coda';
+
 export type DurationValue =
   | 'whole'
   | 'half'
@@ -87,6 +105,7 @@ export interface Measure {
   index: number;
   keySignature?: KeySignature;
   keySignatureSymbols?: KeySignatureSymbol[];
+  repeatJump?: RepeatJumpKind;
   voices: Voice[];
 }
 

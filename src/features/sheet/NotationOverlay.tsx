@@ -3,6 +3,8 @@ import type { MouseEvent } from 'react';
 import type { Score, ScoreEvent, Staff } from '../../domain/score/types';
 import type { DurationValue, StaffId } from '../../domain/score/types';
 import { clampPitchToClefRange } from '../../domain/score/pitchRange';
+import { getMeasureBeats } from '../../domain/score/timeSignatures';
+import { getKeySignatureSymbolMoveIssue } from '../../domain/score/keySignatures';
 import {
   formatEventPitchList,
   getEventDots,
@@ -556,7 +558,7 @@ function InsertionCursor({
   const x = getBeatX(
     position.measureIndex,
     position.beat,
-    score.timeSignature.beats,
+    getMeasureBeats(score.timeSignature),
     score,
   );
   const yRange = getTimelineYRange(
@@ -846,8 +848,8 @@ function KeySignatureSymbolTarget({
         className="key-signature-symbol-target"
         height={44}
         rx={5}
-        width={24}
-        x={layout.x - 12}
+        width={10}
+        x={layout.x - 5}
         y={layout.y - 22}
       />
     </g>
@@ -927,7 +929,7 @@ function inputCursorToMusicPosition(
   const x = getBeatX(
     cursor.measureIndex,
     cursor.beat,
-    score.timeSignature.beats,
+    getMeasureBeats(score.timeSignature),
     score,
   );
   const systemGap = getScoreSystemGap(score);
@@ -972,7 +974,7 @@ function snapPositionToInputGrid(
         rhythmSlotPosition,
         duration,
         'note-input',
-        score.timeSignature.beats,
+        getMeasureBeats(score.timeSignature),
         dots,
       ),
       score,
@@ -1052,6 +1054,7 @@ export function NotationOverlay({
   const staves = score.parts[0]?.staves ?? [];
   const staffGap = getScoreStaffGap(score);
   const systemGap = getScoreSystemGap(score);
+  const beatsPerMeasure = getMeasureBeats(score.timeSignature);
   const keySignatureSymbolLayouts = getKeySignatureSymbolLayouts(score);
   const invalidMeasureKeySet = new Set(invalidMeasureKeys);
   const ariaLabel =
@@ -1090,10 +1093,10 @@ export function NotationOverlay({
   function getEventMusicPosition(event: MouseEvent<SVGSVGElement>) {
     const position = mapPointToMusicPosition(
       getSvgPoint(event, svgHeight),
-      score,
-      {
-        dots,
-        duration,
+        score,
+        {
+          dots,
+          duration,
       },
     );
 
@@ -1133,9 +1136,9 @@ export function NotationOverlay({
       score,
       {
         dots: draggedEvent ? getEventDots(draggedEvent) : dots,
-        duration: draggedEvent?.duration ?? duration,
-      },
-    );
+          duration: draggedEvent?.duration ?? duration,
+        },
+      );
     const targetStaffIndex = mappedPosition?.staffIndex ?? origin.staffIndex;
     const staff = staves[targetStaffIndex];
 
@@ -1215,6 +1218,28 @@ export function NotationOverlay({
       y,
     };
   }
+
+  const keySignaturePreviewIssue =
+    keySignatureDragState?.previewPosition
+      ? getKeySignatureSymbolMoveIssue(
+          score,
+          keySignatureDragState.layout.sourceMeasureIndex,
+          keySignatureDragState.layout.symbolIndex,
+          keySignatureDragState.previewPosition.pitch,
+        ) ??
+        (keySignatureSymbolLayouts.some(
+          (layout) =>
+            layout.sourceMeasureIndex ===
+              keySignatureDragState.layout.sourceMeasureIndex &&
+            layout.symbolIndex !== keySignatureDragState.layout.symbolIndex &&
+            layout.accidental === keySignatureDragState.layout.accidental &&
+            (layout.pitch.step === keySignatureDragState.previewPosition?.pitch.step ||
+              Math.abs(layout.y - (keySignatureDragState.previewPosition?.y ?? NaN)) <
+                0.1),
+        )
+          ? 'duplicate-step'
+          : null)
+      : null;
 
   return (
     <svg
@@ -1495,7 +1520,7 @@ export function NotationOverlay({
               <EventHitTarget
                 key={event.id}
                 activeEventId={activeEventId}
-                beatsPerMeasure={score.timeSignature.beats}
+                beatsPerMeasure={beatsPerMeasure}
                 event={event}
                 eventLayout={eventLayouts[event.id]}
                 isInputArmed={isInputArmed}
@@ -1556,22 +1581,22 @@ export function NotationOverlay({
           className="playhead"
           data-testid="playhead"
           x1={getBeatX(
-            Math.floor(playbackBeat / score.timeSignature.beats),
-            playbackBeat % score.timeSignature.beats,
-            score.timeSignature.beats,
+            Math.floor(playbackBeat / beatsPerMeasure),
+            playbackBeat % beatsPerMeasure,
+            beatsPerMeasure,
             score,
           )}
           x2={getBeatX(
-            Math.floor(playbackBeat / score.timeSignature.beats),
-            playbackBeat % score.timeSignature.beats,
-            score.timeSignature.beats,
+            Math.floor(playbackBeat / beatsPerMeasure),
+            playbackBeat % beatsPerMeasure,
+            beatsPerMeasure,
             score,
           )}
           y1={
             getStaffTop(
               0,
               staffGap,
-              Math.floor(playbackBeat / score.timeSignature.beats),
+              Math.floor(playbackBeat / beatsPerMeasure),
               systemGap,
             ) - 24
           }
@@ -1579,7 +1604,7 @@ export function NotationOverlay({
             getStaffTop(
               staves.length - 1,
               staffGap,
-              Math.floor(playbackBeat / score.timeSignature.beats),
+              Math.floor(playbackBeat / beatsPerMeasure),
               systemGap,
             ) +
             STAFF_LINE_SPACING * 4 +
@@ -1599,7 +1624,10 @@ export function NotationOverlay({
       ) : null}
       {keySignatureDragState?.previewPosition ? (
         <text
-          className="key-signature-symbol-preview"
+          className={`key-signature-symbol-preview${
+            keySignaturePreviewIssue ? ' is-invalid' : ''
+          }`}
+          data-invalid-reason={keySignaturePreviewIssue ?? undefined}
           data-testid="key-signature-symbol-preview"
           dominantBaseline="central"
           textAnchor="middle"

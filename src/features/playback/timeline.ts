@@ -4,6 +4,7 @@ import { getEventDots, getEventPitches } from '../../domain/score/events';
 import {
   applyActiveKeySignatureToPitch,
 } from '../../domain/score/keySignatures';
+import { getMeasureBeats } from '../../domain/score/timeSignatures';
 
 export interface PlaybackTimelineEvent {
   id: string;
@@ -25,7 +26,7 @@ export function getSecondsPerBeat(tempo: number) {
 
 export function buildPlaybackTimeline(score: Score): PlaybackTimelineEvent[] {
   const secondsPerBeat = getSecondsPerBeat(score.tempo);
-  const beatsPerMeasure = score.timeSignature.beats;
+  const beatsPerMeasure = getMeasureBeats(score.timeSignature);
 
   return score.parts
     .flatMap((part) =>

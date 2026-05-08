@@ -26,6 +26,7 @@ import {
   getStaffRight,
   getStaffTop,
 } from './layout';
+import { getMeasureBeats } from '../../domain/score/timeSignatures';
 
 export interface SvgPoint {
   x: number;
@@ -194,13 +195,14 @@ export function mapPointToMusicPosition(
     measureContentLeft + measureContentWidth,
     Math.max(measureContentLeft, point.x),
   );
+  const beatsPerMeasure = getMeasureBeats(score.timeSignature);
   const rawBeat =
     ((clampedContentX - measureContentLeft) / measureContentWidth) *
-    score.timeSignature.beats;
+    beatsPerMeasure;
   const beat = snapBeatToInputSlot(
     rawBeat,
     options.duration ?? 'eighth',
-    score.timeSignature.beats,
+    beatsPerMeasure,
     options.dots ?? 0,
   );
   const pitch = mapStaffYToPitch(

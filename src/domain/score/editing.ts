@@ -5,6 +5,7 @@ import type {
   KeySignatureSymbol,
   Measure,
   Pitch,
+  RepeatJumpKind,
   Score,
   ScoreEvent,
   Staff,
@@ -28,8 +29,10 @@ import {
 } from './ticks';
 import {
   createKeySignatureSymbols,
+  getKeySignatureSymbolMoveIssue,
   inferKeySignatureFromSymbols,
 } from './keySignatures';
+import { getMeasureBeats } from './timeSignatures';
 
 export interface PlaceScoreEventRequest {
   eventId: string;
@@ -443,7 +446,7 @@ function writeScoreEvent(
 
   const boundedEvent = clampScoreEventToStaffRange(nextEvent, targetStaff);
 
-  if (getEventEnd(boundedEvent) > score.timeSignature.beats) {
+  if (getEventEnd(boundedEvent) > getMeasureBeats(score.timeSignature)) {
     return {
       score,
       placed: false,
@@ -783,35 +786,26 @@ export function tryMoveKeySignatureSymbol(
     };
   }
 
+  const moveIssue = getKeySignatureSymbolMoveIssue(
+    score,
+    sourceMeasureIndex,
+    symbolIndex,
+    pitch,
+  );
+
+  if (moveIssue) {
+    return {
+      moved: false,
+      reason: moveIssue,
+      score,
+    };
+  }
+
   const fallbackKeySignature = sourceMeasure.keySignature ?? 'C';
   const currentSymbols = getMeasureKeySignatureSymbols(
     sourceMeasure,
     fallbackKeySignature,
   );
-  const targetSymbol = currentSymbols[symbolIndex];
-
-  if (!targetSymbol) {
-    return {
-      moved: false,
-      reason: 'missing-target',
-      score,
-    };
-  }
-
-  if (
-    currentSymbols.some(
-      (symbol, index) =>
-        index !== symbolIndex &&
-        symbol.step === pitch.step &&
-        symbol.accidental === targetSymbol.accidental,
-    )
-  ) {
-    return {
-      moved: false,
-      reason: 'duplicate-step',
-      score,
-    };
-  }
 
   const nextSymbols = currentSymbols.map((symbol, index) =>
     index === symbolIndex
@@ -847,6 +841,40 @@ export function tryMoveKeySignatureSymbol(
   };
 }
 
+export function setMeasureRepeatJump(
+  score: Score,
+  measureIndex: number,
+  repeatJump: RepeatJumpKind | null,
+): Score {
+  return {
+    ...score,
+    parts: score.parts.map((part) => ({
+      ...part,
+      staves: part.staves.map((staff) => ({
+        ...staff,
+        measures: staff.measures.map((measure) =>
+          measure.index === measureIndex
+            ? {
+                ...measure,
+                repeatJump: repeatJump ?? undefined,
+              }
+            : measure,
+        ),
+      })),
+    })),
+  };
+}
+
+export function setScoreTimeSignature(
+  score: Score,
+  timeSignature: Score['timeSignature'],
+): Score {
+  return {
+    ...score,
+    timeSignature,
+  };
+}
+
 function toLocalBeat(globalBeat: number, beatsPerMeasure: number) {
   return Number((globalBeat % beatsPerMeasure).toFixed(4));
 }
@@ -876,7 +904,7 @@ export function tryInsertScoreEvent(
     targetStaff,
   );
 
-  if (getEventEnd(nextEvent) > score.timeSignature.beats) {
+  if (getEventEnd(nextEvent) > getMeasureBeats(score.timeSignature)) {
     return {
       score,
       placed: false,
@@ -884,7 +912,7 @@ export function tryInsertScoreEvent(
     };
   }
 
-  const beatsPerMeasure = score.timeSignature.beats;
+  const beatsPerMeasure = getMeasureBeats(score.timeSignature);
   const insertGlobalBeat = request.measureIndex * beatsPerMeasure + request.beat;
   const insertDuration = getDurationBeats(request.duration, request.dots ?? 0);
   const flatEvents = targetStaff.measures.flatMap((measure) =>

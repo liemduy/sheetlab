@@ -1,6 +1,10 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { placeScoreEvent, setMeasureKeySignature } from '../../domain/score/editing';
+import {
+  placeScoreEvent,
+  setMeasureKeySignature,
+  setMeasureRepeatJump,
+} from '../../domain/score/editing';
 import { createEmptyScore } from '../../domain/score/factories';
 import { trebleStudyFixture } from '../../domain/score/fixtures';
 import type {
@@ -870,6 +874,74 @@ describe('StaffRenderer', () => {
         pitch: { step: 'E', octave: 5 },
         staffId: 'treble',
       }),
+    );
+  });
+
+  it('marks invalid key-signature symbol drag targets in red', () => {
+    const score = setMeasureKeySignature(
+      createEmptyScore('grand', { measureCount: 4 }),
+      0,
+      'D',
+    );
+
+    render(<StaffRenderer score={score} />);
+
+    const overlay = screen.getByTestId('staff-renderer');
+    const bounds = setVisibleSheetBounds(overlay);
+    const startPoint = svgToClientPoint(
+      bounds,
+      getMeasureX(0, score) + 55,
+      getPitchY(
+        { step: 'F', octave: 5 },
+        'treble',
+        0,
+        getScoreStaffGap(score),
+        0,
+        getScoreSystemGap(score),
+      ),
+      getScoreSvgHeight(score),
+    );
+    const duplicateTargetPoint = svgToClientPoint(
+      bounds,
+      getMeasureX(0, score) + 55,
+      getPitchY(
+        { step: 'C', octave: 5 },
+        'treble',
+        0,
+        getScoreStaffGap(score),
+        0,
+        getScoreSystemGap(score),
+      ),
+      getScoreSvgHeight(score),
+    );
+
+    fireEvent.mouseDown(
+      screen.getByRole('button', {
+        name: 'Key signature sharp F measure 1 treble',
+      }),
+      startPoint,
+    );
+    fireEvent.mouseMove(overlay, duplicateTargetPoint);
+
+    expect(screen.getByTestId('key-signature-symbol-preview')).toHaveClass(
+      'is-invalid',
+    );
+    expect(screen.getByTestId('key-signature-symbol-preview')).toHaveAttribute(
+      'data-invalid-reason',
+      'duplicate-step',
+    );
+  });
+
+  it('renders repeat and jump markings from measure state', () => {
+    const score = setMeasureRepeatJump(
+      createEmptyScore('grand', { measureCount: 4 }),
+      0,
+      'fine',
+    );
+    const { container } = render(<StaffRenderer score={score} />);
+
+    expect(container.querySelector('.vexflow-output')?.textContent).toContain(
+      'Fine',
     );
   });
 
