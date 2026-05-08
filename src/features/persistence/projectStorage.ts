@@ -2,6 +2,7 @@ import type { Score } from '../../domain/score/types';
 import { deserializeScore, serializeScore } from '../../domain/score/factories';
 
 export const SHEETLAB_PROJECT_KEY = 'sheetlab:v0.1:project';
+export const SHEETLAB_PDF_EXPORT_SCORE_KEY = 'sheetlab:v0.1:pdf-export-score';
 
 export interface ProjectStorage {
   getItem: (key: string) => string | null;

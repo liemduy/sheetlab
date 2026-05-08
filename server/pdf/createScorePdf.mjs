@@ -1,4 +1,5 @@
 import PDFDocument from 'pdfkit';
+import { createBrowserScorePdf } from './browserScorePdf.mjs';
 
 const PAGE_SIZES = {
   a4: [595.28, 841.89],
@@ -629,7 +630,7 @@ function drawScore(doc, score) {
   });
 }
 
-export function createScorePdf(score) {
+function createLegacyScorePdf(score) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
       autoFirstPage: true,
@@ -645,4 +646,12 @@ export function createScorePdf(score) {
     drawScore(doc, score);
     doc.end();
   });
+}
+
+export function createScorePdf(score, options = {}) {
+  if (options.origin) {
+    return createBrowserScorePdf(score, options);
+  }
+
+  return createLegacyScorePdf(score);
 }

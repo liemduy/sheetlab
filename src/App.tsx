@@ -73,7 +73,35 @@ import {
   createProjectJsonBlob,
   loadProjectFromStorage,
   saveProjectToStorage,
+  SHEETLAB_PDF_EXPORT_SCORE_KEY,
 } from './features/persistence/projectStorage';
+
+function isPdfExportMode() {
+  return (
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).has('pdf-export')
+  );
+}
+
+function loadInitialScoreForApp() {
+  if (isPdfExportMode()) {
+    try {
+      const serializedExportScore = window.sessionStorage.getItem(
+        SHEETLAB_PDF_EXPORT_SCORE_KEY,
+      );
+
+      if (serializedExportScore) {
+        return deserializeScore(serializedExportScore);
+      }
+    } catch {
+      // Fall through to the default score if the export payload is invalid.
+    }
+  }
+
+  return createEmptyScore(DEFAULT_EDITOR_TOOL_STATE.scoreType, {
+    tempo: DEFAULT_EDITOR_TOOL_STATE.tempo,
+  });
+}
 
 function pitchesMatch(first: Pitch, second: Pitch) {
   return (
@@ -165,16 +193,17 @@ function createCursorAfterPlacement(
 function App() {
   type SelectionSource = 'manual';
 
+  const [initialScore] = useState(loadInitialScoreForApp);
   const [toolState, setToolState] = useState<EditorToolState>(
-    DEFAULT_EDITOR_TOOL_STATE,
+    () => ({
+      ...DEFAULT_EDITOR_TOOL_STATE,
+      scoreType: initialScore.type,
+      tempo: initialScore.tempo,
+    }),
   );
   const [hoverPosition, setHoverPosition] = useState<MusicPosition | null>(null);
   const [inputCursor, setInputCursor] = useState<InputCursor | null>(null);
-  const [score, setScore] = useState(() =>
-    createEmptyScore(DEFAULT_EDITOR_TOOL_STATE.scoreType, {
-      tempo: DEFAULT_EDITOR_TOOL_STATE.tempo,
-    }),
-  );
+  const [score, setScore] = useState(initialScore);
   const [invalidMeasureKeys, setInvalidMeasureKeys] = useState<string[]>([]);
   const [pastScores, setPastScores] = useState<Score[]>([]);
   const [futureScores, setFutureScores] = useState<Score[]>([]);
@@ -1125,7 +1154,10 @@ function App() {
   ]);
 
   return (
-    <main className="app-shell" aria-label="SheetLab music editor">
+    <main
+      className={`app-shell${isPdfExportMode() ? ' is-pdf-export' : ''}`}
+      aria-label="SheetLab music editor"
+    >
       <header className="topbar">
         <div className="brand-lockup">
           <span className="brand-mark" aria-hidden="true">

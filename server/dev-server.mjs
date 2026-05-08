@@ -30,7 +30,8 @@ async function handlePdfExport(request, response) {
   try {
     const body = await readRequestBody(request);
     const score = JSON.parse(body);
-    const pdfBuffer = await createScorePdf(score);
+    const origin = `http://127.0.0.1:${PORT}`;
+    const pdfBuffer = await createScorePdf(score, { origin });
     const fileTitle = String(score.title || 'sheetlab-score')
       .replace(/[^a-z0-9-_]+/gi, '-')
       .replace(/^-+|-+$/g, '')

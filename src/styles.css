@@ -279,6 +279,60 @@ button {
   --paper-min-height: 1056px;
 }
 
+.app-shell.is-pdf-export {
+  min-height: auto;
+  background: #ffffff;
+}
+
+.app-shell.is-pdf-export .topbar,
+.app-shell.is-pdf-export .left-panel,
+.app-shell.is-pdf-export .notation-overlay,
+.app-shell.is-pdf-export .measure-context-menu,
+.app-shell.is-pdf-export .measure-warning-backdrop {
+  display: none;
+}
+
+.app-shell.is-pdf-export .workspace,
+.app-shell.is-pdf-export .sheet-stage {
+  display: block;
+  min-height: auto;
+  overflow: visible;
+  padding: 0;
+  background: #ffffff;
+}
+
+.app-shell.is-pdf-export .paper {
+  width: 210mm;
+  min-height: 297mm;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.app-shell.is-pdf-export .paper-letter {
+  width: 8.5in;
+  min-height: 11in;
+}
+
+.app-shell.is-pdf-export .notation-scroll {
+  overflow: visible;
+}
+
+.app-shell.is-pdf-export .vexflow-stage {
+  aspect-ratio: auto !important;
+}
+
+.app-shell.is-pdf-export .vexflow-stage-spacer {
+  display: none;
+}
+
+.app-shell.is-pdf-export .vexflow-output,
+.app-shell.is-pdf-export .vexflow-output svg {
+  position: static !important;
+  inset: auto !important;
+  display: block;
+  height: auto !important;
+}
+
 .paper::before {
   position: absolute;
   inset: 1rem;
@@ -821,12 +875,39 @@ button {
   }
 
   .paper {
+    width: 210mm;
     min-width: 0;
-    min-height: auto;
+    min-height: 297mm;
     border: 0;
     border-radius: 0;
     box-shadow: none;
     padding: 24mm 16mm;
+  }
+
+  .paper-letter {
+    width: 8.5in;
+    min-height: 11in;
+  }
+
+  .paper::before,
+  .notation-overlay {
+    display: none;
+  }
+
+  .vexflow-stage {
+    aspect-ratio: auto !important;
+  }
+
+  .vexflow-stage-spacer {
+    display: none;
+  }
+
+  .vexflow-output,
+  .vexflow-output svg {
+    position: static !important;
+    inset: auto !important;
+    display: block;
+    height: auto !important;
   }
 }
 
