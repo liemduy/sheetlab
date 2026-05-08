@@ -3,10 +3,11 @@ import { createEmptyScore } from './factories';
 import { placeScoreEvent } from './editing';
 import {
   assertNormalizedVoiceIsFull,
+  getScoreRhythmIssues,
   normalizeMeasureVoice,
   normalizeScoreRhythm,
 } from './rhythm';
-import type { ScoreEvent } from './types';
+import type { Score, ScoreEvent } from './types';
 
 const FOUR_FOUR = { beats: 4, beatUnit: 4 };
 
@@ -159,5 +160,76 @@ describe('score rhythm normalization', () => {
       expect(voice.totalTicks).toBe(voice.measureTicks);
       expect(() => assertNormalizedVoiceIsFull(voice)).not.toThrow();
     });
+  });
+
+  it('reports invalid score rhythm by staff and measure without throwing globally', () => {
+    const baseScore = createEmptyScore('grand', { measureCount: 1 });
+    const score: Score = {
+      ...baseScore,
+      parts: baseScore.parts.map((part) => ({
+        ...part,
+        staves: part.staves.map((staff) =>
+          staff.id === 'treble'
+            ? {
+                ...staff,
+                measures: staff.measures.map((measure) => ({
+                  ...measure,
+                  voices: measure.voices.map((voice) => ({
+                    ...voice,
+                    events: [
+                      {
+                        id: 'long',
+                        kind: 'note',
+                        beat: 0,
+                        duration: 'half',
+                        pitch: { step: 'C', octave: 4 },
+                      },
+                      {
+                        id: 'overlap',
+                        kind: 'note',
+                        beat: 1,
+                        duration: 'quarter',
+                        pitch: { step: 'D', octave: 4 },
+                      },
+                    ] satisfies ScoreEvent[],
+                  })),
+                })),
+              }
+            : {
+                ...staff,
+                measures: staff.measures.map((measure) => ({
+                  ...measure,
+                  voices: measure.voices.map((voice) => ({
+                    ...voice,
+                    events: [
+                      {
+                        id: 'overflow',
+                        kind: 'note',
+                        beat: 3.5,
+                        duration: 'half',
+                        pitch: { step: 'C', octave: 3 },
+                      },
+                    ] satisfies ScoreEvent[],
+                  })),
+                })),
+              },
+        ),
+      })),
+    };
+
+    expect(getScoreRhythmIssues(score)).toEqual([
+      {
+        measureIndex: 0,
+        reason: 'overlap',
+        staffId: 'treble',
+        voiceId: 'voice-treble-1-main',
+      },
+      {
+        measureIndex: 0,
+        reason: 'overflow',
+        staffId: 'bass',
+        voiceId: 'voice-bass-1-main',
+      },
+    ]);
   });
 });

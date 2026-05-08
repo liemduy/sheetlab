@@ -1,6 +1,6 @@
 import { getDurationTicks, getMeasureTicks, beatToTick, tickToBeat } from './ticks';
 import { getEventDots } from './events';
-import type { Score, ScoreEvent, TimeSignature } from './types';
+import type { Score, ScoreEvent, StaffId, TimeSignature } from './types';
 
 export type RhythmSegmentSource = 'event' | 'implicit-rest';
 
@@ -17,8 +17,17 @@ export interface NormalizedVoice {
   measureIndex: number;
   measureTicks: number;
   segments: RhythmSegment[];
-  staffId: string;
+  staffId: StaffId;
   totalTicks: number;
+  voiceId: string;
+}
+
+export type RhythmIssueReason = 'overlap' | 'overflow';
+
+export interface RhythmIssue {
+  measureIndex: number;
+  reason: RhythmIssueReason;
+  staffId: StaffId;
   voiceId: string;
 }
 
@@ -105,6 +114,37 @@ export function normalizeScoreRhythm(score: Score): NormalizedVoice[] {
             totalTicks: getRhythmSegmentsTotalTicks(segments),
             voiceId: voice.id,
           };
+        }),
+      ),
+    ),
+  );
+}
+
+function getRhythmIssueReason(error: unknown): RhythmIssueReason {
+  return error instanceof Error &&
+    error.message === 'Rhythm event overflows measure'
+    ? 'overflow'
+    : 'overlap';
+}
+
+export function getScoreRhythmIssues(score: Score): RhythmIssue[] {
+  return score.parts.flatMap((part) =>
+    part.staves.flatMap((staff) =>
+      staff.measures.flatMap((measure) =>
+        measure.voices.flatMap((voice) => {
+          try {
+            normalizeMeasureVoice(voice.events, score.timeSignature);
+            return [];
+          } catch (error) {
+            return [
+              {
+                measureIndex: measure.index,
+                reason: getRhythmIssueReason(error),
+                staffId: staff.id,
+                voiceId: voice.id,
+              },
+            ];
+          }
         }),
       ),
     ),

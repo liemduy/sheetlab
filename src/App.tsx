@@ -73,6 +73,7 @@ import {
   getRepeatJumpOption,
   REPEAT_JUMP_OPTIONS,
 } from './domain/score/repeatJumps';
+import { getScoreRhythmIssues } from './domain/score/rhythm';
 import { StaffRenderer } from './features/sheet/StaffRenderer';
 import { formatPitch } from './features/sheet/interaction';
 import type { MusicPosition } from './features/sheet/interaction';
@@ -1396,6 +1397,15 @@ function App() {
     score,
     getScoreEditTargetMeasureIndex(),
   );
+  const rhythmIssues = getScoreRhythmIssues(score);
+  const activeInvalidMeasureKeys = [
+    ...new Set([
+      ...invalidMeasureKeys,
+      ...rhythmIssues.map((issue) =>
+        getMeasureKey(issue.staffId, issue.measureIndex),
+      ),
+    ]),
+  ];
 
   useEffect(() => {
     const viewport = notationViewportRef.current;
@@ -1970,6 +1980,16 @@ function App() {
               <dd>{countScoreEvents(score)}</dd>
             </div>
             <div>
+              <dt>Rhythm</dt>
+              <dd>
+                {rhythmIssues.length === 0
+                  ? 'OK'
+                  : `${rhythmIssues.length} issue${
+                      rhythmIssues.length === 1 ? '' : 's'
+                    }`}
+              </dd>
+            </div>
+            <div>
               <dt>Status</dt>
               <dd>{editorMessage}</dd>
             </div>
@@ -2063,7 +2083,7 @@ function App() {
                 hoverPosition={hoverPosition}
                 inputCursor={inputCursor}
                 isInputArmed={toolState.isInputArmed}
-                invalidMeasureKeys={invalidMeasureKeys}
+                invalidMeasureKeys={activeInvalidMeasureKeys}
                 playbackBeat={playbackBeat}
                 placementMode={toolState.placementMode}
                 selectedEventId={selectedEventId}
