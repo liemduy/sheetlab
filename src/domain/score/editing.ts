@@ -858,7 +858,9 @@ export function countScoreEvents(score: Score) {
             (measureTotal, measure) =>
               measureTotal +
               measure.voices.reduce(
-                (voiceTotal, voice) => voiceTotal + voice.events.length,
+                (voiceTotal, voice) =>
+                  voiceTotal +
+                  voice.events.filter((event) => !isGeneratedRestEvent(event)).length,
                 0,
               ),
             0,

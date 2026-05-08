@@ -350,7 +350,7 @@ describe('score editing', () => {
     });
   });
 
-  it('counts events across all staves', () => {
+  it('counts user-visible events across all staves', () => {
     const score = placeScoreEvent(createEmptyScore('grand'), {
       eventId: 'event-counted',
       staffId: 'bass',
@@ -361,7 +361,7 @@ describe('score editing', () => {
       pitch: { step: 'C', octave: 3 },
     });
 
-    expect(countScoreEvents(score)).toBe(3);
+    expect(countScoreEvents(score)).toBe(1);
   });
 
   it('rejects events that would overflow the measure', () => {
