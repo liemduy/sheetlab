@@ -250,8 +250,6 @@ function EventHitTarget({
     placementMode === 'insert'
       ? 30
       : Math.max(42, (eventLayout?.maxY ?? y + 10) - (eventLayout?.minY ?? y - 10) + 30);
-  const deleteX = (eventLayout?.maxX ?? x) + 22;
-  const deleteY = (eventLayout?.minY ?? y) - 24;
   const selectedPitch =
     selectedEventId === event.id && selectedPitchIndex !== null && selectedPitchIndex !== undefined
       ? eventPitches[selectedPitchIndex]
@@ -268,6 +266,9 @@ function EventHitTarget({
         systemGap,
       )
     : null;
+  const deleteX = (eventLayout?.maxX ?? x) + 22;
+  const deleteAnchorY = selectedPitchY ?? eventLayout?.minY ?? y;
+  const deleteY = deleteAnchorY - 24;
   const deleteLabel =
     selectedPitch && event.kind === 'chord'
       ? `Delete Note ${formatPitch(selectedPitch)} from ${label}`
@@ -405,10 +406,12 @@ function EventHitTarget({
           className="selected-notehead-overlay"
           cx={x}
           cy={selectedPitchY}
+          data-selection-style="notehead-color"
           data-pitch-index={selectedPitchIndex ?? 0}
           data-testid="selected-notehead"
-          rx={8.4}
-          ry={5.8}
+          rx={7.4}
+          ry={4.8}
+          transform={`rotate(-20 ${x} ${selectedPitchY})`}
         />
       ) : null}
       {selectedEventId === event.id ? (

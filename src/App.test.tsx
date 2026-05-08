@@ -384,6 +384,44 @@ describe('App editor state', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('deletes only the selected chord notehead with the Delete key', () => {
+    render(<App />);
+    startWriting();
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'C', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Select tool' }));
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Chord C4 E4 G4 measure 1 beat 1',
+      }),
+      {
+        clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+      },
+    );
+
+    fireEvent.keyDown(window, { key: 'Delete' });
+
+    expect(
+      screen.getByLabelText('Chord C4 G4 measure 1 beat 1'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText('Chord C4 E4 G4 measure 1 beat 1'),
+    ).not.toBeInTheDocument();
+  });
+
   it('applies accidentals only to the selected notehead in a chord column', () => {
     render(<App />);
     startWriting();

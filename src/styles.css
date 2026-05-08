@@ -905,10 +905,9 @@ button {
 
 .selected-notehead-overlay {
   fill: var(--accent-strong);
-  opacity: 0.88;
+  opacity: 0.96;
   pointer-events: none;
-  stroke: var(--accent-strong);
-  stroke-width: 1.2;
+  stroke: none;
   vector-effect: non-scaling-stroke;
 }
 

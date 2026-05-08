@@ -684,10 +684,14 @@ describe('StaffRenderer', () => {
       />,
     );
 
-    expect(screen.getByTestId('selected-notehead')).toHaveAttribute(
-      'data-pitch-index',
-      '1',
+    const selectedNotehead = screen.getByTestId('selected-notehead');
+
+    expect(selectedNotehead).toHaveAttribute('data-pitch-index', '1');
+    expect(selectedNotehead).toHaveAttribute(
+      'data-selection-style',
+      'notehead-color',
     );
+    expect(selectedNotehead).toHaveAttribute('transform');
     expect(
       container.querySelector(
         '.vexflow-output .vf-user-event[data-event-id="ui-c-major"].is-selected',
@@ -724,6 +728,23 @@ describe('StaffRenderer', () => {
     expect(screen.getByTestId('score-event-delete')).toHaveAttribute(
       'aria-label',
       'Delete Note E4 from Chord C4 E4 G4 measure 1 beat 1',
+    );
+    expect(
+      Number(
+        screen
+          .getByTestId('score-event-delete')
+          .querySelector('.score-event-delete-bg')
+          ?.getAttribute('cy'),
+      ),
+    ).toBeCloseTo(
+      getPitchY(
+        { step: 'E', octave: 4 },
+        'treble',
+        0,
+        getScoreStaffGap(score),
+        0,
+        getScoreSystemGap(score),
+      ) - 24,
     );
 
     fireEvent.click(screen.getByTestId('score-event-delete'));
