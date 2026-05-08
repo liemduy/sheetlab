@@ -2,6 +2,7 @@ import type {
   Accidental,
   Clef,
   DurationValue,
+  KeySignature,
   NoteStep,
   PageSize,
   Score,
@@ -23,6 +24,23 @@ const DURATIONS = new Set<DurationValue>([
   'eighth',
   'sixteenth',
   'thirtySecond',
+]);
+const KEY_SIGNATURES = new Set<KeySignature>([
+  'C',
+  'G',
+  'D',
+  'A',
+  'E',
+  'B',
+  'F#',
+  'C#',
+  'F',
+  'Bb',
+  'Eb',
+  'Ab',
+  'Db',
+  'Gb',
+  'Cb',
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -109,6 +127,8 @@ export function isScore(value: unknown): value is Score {
                 isRecord(measure) &&
                 isString(measure.id) &&
                 isNumber(measure.index) &&
+                (measure.keySignature === undefined ||
+                  KEY_SIGNATURES.has(measure.keySignature as KeySignature)) &&
                 Array.isArray(measure.voices) &&
                 measure.voices.every(
                   (voice) =>

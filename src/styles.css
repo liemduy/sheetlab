@@ -153,6 +153,17 @@ button {
   color: #ffffff;
 }
 
+.toolbar-select {
+  min-height: 2.25rem;
+  max-width: 12rem;
+  border: 1px solid rgb(36 31 26 / 15%);
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  background: rgb(255 255 255 / 84%);
+  color: var(--ink);
+  font: 700 0.78rem ui-sans-serif, "Segoe UI", sans-serif;
+}
+
 .tool-symbol {
   font-family: "Noto Music", "Segoe UI Symbol", Cambria, "Times New Roman", serif;
   font-size: 1.15rem;

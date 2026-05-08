@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createEmptyScore } from '../../domain/score/factories';
-import { placeScoreEvent } from '../../domain/score/editing';
+import { placeScoreEvent, setMeasureKeySignature } from '../../domain/score/editing';
 import {
   buildPlaybackTimeline,
   getActiveTimelineEvent,
@@ -82,6 +82,29 @@ describe('playback timeline', () => {
         { step: 'G', octave: 4 },
       ],
       startBeat: 0,
+    });
+  });
+
+  it('applies the active key signature to playback pitches', () => {
+    const scoreWithKey = setMeasureKeySignature(
+      createEmptyScore('treble', { measureCount: 1 }),
+      0,
+      'G',
+    );
+    const score = placeScoreEvent(scoreWithKey, {
+      eventId: 'event-f-in-g',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'F', octave: 4 },
+    });
+
+    expect(buildPlaybackTimeline(score)[0]?.pitch).toEqual({
+      accidental: 'sharp',
+      octave: 4,
+      step: 'F',
     });
   });
 

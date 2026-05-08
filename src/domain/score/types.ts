@@ -10,6 +10,23 @@ export type NoteStep = 'C' | 'D' | 'E' | 'F' | 'G' | 'A' | 'B';
 
 export type Accidental = 'natural' | 'sharp' | 'flat';
 
+export type KeySignature =
+  | 'C'
+  | 'G'
+  | 'D'
+  | 'A'
+  | 'E'
+  | 'B'
+  | 'F#'
+  | 'C#'
+  | 'F'
+  | 'Bb'
+  | 'Eb'
+  | 'Ab'
+  | 'Db'
+  | 'Gb'
+  | 'Cb';
+
 export type DurationValue =
   | 'whole'
   | 'half'
@@ -60,6 +77,7 @@ export interface Voice {
 export interface Measure {
   id: string;
   index: number;
+  keySignature?: KeySignature;
   voices: Voice[];
 }
 

@@ -12,6 +12,8 @@ const TOP_LINE_BY_CLEF = {
 };
 const STAFF_LINE_SPACING = 8;
 const STAFF_GAP = 92;
+const MEASURES_PER_SYSTEM = 4;
+const SYSTEM_GAP_PADDING = 52;
 const NOTEHEAD_RX = 5.4;
 const NOTEHEAD_RY = 3.7;
 const STEM_LENGTH = 28;
@@ -25,6 +27,65 @@ const CLEF_PITCH_RANGE = {
   bass: {
     max: { step: 'C', octave: 5 },
     min: { step: 'A', octave: 0 },
+  },
+};
+const KEY_SIGNATURE_ACCIDENTAL_COUNT = {
+  C: 0,
+  G: 1,
+  D: 2,
+  A: 3,
+  E: 4,
+  B: 5,
+  'F#': 6,
+  'C#': 7,
+  F: -1,
+  Bb: -2,
+  Eb: -3,
+  Ab: -4,
+  Db: -5,
+  Gb: -6,
+  Cb: -7,
+};
+const KEY_SIGNATURE_PITCHES = {
+  treble: {
+    sharp: [
+      { step: 'F', octave: 5 },
+      { step: 'C', octave: 5 },
+      { step: 'G', octave: 5 },
+      { step: 'D', octave: 5 },
+      { step: 'A', octave: 4 },
+      { step: 'E', octave: 5 },
+      { step: 'B', octave: 4 },
+    ],
+    flat: [
+      { step: 'B', octave: 4 },
+      { step: 'E', octave: 5 },
+      { step: 'A', octave: 4 },
+      { step: 'D', octave: 5 },
+      { step: 'G', octave: 4 },
+      { step: 'C', octave: 5 },
+      { step: 'F', octave: 4 },
+    ],
+  },
+  bass: {
+    sharp: [
+      { step: 'F', octave: 3 },
+      { step: 'C', octave: 3 },
+      { step: 'G', octave: 3 },
+      { step: 'D', octave: 3 },
+      { step: 'A', octave: 2 },
+      { step: 'E', octave: 3 },
+      { step: 'B', octave: 2 },
+    ],
+    flat: [
+      { step: 'B', octave: 2 },
+      { step: 'E', octave: 3 },
+      { step: 'A', octave: 2 },
+      { step: 'D', octave: 3 },
+      { step: 'G', octave: 2 },
+      { step: 'C', octave: 3 },
+      { step: 'F', octave: 2 },
+    ],
   },
 };
 
@@ -167,10 +228,80 @@ function getMeasureCount(score) {
   );
 }
 
+function getSystemIndex(measureIndex) {
+  return Math.floor(Math.max(0, measureIndex) / MEASURES_PER_SYSTEM);
+}
+
+function getLocalMeasureIndex(measureIndex) {
+  return Math.max(0, measureIndex) % MEASURES_PER_SYSTEM;
+}
+
+function getMeasureCountForSystem(measureCount, systemIndex) {
+  const remainingMeasures = measureCount - systemIndex * MEASURES_PER_SYSTEM;
+
+  return Math.max(0, Math.min(MEASURES_PER_SYSTEM, remainingMeasures));
+}
+
+function getMeasureLayout(measureIndex, layout) {
+  const systemIndex = getSystemIndex(measureIndex);
+  const localMeasureIndex = getLocalMeasureIndex(measureIndex);
+  const measureCountForSystem = getMeasureCountForSystem(
+    layout.measureCount,
+    systemIndex,
+  );
+  const measureWidth =
+    layout.staffWidth / Math.max(1, measureCountForSystem || MEASURES_PER_SYSTEM);
+
+  return {
+    localMeasureIndex,
+    measureWidth,
+    systemIndex,
+    x: layout.staffLeft + localMeasureIndex * measureWidth,
+  };
+}
+
+function getStaffTopForSystem(layout, staffIndex, systemIndex) {
+  return layout.systemTop + systemIndex * layout.systemGap + staffIndex * layout.staffGap;
+}
+
+function getSystemCount(layout) {
+  return Math.max(1, Math.ceil(layout.measureCount / MEASURES_PER_SYSTEM));
+}
+
+function getActiveKeySignature(score, measureIndex) {
+  let activeKeySignature = 'C';
+  const measures = score.parts[0]?.staves[0]?.measures ?? [];
+
+  for (const measure of measures) {
+    if (measure.index > measureIndex) {
+      break;
+    }
+
+    if (measure.keySignature) {
+      activeKeySignature = measure.keySignature;
+    }
+  }
+
+  return activeKeySignature;
+}
+
+function measureStartsKeySignatureChange(score, measureIndex) {
+  return Boolean(
+    score.parts[0]?.staves[0]?.measures.find(
+      (measure) => measure.index === measureIndex,
+    )?.keySignature,
+  );
+}
+
+function getKeySignatureAccidentalCount(keySignature) {
+  return KEY_SIGNATURE_ACCIDENTAL_COUNT[keySignature] ?? 0;
+}
+
 function createLayout(score) {
   const [pageWidth, pageHeight] = getPageSize(score);
-  const staffLeft = 62;
-  const staffRight = pageWidth - 62;
+  const staffLeft = 34;
+  const staffRight = pageWidth - 34;
+  const staffGap = getStaffGap(score);
 
   return {
     measureCount: getMeasureCount(score),
@@ -178,21 +309,28 @@ function createLayout(score) {
     pageWidth,
     staffLeft,
     staffRight,
-    staffGap: getStaffGap(score),
+    staffGap,
     staffWidth: staffRight - staffLeft,
-    systemTop: 218,
+    systemGap: staffGap + SYSTEM_GAP_PADDING,
+    systemTop: 172,
     timeSignature: score.timeSignature,
   };
 }
 
 function getEventDrawing(event, staff, staffIndex, measureIndex, layout) {
-  const measureWidth = layout.staffWidth / layout.measureCount;
-  const contentLeft = layout.staffLeft + measureIndex * measureWidth + 52;
+  const measureLayout = getMeasureLayout(measureIndex, layout);
+  const measureWidth = measureLayout.measureWidth;
+  const contentLeft =
+    measureLayout.x + (measureLayout.localMeasureIndex === 0 ? 58 : 18);
   const contentWidth = measureWidth - 66;
   const x =
     contentLeft +
     (event.beat / layout.timeSignature.beats) * Math.max(1, contentWidth);
-  const staffTop = layout.systemTop + staffIndex * layout.staffGap;
+  const staffTop = getStaffTopForSystem(
+    layout,
+    staffIndex,
+    measureLayout.systemIndex,
+  );
   const eventPitches = getEventPitches(event).map((pitch) =>
     clampPitchToClefRange(pitch, staff.clef),
   );
@@ -250,6 +388,7 @@ function getEventDrawing(event, staff, staffIndex, measureIndex, layout) {
     staffIndex,
     staffTop,
     stem,
+    systemIndex: measureLayout.systemIndex,
     x,
     y,
   };
@@ -271,28 +410,65 @@ export function createScorePdfLayout(score) {
     ),
     layout,
     pageSize: [layout.pageWidth, layout.pageHeight],
-    staves: staves.map((staff, staffIndex) => ({
-      bottom:
-        layout.systemTop + staffIndex * layout.staffGap + STAFF_LINE_SPACING * 4,
-      clef: staff.clef,
-      id: staff.id,
-      top: layout.systemTop + staffIndex * layout.staffGap,
-    })),
+    staves: Array.from({ length: getSystemCount(layout) }, (_, systemIndex) =>
+      staves.map((staff, staffIndex) => {
+        const top = getStaffTopForSystem(layout, staffIndex, systemIndex);
+
+        return {
+          bottom: top + STAFF_LINE_SPACING * 4,
+          clef: staff.clef,
+          id: staff.id,
+          systemIndex,
+          top,
+        };
+      }),
+    ).flat(),
   };
 }
 
-function drawStaff(doc, staff, staffIndex, layout) {
-  const staffTop = layout.systemTop + staffIndex * layout.staffGap;
-  const measureWidth = layout.staffWidth / layout.measureCount;
+function drawKeySignature(doc, keySignature, staff, x, staffTop) {
+  const count = getKeySignatureAccidentalCount(keySignature);
+
+  if (count === 0) {
+    return 0;
+  }
+
+  const accidental = count > 0 ? 'sharp' : 'flat';
+  const symbol = count > 0 ? '#' : 'b';
+  const pitches =
+    KEY_SIGNATURE_PITCHES[staff.clef][accidental].slice(0, Math.abs(count));
+
+  doc.font('Times-Roman').fontSize(12).fillColor('#111111');
+
+  pitches.forEach((pitch, index) => {
+    doc.text(symbol, x + index * 7, getPitchY(pitch, staff.clef, staffTop) - 7, {
+      width: 7,
+      align: 'center',
+    });
+  });
+
+  return pitches.length * 7 + 4;
+}
+
+function drawStaff(doc, score, staff, staffIndex, systemIndex, layout) {
+  const staffTop = getStaffTopForSystem(layout, staffIndex, systemIndex);
+  const firstMeasureIndex = systemIndex * MEASURES_PER_SYSTEM;
+  const measureCountForSystem = getMeasureCountForSystem(
+    layout.measureCount,
+    systemIndex,
+  );
+  const measureWidth =
+    layout.staffWidth / Math.max(1, measureCountForSystem || MEASURES_PER_SYSTEM);
+  const systemRight = layout.staffLeft + measureWidth * measureCountForSystem;
 
   doc.lineWidth(0.55).strokeColor('#111111');
 
   for (let lineIndex = 0; lineIndex < 5; lineIndex += 1) {
     const y = staffTop + lineIndex * STAFF_LINE_SPACING;
-    doc.moveTo(layout.staffLeft, y).lineTo(layout.staffRight, y).stroke();
+    doc.moveTo(layout.staffLeft, y).lineTo(systemRight, y).stroke();
   }
 
-  for (let barIndex = 0; barIndex <= layout.measureCount; barIndex += 1) {
+  for (let barIndex = 0; barIndex <= measureCountForSystem; barIndex += 1) {
     const x = layout.staffLeft + barIndex * measureWidth;
     doc
       .moveTo(x, staffTop)
@@ -305,25 +481,53 @@ function drawStaff(doc, staff, staffIndex, layout) {
     .fontSize(staff.clef === 'treble' ? 24 : 18)
     .text(staff.clef === 'treble' ? 'G' : 'F', layout.staffLeft + 8, staffTop - 8);
 
-  doc
-    .font('Times-Bold')
-    .fontSize(14)
-    .text(
-      `${layout.timeSignature.beats}\n${layout.timeSignature.beatUnit}`,
-      layout.staffLeft + 31,
-      staffTop - 2,
-      { lineGap: -4 },
+  const activeKeySignature = getActiveKeySignature(score, firstMeasureIndex);
+  const keySignatureWidth = drawKeySignature(
+    doc,
+    activeKeySignature,
+    staff,
+    layout.staffLeft + 34,
+    staffTop,
+  );
+
+  if (firstMeasureIndex === 0) {
+    doc
+      .font('Times-Bold')
+      .fontSize(14)
+      .text(
+        `${layout.timeSignature.beats}\n${layout.timeSignature.beatUnit}`,
+        layout.staffLeft + 31 + keySignatureWidth,
+        staffTop - 2,
+        { lineGap: -4 },
+      );
+  }
+
+  for (let offset = 1; offset < measureCountForSystem; offset += 1) {
+    const measureIndex = firstMeasureIndex + offset;
+
+    if (!measureStartsKeySignatureChange(score, measureIndex)) {
+      continue;
+    }
+
+    drawKeySignature(
+      doc,
+      getActiveKeySignature(score, measureIndex),
+      staff,
+      layout.staffLeft + offset * measureWidth + 8,
+      staffTop,
     );
+  }
 }
 
-function drawGrandConnectors(doc, layout, staffCount) {
+function drawGrandConnectors(doc, layout, staffCount, systemIndex) {
   if (staffCount < 2) {
     return;
   }
 
-  const top = layout.systemTop;
+  const top = getStaffTopForSystem(layout, 0, systemIndex);
   const bottom =
-    layout.systemTop + (staffCount - 1) * layout.staffGap + STAFF_LINE_SPACING * 4;
+    getStaffTopForSystem(layout, staffCount - 1, systemIndex) +
+    STAFF_LINE_SPACING * 4;
 
   doc
     .lineWidth(1)
@@ -407,8 +611,14 @@ function drawScore(doc, score) {
       width: 96,
     });
 
-  staves.forEach((staff, staffIndex) => drawStaff(doc, staff, staffIndex, layout));
-  drawGrandConnectors(doc, layout, staves.length);
+  Array.from({ length: getSystemCount(layout) }, (_, systemIndex) => {
+    staves.forEach((staff, staffIndex) =>
+      drawStaff(doc, score, staff, staffIndex, systemIndex, layout),
+    );
+    drawGrandConnectors(doc, layout, staves.length, systemIndex);
+
+    return null;
+  });
 
   staves.forEach((staff, staffIndex) => {
     staff.measures.forEach((measure) => {

@@ -844,6 +844,74 @@ describe('App editor state', () => {
     expect(screen.queryByTestId('score-event')).not.toBeInTheDocument();
   });
 
+  it('clears a selected measure with Delete only after a warning confirmation', () => {
+    render(<App />);
+    startWriting();
+
+    fireEvent.click(screen.getByTestId('staff-renderer'), {
+      clientX: STAFF_LEFT,
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Select tool' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Measure 1 treble' }));
+
+    fireEvent.keyDown(window, { key: 'Delete' });
+
+    expect(
+      screen.getByRole('dialog', { name: 'Clear measure content warning' }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear content' }));
+
+    expect(
+      screen.queryByRole('dialog', { name: 'Clear measure content warning' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Note E4 measure 1 beat 1')).not.toBeInTheDocument();
+  });
+
+  it('supports Ctrl/Cmd undo and redo shortcuts', () => {
+    render(<App />);
+    startWriting();
+
+    fireEvent.click(screen.getByTestId('staff-renderer'), {
+      clientX: STAFF_LEFT,
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { ctrlKey: true, key: 'z' });
+
+    expect(screen.queryByLabelText('Note E4 measure 1 beat 1')).not.toBeInTheDocument();
+
+    fireEvent.keyDown(window, { ctrlKey: true, key: 'y' });
+
+    expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toBeInTheDocument();
+  });
+
+  it('applies the selected key signature to new note preview audio', () => {
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText('Key signature'), {
+      target: { value: 'G' },
+    });
+    startWriting();
+    fireEvent.click(screen.getByTestId('staff-renderer'), {
+      clientX: STAFF_LEFT,
+      clientY: getPitchY({ step: 'F', octave: 4 }, 'treble', 0),
+    });
+
+    expect(playPitchPreview).toHaveBeenLastCalledWith([
+      {
+        accidental: 'sharp',
+        octave: 4,
+        step: 'F',
+      },
+    ]);
+    expect(screen.getByLabelText('Key signature')).toHaveValue('G');
+  });
+
   it('updates the selected score event from toolbar controls', () => {
     render(<App />);
     startWriting();

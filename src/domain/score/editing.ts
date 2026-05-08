@@ -1,6 +1,7 @@
 import type {
   Accidental,
   DurationValue,
+  KeySignature,
   Measure,
   Pitch,
   Score,
@@ -713,6 +714,30 @@ export function clearMeasureContent(
             }
           : staff,
       ),
+    })),
+  };
+}
+
+export function setMeasureKeySignature(
+  score: Score,
+  measureIndex: number,
+  keySignature: KeySignature,
+): Score {
+  return {
+    ...score,
+    parts: score.parts.map((part) => ({
+      ...part,
+      staves: part.staves.map((staff) => ({
+        ...staff,
+        measures: staff.measures.map((measure) =>
+          measure.index === measureIndex
+            ? {
+                ...measure,
+                keySignature,
+              }
+            : measure,
+        ),
+      })),
     })),
   };
 }

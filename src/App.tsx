@@ -11,10 +11,17 @@ import {
   deleteScoreEventPitch,
   findScoreEvent,
   insertMeasureAt,
+  setMeasureKeySignature,
   tryInsertScoreEvent,
   tryPlaceScoreEvent,
   tryUpdateScoreEvent,
 } from './domain/score/editing';
+import {
+  applyKeySignatureToPitch,
+  getActiveKeySignature,
+  getKeySignatureLabel,
+  KEY_SIGNATURE_OPTIONS,
+} from './domain/score/keySignatures';
 import type {
   AccidentalChoice,
   EditorToolState,
@@ -39,6 +46,7 @@ import {
 import type { InputCursor } from './features/editor/inputCursor';
 import type {
   DurationValue,
+  KeySignature,
   PageSize,
   Pitch,
   Score,
@@ -186,6 +194,10 @@ function App() {
     staffId: StaffId;
     measureIndex: number;
   } | null>(null);
+  const [pendingMeasureClear, setPendingMeasureClear] = useState<{
+    staffId: StaffId;
+    measureIndex: number;
+  } | null>(null);
   const [selectedPitchIndex, setSelectedPitchIndex] = useState<number | null>(null);
   const [selectedEventSource, setSelectedEventSource] =
     useState<SelectionSource | null>(null);
@@ -310,6 +322,7 @@ function App() {
     setSelectedMeasure(null);
     setMeasureContextMenu(null);
     setPendingMeasureDelete(null);
+    setPendingMeasureClear(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     setEditorMessage('Select mode');
@@ -374,6 +387,7 @@ function App() {
     setSelectedMeasure(null);
     setMeasureContextMenu(null);
     setPendingMeasureDelete(null);
+    setPendingMeasureClear(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     scrollNotationIntoView();
@@ -395,6 +409,7 @@ function App() {
     setSelectedMeasure(null);
     setMeasureContextMenu(null);
     setPendingMeasureDelete(null);
+    setPendingMeasureClear(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     scrollNotationIntoView();
@@ -406,6 +421,18 @@ function App() {
 
   function getMeasureCount() {
     return score.parts[0]?.staves[0]?.measures.length ?? 0;
+  }
+
+  function getKeySignatureTargetMeasureIndex() {
+    if (selectedMeasure) {
+      return selectedMeasure.measureIndex;
+    }
+
+    if (selectedEventId) {
+      return findScoreEvent(score, selectedEventId)?.measureIndex ?? 0;
+    }
+
+    return inputCursor?.measureIndex ?? hoverPosition?.measureIndex ?? 0;
   }
 
   function handleMeasureContextMenu(
@@ -422,6 +449,7 @@ function App() {
     setSelectedMeasure({ staffId, measureIndex });
     setMeasureContextMenu({ clientX, clientY, staffId, measureIndex });
     setPendingMeasureDelete(null);
+    setPendingMeasureClear(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     setEditorMessage('Measure selected');
@@ -451,6 +479,37 @@ function App() {
       measureIndex: targetMeasure.measureIndex,
     });
     closeMeasureContextMenu();
+  }
+
+  function handleRequestClearMeasureContent() {
+    const targetMeasure = measureContextMenu ?? selectedMeasure;
+
+    if (!targetMeasure) {
+      return;
+    }
+
+    setPendingMeasureClear(targetMeasure);
+    closeMeasureContextMenu();
+  }
+
+  function handleConfirmClearMeasureContent() {
+    if (!pendingMeasureClear) {
+      return;
+    }
+
+    commitScoreChange(
+      clearMeasureContent(
+        score,
+        pendingMeasureClear.staffId,
+        pendingMeasureClear.measureIndex,
+      ),
+      'Measure content cleared',
+    );
+    setSelectedMeasure({
+      staffId: pendingMeasureClear.staffId,
+      measureIndex: pendingMeasureClear.measureIndex,
+    });
+    setPendingMeasureClear(null);
   }
 
   function handleInsertMeasureBefore() {
@@ -497,6 +556,7 @@ function App() {
     }
 
     setPendingMeasureDelete(targetMeasure);
+    setPendingMeasureClear(null);
     closeMeasureContextMenu();
   }
 
@@ -524,6 +584,23 @@ function App() {
         : null,
     );
     setPendingMeasureDelete(null);
+  }
+
+  function handleKeySignatureChange(keySignature: KeySignature) {
+    const measureIndex = getKeySignatureTargetMeasureIndex();
+
+    commitScoreChange(
+      setMeasureKeySignature(score, measureIndex, keySignature),
+      `Key signature set to ${keySignature}`,
+    );
+    setSelectedMeasure((currentSelection) =>
+      currentSelection
+        ? {
+            ...currentSelection,
+            measureIndex,
+          }
+        : currentSelection,
+    );
   }
 
   function handleTempoChange(value: string) {
@@ -599,11 +676,16 @@ function App() {
         toolState.placementMode === 'insert' ? 'Event inserted' : 'Event placed',
       );
       if (toolState.entryMode === 'note') {
+        const placedPitch = {
+          ...placementPosition.pitch,
+          accidental,
+        };
+
         void playPitchPreview([
-          {
-            ...placementPosition.pitch,
-            accidental,
-          },
+          applyKeySignatureToPitch(
+            placedPitch,
+            getActiveKeySignature(result.score, placementPosition.measureIndex),
+          ),
         ]);
       }
       setHoverPosition(null);
@@ -630,6 +712,11 @@ function App() {
   }
 
   function handleDeleteSelected() {
+    if (!selectedEventId && selectedMeasure) {
+      handleRequestClearMeasureContent();
+      return;
+    }
+
     if (!selectedEventId) {
       return;
     }
@@ -644,6 +731,7 @@ function App() {
     setSelectedMeasure(null);
     setMeasureContextMenu(null);
     setPendingMeasureDelete(null);
+    setPendingMeasureClear(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
   }
@@ -657,6 +745,7 @@ function App() {
     setSelectedMeasure({ staffId, measureIndex });
     setMeasureContextMenu(null);
     setPendingMeasureDelete(null);
+    setPendingMeasureClear(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     setEditorMessage('Measure selected');
@@ -674,6 +763,7 @@ function App() {
       setSelectedMeasure(null);
       setMeasureContextMenu(null);
       setPendingMeasureDelete(null);
+      setPendingMeasureClear(null);
       setSelectedPitchIndex(null);
       setSelectedEventSource(null);
     }
@@ -755,6 +845,7 @@ function App() {
     setSelectedMeasure(null);
     setMeasureContextMenu(null);
     setPendingMeasureDelete(null);
+    setPendingMeasureClear(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     setInputCursor(null);
@@ -778,6 +869,7 @@ function App() {
     setSelectedMeasure(null);
     setMeasureContextMenu(null);
     setPendingMeasureDelete(null);
+    setPendingMeasureClear(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     setInputCursor(null);
@@ -811,6 +903,7 @@ function App() {
     setSelectedMeasure(null);
     setMeasureContextMenu(null);
     setPendingMeasureDelete(null);
+    setPendingMeasureClear(null);
     setSelectedPitchIndex(null);
     setSelectedEventSource(null);
     setInputCursor(null);
@@ -839,6 +932,7 @@ function App() {
       setSelectedMeasure(null);
       setMeasureContextMenu(null);
       setPendingMeasureDelete(null);
+      setPendingMeasureClear(null);
       setSelectedPitchIndex(null);
       setSelectedEventSource(null);
       setInputCursor(null);
@@ -966,6 +1060,10 @@ function App() {
   const playbackBeat = isPlaying
     ? getPlaybackBeatAtSeconds(score.tempo, playbackElapsedSeconds)
     : null;
+  const activeKeySignature = getActiveKeySignature(
+    score,
+    getKeySignatureTargetMeasureIndex(),
+  );
 
   useEffect(() => {
     function isTypingTarget(target: EventTarget | null) {
@@ -977,20 +1075,54 @@ function App() {
     }
 
     function handleWindowKeyDown(event: KeyboardEvent) {
-      if (
-        selectedEventId &&
-        (event.key === 'Delete' || event.key === 'Backspace') &&
-        !isTypingTarget(event.target)
-      ) {
+      if (isTypingTarget(event.target)) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      const isModifierShortcut = event.ctrlKey || event.metaKey;
+
+      if (isModifierShortcut && key === 'z') {
         event.preventDefault();
-        handleDeleteEvent(selectedEventId);
+        if (event.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+        return;
+      }
+
+      if (isModifierShortcut && key === 'y') {
+        event.preventDefault();
+        handleRedo();
+        return;
+      }
+
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault();
+
+        if (selectedEventId) {
+          handleDeleteEvent(selectedEventId, selectedPitchIndex);
+          return;
+        }
+
+        if (selectedMeasure) {
+          handleRequestClearMeasureContent();
+        }
       }
     }
 
     window.addEventListener('keydown', handleWindowKeyDown);
 
     return () => window.removeEventListener('keydown', handleWindowKeyDown);
-  }, [score, selectedEventId, selectedPitchIndex]);
+  }, [
+    futureScores,
+    pastScores,
+    score,
+    selectedEventId,
+    selectedMeasure,
+    selectedPitchIndex,
+  ]);
 
   return (
     <main className="app-shell" aria-label="SheetLab music editor">
@@ -1073,6 +1205,24 @@ function App() {
                 </button>
               ),
             )}
+          </div>
+          <div className="toolbar-group" aria-label="Key signature tools">
+            <span className="toolbar-group-label">Key</span>
+            <select
+              aria-label="Key signature"
+              className="toolbar-select"
+              title="Apply key signature at the selected measure or selected note measure"
+              value={activeKeySignature}
+              onChange={(event) =>
+                handleKeySignatureChange(event.target.value as KeySignature)
+              }
+            >
+              {KEY_SIGNATURE_OPTIONS.map((keySignature) => (
+                <option key={keySignature} value={keySignature}>
+                  {getKeySignatureLabel(keySignature)}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="toolbar-group" aria-label="Entry tools">
             <span className="toolbar-group-label">Entry</span>
@@ -1170,7 +1320,7 @@ function App() {
             <button
               type="button"
               className="tool-button"
-              disabled={!selectedEventId}
+              disabled={!selectedEventId && !selectedMeasure}
               onClick={handleDeleteSelected}
             >
               Delete
@@ -1472,6 +1622,43 @@ function App() {
                     onClick={handleConfirmDeleteMeasure}
                   >
                     Delete measure
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+          {pendingMeasureClear ? (
+            <div
+              className="measure-warning-backdrop"
+              data-testid="measure-clear-warning"
+              role="presentation"
+            >
+              <div
+                aria-label="Clear measure content warning"
+                aria-modal="true"
+                className="measure-warning-dialog"
+                role="dialog"
+              >
+                <h2>Clear measure content?</h2>
+                <p>
+                  This removes notes and rests from measure{' '}
+                  {pendingMeasureClear.measureIndex + 1} on the selected staff.
+                  This action can be undone.
+                </p>
+                <div className="measure-warning-actions">
+                  <button
+                    type="button"
+                    className="tool-button"
+                    onClick={() => setPendingMeasureClear(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="tool-button danger"
+                    onClick={handleConfirmClearMeasureContent}
+                  >
+                    Clear content
                   </button>
                 </div>
               </div>

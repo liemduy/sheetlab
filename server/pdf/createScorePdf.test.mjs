@@ -47,6 +47,29 @@ describe('createScorePdf', () => {
     expect(pdf.subarray(0, 5).toString('utf8')).toBe('%PDF-');
   });
 
+  it('lays a default 16-measure piano score across multiple systems instead of squeezing one row', () => {
+    const score = placeScoreEvent(createEmptyScore('grand'), {
+      eventId: 'system-two-note',
+      staffId: 'treble',
+      measureIndex: 5,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 5 },
+    });
+    const layout = createScorePdfLayout(score);
+    const trebleStaves = layout.staves.filter((staff) => staff.id === 'treble');
+    const systemTwoNote = layout.events.find(
+      (event) => event.event.id === 'system-two-note',
+    );
+
+    expect(new Set(trebleStaves.map((staff) => staff.systemIndex)).size).toBe(4);
+    expect(trebleStaves[1]?.top).toBeGreaterThan(trebleStaves[0]?.top ?? 0);
+    expect(systemTwoNote?.systemIndex).toBe(1);
+    expect(systemTwoNote?.x).toBeLessThan(layout.layout.staffRight);
+    expect(layout.layout.staffLeft).toBe(34);
+  });
+
   it('keeps PDF layout practical without truncating valid ledger lines', () => {
     const score = createEmptyScore('grand', { measureCount: 1 });
 

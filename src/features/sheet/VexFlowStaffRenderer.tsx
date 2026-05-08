@@ -16,6 +16,10 @@ import {
   getEventPitches,
   isGeneratedRestEvent,
 } from '../../domain/score/events';
+import {
+  getActiveKeySignature,
+  measureStartsKeySignatureChange,
+} from '../../domain/score/keySignatures';
 import { clampPitchToClefRange } from '../../domain/score/pitchRange';
 import type { StaffRendererProps } from './StaffRenderer';
 import { NotationOverlay } from './NotationOverlay';
@@ -246,11 +250,19 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
 
       if (getLocalMeasureIndex(measure.index) === 0) {
         stave.addClef(staff.clef);
+        const activeKeySignature = getActiveKeySignature(score, measure.index);
+
+        if (activeKeySignature !== 'C') {
+          stave.addKeySignature(activeKeySignature);
+        }
+
         if (measure.index === 0) {
           stave.addTimeSignature(
             `${score.timeSignature.beats}/${score.timeSignature.beatUnit}`,
           );
         }
+      } else if (measureStartsKeySignatureChange(score, measure.index)) {
+        stave.addKeySignature(getActiveKeySignature(score, measure.index));
       }
 
       stave.setAttribute('data-measure-index', String(measure.index));
