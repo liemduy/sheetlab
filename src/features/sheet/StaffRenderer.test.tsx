@@ -26,10 +26,7 @@ import {
 } from './layout';
 import { getBeatX, getPitchY } from './notationGeometry';
 import { StaffRenderer } from './StaffRenderer';
-import {
-  DEFAULT_INPUT_SLOT_WIDTH,
-  MIN_INPUT_SLOT_WIDTH,
-} from './inputSlotLayout';
+import { DEFAULT_INPUT_SLOT_WIDTH } from './inputSlotLayout';
 
 const trebleHover: MusicPosition = {
   staffId: 'treble',
@@ -271,10 +268,10 @@ describe('StaffRenderer', () => {
 
     expect(slotX).toBeLessThan(noteX);
     expect(slotX + slotWidth).toBeGreaterThan(noteX);
-    expect(slotWidth).toBeGreaterThanOrEqual(MIN_INPUT_SLOT_WIDTH);
+    expect(slotWidth).toBe(DEFAULT_INPUT_SLOT_WIDTH);
   });
 
-  it('uses beat-grid geometry for generated rest slots after a short placed note', async () => {
+  it('uses VexFlow columns for generated rest slots after a short placed note', async () => {
     const score = placeScoreEvent(createEmptyScore('treble'), {
       eventId: 'eighth-note-1',
       staffId: 'treble',
@@ -304,7 +301,7 @@ describe('StaffRenderer', () => {
     await waitFor(() => {
       expect(screen.getByTestId('rhythm-slot')).toHaveAttribute(
         'data-layout-source',
-        'beat-grid',
+        'vexflow',
       );
     });
 
@@ -315,10 +312,62 @@ describe('StaffRenderer', () => {
     const slotX = Number(slot.getAttribute('x'));
     const slotWidth = Number(slot.getAttribute('width'));
 
-    expect(centerX).toBeCloseTo(getBeatX(0, 0.5, 4, score), 2);
     expect(slotX).toBeLessThan(centerX);
     expect(slotX + slotWidth).toBeGreaterThan(centerX);
     expect(slotWidth).toBe(DEFAULT_INPUT_SLOT_WIDTH);
+  });
+
+  it('keeps ghost notes and slot boxes on the same generated-rest column', async () => {
+    const score = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'eighth-note-1',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+
+    render(
+      <StaffRenderer
+        duration="eighth"
+        hoverPosition={{
+          beat: 0.5,
+          measureIndex: 0,
+          pitch: { step: 'F', octave: 4 },
+          staffId: 'treble',
+          staffIndex: 0,
+          x: getBeatX(0, 0.5, 4, score),
+          y: getPitchY({ step: 'F', octave: 4 }, 'treble', 0),
+        }}
+        inputCursor={{
+          beat: 0.5,
+          duration: 'eighth',
+          measureIndex: 0,
+          mode: 'note-input',
+          pitchPreview: { step: 'F', octave: 4 },
+          staffId: 'treble',
+          staffIndex: 0,
+        }}
+        score={score}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rhythm-slot')).toHaveAttribute(
+        'data-layout-source',
+        'vexflow',
+      );
+    });
+
+    const slotCenterX = Number(
+      screen.getByTestId('rhythm-slot').getAttribute('data-slot-center-x'),
+    );
+    const ghostNoteHead = screen
+      .getByTestId('ghost-event')
+      .querySelector('ellipse');
+
+    expect(Number(ghostNoteHead?.getAttribute('cx'))).toBeCloseTo(slotCenterX, 2);
   });
 
   it('renders an empty grand staff system', () => {

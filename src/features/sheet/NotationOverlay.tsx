@@ -37,7 +37,10 @@ import { snapInsertPositionToEventBoundary } from './insertPosition';
 import { getBeatX, getPitchY } from './notationGeometry';
 import { ChordGlyph, NoteGlyph, RestGlyph } from './notationGlyph';
 import { getMeasureKey } from './measureKey';
-import { snapPositionToRhythmSlot } from './rhythmSlots';
+import {
+  getRhythmSlotsForMeasure,
+  snapPositionToRhythmSlot,
+} from './rhythmSlots';
 import { getInputSlotLayout } from './inputSlotLayout';
 
 export interface RenderedEventLayout {
@@ -54,7 +57,6 @@ export interface RenderedEventLayout {
   y: number;
 }
 
-const RENDERED_COLUMN_SNAP_RADIUS = 34;
 const BEAT_MATCH_EPSILON = 0.0001;
 
 interface NotationOverlayProps {
@@ -793,11 +795,13 @@ function MeasureHitTarget({
 }
 
 function RhythmSlots({
+  entryMode,
   eventLayouts,
   inputCursor,
   isInputArmed,
   score,
 }: {
+  entryMode: EntryMode;
   eventLayouts?: Record<string, RenderedEventLayout>;
   inputCursor?: InputCursor | null;
   isInputArmed?: boolean;
@@ -810,6 +814,7 @@ function RhythmSlots({
   const slotLayout = getInputSlotLayout({
     cursor: inputCursor,
     eventLayouts,
+    includePitchPreview: entryMode === 'note',
     score,
   });
 
@@ -913,31 +918,17 @@ function snapPositionToInputGrid(
       score,
       staffGap,
     ) ?? rhythmSlotPosition;
-  const nearbyEventLayout = Object.values(eventLayouts)
-    .filter(
-      (layout) =>
-        layout.measureIndex === snappedPosition.measureIndex &&
-        layout.kind !== 'rest' &&
-        !layout.isGeneratedRest &&
-        Math.abs(layout.beat - snappedPosition.beat) <= BEAT_MATCH_EPSILON &&
-        Math.abs(layout.x - position.x) <= RENDERED_COLUMN_SNAP_RADIUS,
-    )
-    .sort((a, b) => {
-      const staffPriority =
-        Number(b.staffId === position.staffId) -
-        Number(a.staffId === position.staffId);
+  const activeSlot = getRhythmSlotsForMeasure(
+    score,
+    snappedPosition.staffId,
+    snappedPosition.measureIndex,
+  ).find((slot) => Math.abs(slot.beat - snappedPosition.beat) <= BEAT_MATCH_EPSILON);
+  const activeSlotLayout = activeSlot ? eventLayouts[activeSlot.eventId] : undefined;
 
-      if (staffPriority !== 0) {
-        return staffPriority;
-      }
-
-      return Math.abs(a.x - position.x) - Math.abs(b.x - position.x);
-    })[0];
-
-  return nearbyEventLayout
+  return activeSlotLayout
     ? {
         ...snappedPosition,
-        x: nearbyEventLayout.x,
+        x: activeSlotLayout.x,
       }
     : snappedPosition;
 }
@@ -1214,6 +1205,7 @@ export function NotationOverlay({
     >
       <rect className="staff-page-bg" x={0} y={0} width={SVG_WIDTH} height={svgHeight} />
       <RhythmSlots
+        entryMode={entryMode}
         eventLayouts={eventLayouts}
         inputCursor={inputCursor}
         isInputArmed={shouldShowInputPreview}

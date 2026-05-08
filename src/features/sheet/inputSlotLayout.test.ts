@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { placeScoreEvent } from '../../domain/score/editing';
 import { createEmptyScore } from '../../domain/score/factories';
 import type { InputCursor } from '../editor/inputCursor';
-import { getBeatX } from './notationGeometry';
+import { STAFF_LINE_SPACING, getStaffTop } from './layout';
+import { getBeatX, getPitchY } from './notationGeometry';
 import {
   DEFAULT_INPUT_SLOT_WIDTH,
   getInputSlotLayout,
@@ -36,7 +37,7 @@ describe('input slot layout', () => {
     expect(layout.boxWidth).toBe(DEFAULT_INPUT_SLOT_WIDTH);
   });
 
-  it('keeps generated-rest slots on the beat grid instead of hidden rest glyphs', () => {
+  it('uses generated-rest VexFlow columns without inheriting hidden glyph bounds', () => {
     const score = placeScoreEvent(createEmptyScore('treble'), {
       eventId: 'eighth-note-1',
       staffId: 'treble',
@@ -49,7 +50,7 @@ describe('input slot layout', () => {
     const layout = getInputSlotLayout({
       cursor: createCursor({ beat: 0.5 }),
       eventLayouts: {
-        'rest-treble-m1-t240-eighth': {
+        'rest-treble-m1-t240-half': {
           beat: 0.5,
           isGeneratedRest: true,
           kind: 'rest',
@@ -63,8 +64,8 @@ describe('input slot layout', () => {
       score,
     });
 
-    expect(layout.layoutSource).toBe('beat-grid');
-    expect(layout.centerX).toBeCloseTo(getBeatX(0, 0.5, 4, score), 2);
+    expect(layout.layoutSource).toBe('vexflow');
+    expect(layout.centerX).toBe(990);
     expect(layout.boxWidth).toBe(DEFAULT_INPUT_SLOT_WIDTH);
   });
 
@@ -107,7 +108,7 @@ describe('input slot layout', () => {
     expect(expandedLayout.boxWidth).toBe(DEFAULT_INPUT_SLOT_WIDTH);
   });
 
-  it('uses visible event bounds only for real note columns', () => {
+  it('uses visible event columns without stretching the input slot to glyph bounds', () => {
     const score = placeScoreEvent(createEmptyScore('treble'), {
       eventId: 'quarter-note-1',
       staffId: 'treble',
@@ -127,9 +128,9 @@ describe('input slot layout', () => {
           beat: 0,
           isGeneratedRest: false,
           kind: 'note',
-          maxX: 166,
+          maxX: 220,
           measureIndex: 0,
-          minX: 150,
+          minX: 100,
           staffId: 'treble',
           x: 158,
         },
@@ -141,5 +142,33 @@ describe('input slot layout', () => {
     expect(layout.centerX).toBe(158);
     expect(layout.boxX).toBeLessThan(158);
     expect(layout.boxX + layout.boxWidth).toBeGreaterThan(158);
+    expect(layout.boxWidth).toBe(DEFAULT_INPUT_SLOT_WIDTH);
+  });
+
+  it('expands the slot box vertically to contain ledger-position ghost notes', () => {
+    const score = createEmptyScore('treble', { measureCount: 4 });
+    const pitchPreview = { step: 'A' as const, octave: 3 };
+    const layout = getInputSlotLayout({
+      cursor: createCursor({ pitchPreview }),
+      score,
+    });
+    const pitchY = getPitchY(pitchPreview, 'treble', 0);
+
+    expect(layout.y).toBeLessThanOrEqual(getStaffTop(0) - 16);
+    expect(layout.y + layout.height).toBeGreaterThan(pitchY + 5.2);
+  });
+
+  it('does not expand rest slot boxes around the pointer pitch', () => {
+    const score = createEmptyScore('treble', { measureCount: 4 });
+    const layout = getInputSlotLayout({
+      cursor: createCursor({
+        pitchPreview: { step: 'A', octave: 3 },
+      }),
+      includePitchPreview: false,
+      score,
+    });
+
+    expect(layout.y).toBe(getStaffTop(0) - 16);
+    expect(layout.height).toBe(STAFF_LINE_SPACING * 4 + 32);
   });
 });

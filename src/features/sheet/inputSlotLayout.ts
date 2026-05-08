@@ -7,13 +7,16 @@ import {
   getStaffTop,
   STAFF_LINE_SPACING,
 } from './layout';
-import { getBeatX } from './notationGeometry';
+import { getBeatX, getPitchY } from './notationGeometry';
+import { getLedgerLineYs } from './notationGlyph';
 import { getRhythmSlotsForMeasure } from './rhythmSlots';
 
 export const DEFAULT_INPUT_SLOT_WIDTH = 32;
 export const MIN_INPUT_SLOT_WIDTH = 28;
-const EVENT_SLOT_PADDING_X = 8;
 const STAFF_SLOT_PADDING_Y = 16;
+const NOTEHEAD_VERTICAL_RADIUS = 5.2;
+const LEDGER_LINE_PADDING_Y = 4;
+const PITCH_PREVIEW_PADDING_Y = 8;
 const BEAT_MATCH_EPSILON = 0.0001;
 
 export interface InputSlotEventLayout {
@@ -39,9 +42,10 @@ export interface InputSlotLayout {
 
 function getStaffSlotYRange(
   score: Score,
-  staffIndex: number,
-  measureIndex: number,
+  cursor: InputCursor,
+  includePitchPreview: boolean,
 ) {
+  const { measureIndex, staffIndex } = cursor;
   const staffGap = getScoreStaffGap(score);
   const systemGap = getScoreSystemGap(score);
   const staffTop = getStaffTop(
@@ -50,14 +54,58 @@ function getStaffSlotYRange(
     measureIndex,
     systemGap,
   );
-
-  return {
+  const baseRange = {
     y1: staffTop - STAFF_SLOT_PADDING_Y,
     y2: staffTop + STAFF_LINE_SPACING * 4 + STAFF_SLOT_PADDING_Y,
   };
+
+  if (!includePitchPreview) {
+    return baseRange;
+  }
+
+  const staff = score.parts[0]?.staves[staffIndex];
+
+  if (!staff) {
+    return baseRange;
+  }
+
+  const pitchY = getPitchY(
+    cursor.pitchPreview,
+    staff.clef,
+    staffIndex,
+    staffGap,
+    measureIndex,
+    systemGap,
+  );
+  const ledgerYs = getLedgerLineYs(
+    pitchY,
+    staffIndex,
+    staffGap,
+    measureIndex,
+    systemGap,
+  );
+  const ledgerTop = ledgerYs.length
+    ? Math.min(...ledgerYs) - LEDGER_LINE_PADDING_Y
+    : pitchY;
+  const ledgerBottom = ledgerYs.length
+    ? Math.max(...ledgerYs) + LEDGER_LINE_PADDING_Y
+    : pitchY;
+
+  return {
+    y1: Math.min(
+      baseRange.y1,
+      pitchY - NOTEHEAD_VERTICAL_RADIUS - PITCH_PREVIEW_PADDING_Y,
+      ledgerTop,
+    ),
+    y2: Math.max(
+      baseRange.y2,
+      pitchY + NOTEHEAD_VERTICAL_RADIUS + PITCH_PREVIEW_PADDING_Y,
+      ledgerBottom,
+    ),
+  };
 }
 
-function getVisibleSlotLayout(
+function getActiveSlotLayout(
   cursor: InputCursor,
   eventLayouts: Record<string, InputSlotEventLayout>,
   score: Score,
@@ -71,39 +119,34 @@ function getVisibleSlotLayout(
     ? eventLayouts[activeSlot.eventId]
     : undefined;
 
-  return activeSlotLayout &&
-    activeSlotLayout.kind !== 'rest' &&
-    !activeSlotLayout.isGeneratedRest
-    ? activeSlotLayout
-    : undefined;
+  return activeSlotLayout;
 }
 
 export function getInputSlotLayout({
   cursor,
   eventLayouts = {},
+  includePitchPreview = true,
   score,
 }: {
   cursor: InputCursor;
   eventLayouts?: Record<string, InputSlotEventLayout>;
+  includePitchPreview?: boolean;
   score: Score;
 }): InputSlotLayout {
-  const visibleSlotLayout = getVisibleSlotLayout(cursor, eventLayouts, score);
+  const activeSlotLayout = getActiveSlotLayout(cursor, eventLayouts, score);
   const centerX =
-    visibleSlotLayout?.x ??
+    activeSlotLayout?.x ??
     getBeatX(
       cursor.measureIndex,
       cursor.beat,
       score.timeSignature.beats,
       score,
     );
-  const eventWidth = visibleSlotLayout
-    ? visibleSlotLayout.maxX - visibleSlotLayout.minX + EVENT_SLOT_PADDING_X * 2
-    : DEFAULT_INPUT_SLOT_WIDTH;
-  const boxWidth = Math.max(MIN_INPUT_SLOT_WIDTH, eventWidth);
+  const boxWidth = DEFAULT_INPUT_SLOT_WIDTH;
   const yRange = getStaffSlotYRange(
     score,
-    cursor.staffIndex,
-    cursor.measureIndex,
+    cursor,
+    includePitchPreview,
   );
   const slotEndBeat = Math.min(
     score.timeSignature.beats,
@@ -115,7 +158,7 @@ export function getInputSlotLayout({
     boxX: centerX - boxWidth / 2,
     centerX,
     height: yRange.y2 - yRange.y1,
-    layoutSource: visibleSlotLayout ? 'vexflow' : 'beat-grid',
+    layoutSource: activeSlotLayout ? 'vexflow' : 'beat-grid',
     slotEndBeat,
     y: yRange.y1,
   };
