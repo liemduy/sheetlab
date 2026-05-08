@@ -24,13 +24,13 @@ import {
   STAFF_LEFT,
   STAFF_LINE_SPACING,
   MEASURES_PER_SYSTEM,
-  MEASURE_WIDTH,
   SVG_WIDTH,
   getLocalMeasureIndex,
   getScoreStaffGap,
   getScoreSystemGap,
   getMeasureX,
   getMeasureRight,
+  getMeasureWidth,
   getStaffRight,
   getStaffTop,
 } from './layout';
@@ -170,6 +170,7 @@ function EventHitTarget({
   placementMode,
   selectedEventId,
   selectedPitchIndex,
+  score,
   staff,
   staffGap,
   staffIndex,
@@ -193,6 +194,7 @@ function EventHitTarget({
   placementMode: PlacementMode;
   selectedEventId?: string | null;
   selectedPitchIndex?: number | null;
+  score: Score;
   staff: Staff;
   staffGap: number;
   staffIndex: number;
@@ -217,7 +219,9 @@ function EventHitTarget({
         )
       : getStaffTop(staffIndex, staffGap, measureIndex, systemGap) +
         STAFF_LINE_SPACING * 2;
-  const x = eventLayout?.x ?? getBeatX(measureIndex, event.beat, beatsPerMeasure);
+  const x =
+    eventLayout?.x ??
+    getBeatX(measureIndex, event.beat, beatsPerMeasure, score);
   const y = eventLayout?.y ?? fallbackY;
   const label =
     event.kind === 'rest'
@@ -541,6 +545,7 @@ function InsertionCursor({
     position.measureIndex,
     position.beat,
     score.timeSignature.beats,
+    score,
   );
   const yRange = getTimelineYRange(
     score,
@@ -639,7 +644,7 @@ function StaffHoverGuide({
       <rect
         height={STAFF_LINE_SPACING * 4 + 34}
         rx={8}
-        width={getStaffRight(measureCount, position.measureIndex) - STAFF_LEFT}
+        width={getStaffRight(measureCount, position.measureIndex, score) - STAFF_LEFT}
         x={STAFF_LEFT}
         y={staffTop - 17}
       />
@@ -649,19 +654,21 @@ function StaffHoverGuide({
 
 function InvalidMeasureWarning({
   measureIndex,
+  score,
   staffId,
   staffIndex,
   staffGap,
   systemGap,
 }: {
   measureIndex: number;
+  score: Score;
   staffId: Staff['id'];
   staffIndex: number;
   staffGap: number;
   systemGap: number;
 }) {
-  const x1 = getMeasureX(measureIndex);
-  const x2 = getMeasureRight(measureIndex);
+  const x1 = getMeasureX(measureIndex, score);
+  const x2 = getMeasureRight(measureIndex, score);
   const staffTop = getStaffTop(staffIndex, staffGap, measureIndex, systemGap);
 
   return (
@@ -711,6 +718,7 @@ function MeasureHitTarget({
   measureIndex,
   onMeasureContextMenu,
   onSelectMeasure,
+  score,
   staff,
   staffGap,
   staffIndex,
@@ -726,14 +734,16 @@ function MeasureHitTarget({
     clientY: number,
   ) => void;
   onSelectMeasure?: (staffId: StaffId, measureIndex: number) => void;
+  score: Score;
   staff: Staff;
   staffGap: number;
   staffIndex: number;
   systemGap: number;
 }) {
-  const x = getMeasureX(measureIndex);
+  const x = getMeasureX(measureIndex, score);
   const y = getStaffTop(staffIndex, staffGap, measureIndex, systemGap) - 7;
   const height = STAFF_LINE_SPACING * 4 + 14;
+  const width = getMeasureWidth(measureIndex, score);
   const label = `Measure ${measureIndex + 1} ${staff.id}`;
 
   function selectMeasure() {
@@ -781,7 +791,7 @@ function MeasureHitTarget({
           data-testid="selected-measure"
           height={height}
           rx={4}
-          width={MEASURE_WIDTH}
+          width={width}
           x={x}
           y={y}
         />
@@ -790,7 +800,7 @@ function MeasureHitTarget({
         className="measure-hit-target"
         height={height}
         rx={4}
-        width={MEASURE_WIDTH}
+        width={width}
         x={x}
         y={y}
       />
@@ -832,6 +842,7 @@ function RhythmSlots({
     inputCursor.measureIndex,
     inputCursor.beat,
     score.timeSignature.beats,
+    score,
   );
   const slotEndBeat = Math.min(
     score.timeSignature.beats,
@@ -842,6 +853,7 @@ function RhythmSlots({
     inputCursor.measureIndex,
     slotEndBeat,
     score.timeSignature.beats,
+    score,
   );
   const slotPaddingX = 7;
   const slotStartX = visibleSlotLayout
@@ -906,6 +918,7 @@ function inputCursorToMusicPosition(
     cursor.measureIndex,
     cursor.beat,
     score.timeSignature.beats,
+    score,
   );
   const systemGap = getScoreSystemGap(score);
   const y =
@@ -1304,6 +1317,7 @@ export function NotationOverlay({
               measureIndex={measure.index}
               onMeasureContextMenu={onMeasureContextMenu}
               onSelectMeasure={onSelectMeasure}
+              score={score}
               staff={staff}
               staffGap={staffGap}
               staffIndex={staffIndex}
@@ -1315,6 +1329,7 @@ export function NotationOverlay({
               <InvalidMeasureWarning
                 key={`invalid-${staff.id}-${measure.index}`}
                 measureIndex={measure.index}
+                score={score}
                 staffGap={staffGap}
                 staffId={staff.id}
                 staffIndex={staffIndex}
@@ -1332,7 +1347,7 @@ export function NotationOverlay({
             const lines = [
               {
                 key: `start-${measure.index}`,
-                x: getMeasureX(measure.index),
+                x: getMeasureX(measure.index, score),
               },
             ];
             const isSystemEnd =
@@ -1342,7 +1357,7 @@ export function NotationOverlay({
             if (isSystemEnd) {
               lines.push({
                 key: `end-${measure.index}`,
-                x: getMeasureRight(measure.index),
+                x: getMeasureRight(measure.index, score),
               });
             }
 
@@ -1389,6 +1404,7 @@ export function NotationOverlay({
                 placementMode={placementMode}
                 selectedEventId={selectedEventId}
                 selectedPitchIndex={selectedPitchIndex}
+                score={score}
                 staff={staff}
                 staffGap={staffGap}
                 staffIndex={staffIndex}
@@ -1406,11 +1422,13 @@ export function NotationOverlay({
             Math.floor(playbackBeat / score.timeSignature.beats),
             playbackBeat % score.timeSignature.beats,
             score.timeSignature.beats,
+            score,
           )}
           x2={getBeatX(
             Math.floor(playbackBeat / score.timeSignature.beats),
             playbackBeat % score.timeSignature.beats,
             score.timeSignature.beats,
+            score,
           )}
           y1={
             getStaffTop(

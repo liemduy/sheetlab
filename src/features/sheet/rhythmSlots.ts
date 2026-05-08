@@ -100,8 +100,8 @@ export function getRhythmSlotsForMeasure(
 }
 
 export function getRawBeatFromMeasureX(score: Score, measureIndex: number, x: number) {
-  const contentLeft = getMeasureContentLeft(measureIndex);
-  const contentWidth = getMeasureContentWidth(measureIndex);
+  const contentLeft = getMeasureContentLeft(measureIndex, score);
+  const contentWidth = getMeasureContentWidth(measureIndex, score);
   const rawBeat =
     ((x - contentLeft) / contentWidth) * score.timeSignature.beats;
 

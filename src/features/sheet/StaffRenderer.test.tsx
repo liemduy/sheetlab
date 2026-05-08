@@ -17,6 +17,7 @@ import {
   STAFF_GAP,
   STAFF_LEFT,
   STAFF_LINE_SPACING,
+  getMeasureWidth,
   getScoreStaffGap,
   getScoreSvgHeight,
   getStaffTop,
@@ -301,9 +302,13 @@ describe('StaffRenderer', () => {
 
     const slot = screen.getByTestId('rhythm-slot');
 
-    expect(Number(slot.getAttribute('x'))).toBeCloseTo(getBeatX(0, 0.5, 4), 2);
+    expect(getMeasureWidth(0, score)).toBeGreaterThan(getMeasureWidth(1, score));
+    expect(Number(slot.getAttribute('x'))).toBeCloseTo(
+      getBeatX(0, 0.5, 4, score),
+      2,
+    );
     expect(Number(slot.getAttribute('width'))).toBeCloseTo(
-      getBeatX(0, 1, 4) - getBeatX(0, 0.5, 4),
+      getBeatX(0, 1, 4, score) - getBeatX(0, 0.5, 4, score),
       2,
     );
   });

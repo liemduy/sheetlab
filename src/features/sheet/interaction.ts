@@ -6,7 +6,6 @@ import {
   pitchToDiatonicValue,
 } from '../../domain/score/pitchRange';
 import {
-  MEASURE_WIDTH,
   MEASURES_PER_SYSTEM,
   STAFF_LEFT,
   STAFF_GAP,
@@ -14,6 +13,7 @@ import {
   getMeasureContentLeft,
   getMeasureContentWidth,
   getMeasureCountForSystem,
+  getMeasureRight,
   getScoreStaffGap,
   getScoreSystemGap,
   getStaffRight,
@@ -100,6 +100,26 @@ function findStaffAtY(
   return candidates[0];
 }
 
+function findMeasureIndexAtX(
+  score: Score,
+  systemIndex: number,
+  measureCount: number,
+  x: number,
+) {
+  const systemMeasureCount = getMeasureCountForSystem(measureCount, systemIndex);
+  const firstMeasureIndex = systemIndex * MEASURES_PER_SYSTEM;
+
+  for (let offset = 0; offset < systemMeasureCount; offset += 1) {
+    const measureIndex = firstMeasureIndex + offset;
+
+    if (x <= getMeasureRight(measureIndex, score)) {
+      return measureIndex;
+    }
+  }
+
+  return firstMeasureIndex + Math.max(0, systemMeasureCount - 1);
+}
+
 export function mapPointToMusicPosition(
   point: SvgPoint,
   score: Score,
@@ -117,22 +137,18 @@ export function mapPointToMusicPosition(
     !staff ||
     systemMeasureCount === 0 ||
     point.x < STAFF_LEFT ||
-    point.x > getStaffRight(measureCount, systemIndex * MEASURES_PER_SYSTEM)
+    point.x > getStaffRight(measureCount, systemIndex * MEASURES_PER_SYSTEM, score)
   ) {
     return null;
   }
 
   const staffIndex = staves.indexOf(staff);
-  const localMeasureIndex = Math.min(
-    systemMeasureCount - 1,
-    Math.max(0, Math.floor((point.x - STAFF_LEFT) / MEASURE_WIDTH)),
-  );
   const measureIndex = Math.min(
     measureCount - 1,
-    Math.max(0, systemIndex * MEASURES_PER_SYSTEM + localMeasureIndex),
+    Math.max(0, findMeasureIndexAtX(score, systemIndex, measureCount, point.x)),
   );
-  const measureContentLeft = getMeasureContentLeft(measureIndex);
-  const measureContentWidth = getMeasureContentWidth(measureIndex);
+  const measureContentLeft = getMeasureContentLeft(measureIndex, score);
+  const measureContentWidth = getMeasureContentWidth(measureIndex, score);
   const clampedContentX = Math.min(
     measureContentLeft + measureContentWidth,
     Math.max(measureContentLeft, point.x),

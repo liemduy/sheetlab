@@ -1,4 +1,4 @@
-import type { Clef, Pitch } from '../../domain/score/types';
+import type { Clef, Pitch, Score } from '../../domain/score/types';
 import {
   TOP_LINE_BY_CLEF,
   pitchToDiatonicValue,
@@ -31,9 +31,10 @@ export function getBeatX(
   measureIndex: number,
   beat: number,
   beatsPerMeasure: number,
+  score?: Score,
 ) {
   return (
-    getMeasureContentLeft(measureIndex) +
-    (beat / beatsPerMeasure) * getMeasureContentWidth(measureIndex)
+    getMeasureContentLeft(measureIndex, score) +
+    (beat / beatsPerMeasure) * getMeasureContentWidth(measureIndex, score)
   );
 }

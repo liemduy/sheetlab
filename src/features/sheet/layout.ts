@@ -1,5 +1,10 @@
 import type { Clef, Pitch, Score, ScoreType } from '../../domain/score/types';
-import { getEventPitches } from '../../domain/score/events';
+import { getDurationBeats } from '../../domain/score/durations';
+import {
+  getEventDots,
+  getEventPitches,
+  isGeneratedRestEvent,
+} from '../../domain/score/events';
 import {
   TOP_LINE_BY_CLEF,
   clampPitchToClefRange,
@@ -17,6 +22,7 @@ export const FIRST_MEASURE_LEFT_PADDING = 78;
 export const MEASURE_RIGHT_PADDING = 20;
 export const FIRST_STAFF_Y = 118;
 export const SVG_WIDTH = 920;
+export const SYSTEM_WIDTH = STAFF_RIGHT - STAFF_LEFT;
 export const VEXFLOW_STAVE_TOP_LINE_OFFSET = 44.5;
 
 const STAFF_DYNAMIC_PADDING = 28;
@@ -136,40 +142,181 @@ export function getStaffTop(
   return FIRST_STAFF_Y + getSystemIndex(measureIndex) * systemGap + staffIndex * staffGap;
 }
 
-export function getMeasureX(measureIndex: number) {
-  return STAFF_LEFT + getLocalMeasureIndex(measureIndex) * MEASURE_WIDTH;
+function normalizeBoundary(beat: number, beatsPerMeasure: number) {
+  return Number(Math.min(beatsPerMeasure, Math.max(0, beat)).toFixed(4));
 }
 
-export function getMeasureRight(measureIndex: number) {
-  return getMeasureX(measureIndex) + MEASURE_WIDTH;
+function countMeasureRhythmIntervals(score: Score, measureIndex: number) {
+  const beatsPerMeasure = score.timeSignature.beats;
+  const boundaries = new Set<number>([
+    0,
+    beatsPerMeasure,
+  ]);
+
+  for (let beat = 1; beat < beatsPerMeasure; beat += 1) {
+    boundaries.add(normalizeBoundary(beat, beatsPerMeasure));
+  }
+
+  score.parts
+    .flatMap((part) => part.staves)
+    .forEach((staff) => {
+      const measure = staff.measures.find(
+        (candidate) => candidate.index === measureIndex,
+      );
+
+      measure?.voices.forEach((voice) => {
+        voice.events.forEach((event) => {
+          if (isGeneratedRestEvent(event)) {
+            return;
+          }
+
+          const eventStart = normalizeBoundary(event.beat, beatsPerMeasure);
+          const eventEnd = normalizeBoundary(
+            event.beat + getDurationBeats(event.duration, getEventDots(event)),
+            beatsPerMeasure,
+          );
+
+          boundaries.add(eventStart);
+          boundaries.add(eventEnd);
+        });
+      });
+    });
+
+  const sortedBoundaries = [...boundaries].sort((a, b) => a - b);
+
+  return sortedBoundaries.reduce((intervalCount, boundary, index) => {
+    const nextBoundary = sortedBoundaries[index + 1];
+
+    return nextBoundary !== undefined && nextBoundary - boundary > 0.0001
+      ? intervalCount + 1
+      : intervalCount;
+  }, 0);
 }
 
-export function getMeasureContentLeft(measureIndex: number) {
-  return (
-    getMeasureX(measureIndex) +
-    (getLocalMeasureIndex(measureIndex) === 0
+export function getMeasureSlotWeight(score: Score, measureIndex: number) {
+  return Math.max(
+    score.timeSignature.beats,
+    countMeasureRhythmIntervals(score, measureIndex),
+  );
+}
+
+function getSystemMeasureIndexes(score: Score, systemIndex: number) {
+  const measureCount = getScoreMeasureCount(score);
+  const measureCountForSystem = getMeasureCountForSystem(measureCount, systemIndex);
+  const firstMeasureIndex = systemIndex * MEASURES_PER_SYSTEM;
+
+  return Array.from(
+    { length: measureCountForSystem },
+    (_, offset) => firstMeasureIndex + offset,
+  );
+}
+
+export function getMeasureWidth(measureIndex: number, score?: Score) {
+  if (!score) {
+    return MEASURE_WIDTH;
+  }
+
+  const systemMeasureIndexes = getSystemMeasureIndexes(
+    score,
+    getSystemIndex(measureIndex),
+  );
+
+  if (systemMeasureIndexes.length === 0) {
+    return MEASURE_WIDTH;
+  }
+
+  const weights = systemMeasureIndexes.map((index) =>
+    getMeasureSlotWeight(score, index),
+  );
+  const totalWeight = weights.reduce((total, weight) => total + weight, 0);
+  const measureOffset = systemMeasureIndexes.indexOf(measureIndex);
+  const measureWeight =
+    measureOffset >= 0 ? weights[measureOffset] ?? score.timeSignature.beats : score.timeSignature.beats;
+
+  return (SYSTEM_WIDTH * measureWeight) / Math.max(1, totalWeight);
+}
+
+export function getMeasureX(measureIndex: number, score?: Score) {
+  if (!score) {
+    return STAFF_LEFT + getLocalMeasureIndex(measureIndex) * MEASURE_WIDTH;
+  }
+
+  const firstMeasureIndex = getSystemFirstMeasureIndex(measureIndex);
+  let x = STAFF_LEFT;
+
+  for (let index = firstMeasureIndex; index < measureIndex; index += 1) {
+    x += getMeasureWidth(index, score);
+  }
+
+  return x;
+}
+
+export function getMeasureRight(measureIndex: number, score?: Score) {
+  return getMeasureX(measureIndex, score) + getMeasureWidth(measureIndex, score);
+}
+
+function getMeasureLeftPadding(measureIndex: number, score?: Score) {
+  const desiredPadding =
+    getLocalMeasureIndex(measureIndex) === 0
       ? FIRST_MEASURE_LEFT_PADDING
-      : MEASURE_LEFT_PADDING)
+      : MEASURE_LEFT_PADDING;
+
+  if (!score) {
+    return desiredPadding;
+  }
+
+  const measureWidth = getMeasureWidth(measureIndex, score);
+  const maxPadding = Math.max(
+    MEASURE_LEFT_PADDING,
+    measureWidth - MEASURE_RIGHT_PADDING - 24,
   );
+
+  return Math.min(desiredPadding, maxPadding);
 }
 
-export function getMeasureContentRight(measureIndex: number) {
-  return getMeasureRight(measureIndex) - MEASURE_RIGHT_PADDING;
+export function getMeasureContentLeft(measureIndex: number, score?: Score) {
+  return getMeasureX(measureIndex, score) + getMeasureLeftPadding(measureIndex, score);
 }
 
-export function getMeasureContentWidth(measureIndex: number) {
-  return getMeasureContentRight(measureIndex) - getMeasureContentLeft(measureIndex);
+export function getMeasureContentRight(measureIndex: number, score?: Score) {
+  return getMeasureRight(measureIndex, score) - MEASURE_RIGHT_PADDING;
 }
 
-export function getStaffRight(measureCount: number, measureIndex = 0) {
-  return (
-    STAFF_LEFT +
-    getMeasureCountForSystem(
-      measureCount,
-      getSystemIndex(measureIndex),
-    ) *
-      MEASURE_WIDTH
-  );
+export function getMeasureContentWidth(measureIndex: number, score?: Score) {
+  return getMeasureContentRight(measureIndex, score) - getMeasureContentLeft(measureIndex, score);
+}
+
+export function getStaffRight(
+  measureCount: number,
+  measureIndex = 0,
+  score?: Score,
+) {
+  if (!score) {
+    return (
+      STAFF_LEFT +
+      getMeasureCountForSystem(
+        measureCount,
+        getSystemIndex(measureIndex),
+      ) *
+        MEASURE_WIDTH
+    );
+  }
+
+  const systemIndex = getSystemIndex(measureIndex);
+  const measureCountForSystem = getMeasureCountForSystem(measureCount, systemIndex);
+
+  if (measureCountForSystem <= 0) {
+    return STAFF_LEFT;
+  }
+
+  const lastMeasureIndex =
+    systemIndex * MEASURES_PER_SYSTEM + measureCountForSystem - 1;
+
+  return getMeasureRight(lastMeasureIndex, score);
+}
+
+export function getStaticMeasureX(measureIndex: number) {
+  return STAFF_LEFT + getLocalMeasureIndex(measureIndex) * MEASURE_WIDTH;
 }
 
 export function getScoreSvgHeight(score: Score | ScoreType) {

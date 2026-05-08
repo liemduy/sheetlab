@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { placeScoreEvent } from '../../domain/score/editing';
 import { createEmptyScore } from '../../domain/score/factories';
 import {
   MEASURES_PER_SYSTEM,
@@ -95,6 +96,34 @@ describe('sheet interaction mapping', () => {
       beat: 0,
     });
     expect(result ? formatPitch(result.pitch) : null).toBe('B4');
+  });
+
+  it('maps points through dynamically widened measure widths', () => {
+    const score = placeScoreEvent(
+      createEmptyScore('treble', { measureCount: 4 }),
+      {
+        eventId: 'eighth-note-1',
+        staffId: 'treble',
+        measureIndex: 0,
+        beat: 0,
+        duration: 'eighth',
+        entryMode: 'note',
+        pitch: { step: 'E', octave: 4 },
+      },
+    );
+    const result = mapPointToMusicPosition(
+      {
+        x: getBeatX(1, 0, score.timeSignature.beats, score),
+        y: getPitchY({ step: 'B', octave: 4 }, 'treble', 0),
+      },
+      score,
+    );
+
+    expect(result).toMatchObject({
+      beat: 0,
+      measureIndex: 1,
+      staffId: 'treble',
+    });
   });
 
   it('returns null outside the editable staff area', () => {

@@ -21,12 +21,12 @@ import type { StaffRendererProps } from './StaffRenderer';
 import { NotationOverlay } from './NotationOverlay';
 import type { RenderedEventLayout } from './NotationOverlay';
 import {
-  MEASURE_WIDTH,
   STAFF_LINE_SPACING,
   SVG_WIDTH,
   VEXFLOW_STAVE_TOP_LINE_OFFSET,
   getLocalMeasureIndex,
   getMeasureX,
+  getMeasureWidth,
   getScoreStaffGap,
   getScoreSystemGap,
   getScoreSvgHeight,
@@ -120,6 +120,7 @@ function drawVexFlowMeasureEvents({
   beatsPerMeasure,
   context,
   measureIndex,
+  score,
   staff,
   staffGap,
   staffIndex,
@@ -129,6 +130,7 @@ function drawVexFlowMeasureEvents({
   beatsPerMeasure: number;
   context: ReturnType<Renderer['getContext']>;
   measureIndex: number;
+  score: StaffRendererProps['score'];
   staff: Staff;
   staffGap: number;
   staffIndex: number;
@@ -169,7 +171,12 @@ function drawVexFlowMeasureEvents({
     svgElement.setAttribute('data-staff-id', staff.id);
 
     const eventPitches = getEventPitches(event);
-    const fallbackX = getBeatX(measureIndex, event.beat, beatsPerMeasure);
+    const fallbackX = getBeatX(
+      measureIndex,
+      event.beat,
+      beatsPerMeasure,
+      score,
+    );
     const minX = note.getNoteHeadBeginX();
     const maxX = note.getNoteHeadEndX();
     const renderedX =
@@ -228,10 +235,10 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
   const renderedStaves = staves.map((staff, staffIndex) =>
     staff.measures.map((measure) => {
       const stave = new Stave(
-        getMeasureX(measure.index),
+        getMeasureX(measure.index, score),
         getStaffTop(staffIndex, staffGap, measure.index, systemGap) -
           VEXFLOW_STAVE_TOP_LINE_OFFSET,
-        MEASURE_WIDTH,
+        getMeasureWidth(measure.index, score),
         {
           spacingBetweenLinesPx: 11,
         },
@@ -298,6 +305,7 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
           beatsPerMeasure: score.timeSignature.beats,
           context,
           measureIndex,
+          score,
           staff,
           staffGap,
           staffIndex,
