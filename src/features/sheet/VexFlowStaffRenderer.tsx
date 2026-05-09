@@ -36,6 +36,7 @@ import {
   SVG_WIDTH,
   VEXFLOW_STAVE_TOP_LINE_OFFSET,
   getLocalMeasureIndex,
+  getMeasureContentLeft,
   getMeasureX,
   getMeasureWidth,
   getScoreStaffGap,
@@ -462,8 +463,143 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
   });
 
   drawKeySignatureSymbols(container, score);
+  drawTextAnnotations(container, score, eventLayouts);
 
   return eventLayouts;
+}
+
+function appendSvgText({
+  className,
+  dataset,
+  svg,
+  text,
+  x,
+  y,
+}: {
+  className: string;
+  dataset?: Record<string, string>;
+  svg: SVGSVGElement;
+  text: string;
+  x: number;
+  y: number;
+}) {
+  const textElement = document.createElementNS(
+    'http://www.w3.org/2000/svg',
+    'text',
+  );
+
+  textElement.classList.add(className);
+  textElement.setAttribute('x', x.toFixed(2));
+  textElement.setAttribute('y', y.toFixed(2));
+  textElement.textContent = text;
+
+  Object.entries(dataset ?? {}).forEach(([key, value]) => {
+    textElement.setAttribute(key, value);
+  });
+
+  svg.appendChild(textElement);
+
+  return textElement;
+}
+
+function drawTextAnnotations(
+  container: HTMLDivElement,
+  score: StaffRendererProps['score'],
+  eventLayouts: Record<string, RenderedEventLayout>,
+) {
+  const svg = container.querySelector('svg');
+
+  if (!svg) {
+    return;
+  }
+
+  svg
+    .querySelectorAll(
+      '.sheetlab-chord-symbol, .sheetlab-lyric, .sheetlab-section-marker',
+    )
+    .forEach((element) => element.remove());
+
+  const staves = score.parts[0]?.staves ?? [];
+  const staffGap = getScoreStaffGap(score);
+  const systemGap = getScoreSystemGap(score);
+
+  staves.forEach((staff, staffIndex) => {
+    staff.measures.forEach((measure) => {
+      const staffTop = getStaffTop(staffIndex, staffGap, measure.index, systemGap);
+
+      if (staffIndex === 0 && measure.sectionMarker) {
+        const markerX = getMeasureContentLeft(measure.index, score) + 12;
+        const markerY = staffTop - 42;
+        const markerWidth = Math.max(34, measure.sectionMarker.length * 8 + 18);
+        const markerGroup = document.createElementNS(
+          'http://www.w3.org/2000/svg',
+          'g',
+        );
+        const markerRect = document.createElementNS(
+          'http://www.w3.org/2000/svg',
+          'rect',
+        );
+
+        markerGroup.classList.add('sheetlab-section-marker');
+        markerGroup.setAttribute('data-testid', 'rendered-section-marker');
+        markerGroup.setAttribute('data-measure-index', String(measure.index));
+        markerRect.setAttribute('x', (markerX - 9).toFixed(2));
+        markerRect.setAttribute('y', (markerY - 15).toFixed(2));
+        markerRect.setAttribute('width', markerWidth.toFixed(2));
+        markerRect.setAttribute('height', '20');
+        markerRect.setAttribute('rx', '3');
+        markerGroup.appendChild(markerRect);
+        markerGroup.appendChild(
+          appendSvgText({
+            className: 'sheetlab-section-marker-text',
+            svg,
+            text: measure.sectionMarker,
+            x: markerX,
+            y: markerY,
+          }),
+        );
+        svg.appendChild(markerGroup);
+      }
+
+      measure.voices.forEach((voice) => {
+        voice.events.forEach((event) => {
+          const layout = eventLayouts[event.id];
+
+          if (!layout || isGeneratedRestEvent(event)) {
+            return;
+          }
+
+          if (event.chordSymbol) {
+            appendSvgText({
+              className: 'sheetlab-chord-symbol',
+              dataset: {
+                'data-event-id': event.id,
+                'data-testid': 'rendered-chord-symbol',
+              },
+              svg,
+              text: event.chordSymbol,
+              x: layout.x,
+              y: staffTop - 18,
+            });
+          }
+
+          if (event.lyric) {
+            appendSvgText({
+              className: 'sheetlab-lyric',
+              dataset: {
+                'data-event-id': event.id,
+                'data-testid': 'rendered-lyric',
+              },
+              svg,
+              text: event.lyric,
+              x: layout.x,
+              y: staffTop + STAFF_LINE_SPACING * 4 + 30,
+            });
+          }
+        });
+      });
+    });
+  });
 }
 
 function drawKeySignatureSymbols(

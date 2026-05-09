@@ -40,7 +40,10 @@ interface ScoreSettingsPanelProps {
   } | null;
   selectedPitchIndex: number | null;
   toolState: EditorToolState;
+  onChordSymbolChange: (chordSymbol: string | null) => void;
+  onLyricChange: (lyric: string | null) => void;
   onPageSizeChange: (pageSize: PageSize) => void;
+  onSectionMarkerChange: (sectionMarker: string | null) => void;
   onScoreTypeChange: (scoreType: ScoreType) => void;
   onTempoChange: (value: string) => void;
   onTimeSignatureChange: (value: string) => void;
@@ -59,11 +62,32 @@ export function ScoreSettingsPanel({
   selectedMeasure,
   selectedPitchIndex,
   toolState,
+  onChordSymbolChange,
+  onLyricChange,
   onPageSizeChange,
+  onSectionMarkerChange,
   onScoreTypeChange,
   onTempoChange,
   onTimeSignatureChange,
 }: ScoreSettingsPanelProps) {
+  const selectedEvent = selectedEventId
+    ? findScoreEvent(score, selectedEventId)
+    : null;
+  const selectedSectionMeasureIndex =
+    selectedMeasure?.measureIndex ?? selectedEvent?.measureIndex ?? null;
+  const selectedSectionMarker =
+    selectedSectionMeasureIndex !== null
+      ? score.parts[0]?.staves[0]?.measures.find(
+          (measure) => measure.index === selectedSectionMeasureIndex,
+        )?.sectionMarker ?? ''
+      : '';
+
+  function normalizeNullableInput(value: string) {
+    const trimmed = value.trim();
+
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
   return (
     <aside className="left-panel" aria-label="Score settings">
       <h2>Score Setup</h2>
@@ -113,6 +137,67 @@ export function ScoreSettingsPanel({
           ))}
         </select>
       </label>
+      <section className="annotation-editor" aria-label="Annotation editor">
+        <h3>Annotations</h3>
+        <label>
+          Chord symbol
+          <input
+            key={`chord-${selectedEventId ?? 'none'}-${
+              selectedEvent?.event.chordSymbol ?? ''
+            }`}
+            type="text"
+            defaultValue={selectedEvent?.event.chordSymbol ?? ''}
+            disabled={!selectedEvent}
+            placeholder="D, E7/D, C#m..."
+            onBlur={(event) =>
+              onChordSymbolChange(normalizeNullableInput(event.target.value))
+            }
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.currentTarget.blur();
+              }
+            }}
+          />
+        </label>
+        <label>
+          Lyric
+          <input
+            key={`lyric-${selectedEventId ?? 'none'}-${
+              selectedEvent?.event.lyric ?? ''
+            }`}
+            type="text"
+            defaultValue={selectedEvent?.event.lyric ?? ''}
+            disabled={!selectedEvent}
+            placeholder="syllable"
+            onBlur={(event) =>
+              onLyricChange(normalizeNullableInput(event.target.value))
+            }
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.currentTarget.blur();
+              }
+            }}
+          />
+        </label>
+        <label>
+          Section marker
+          <input
+            key={`section-${selectedSectionMeasureIndex ?? 'none'}-${selectedSectionMarker}`}
+            type="text"
+            defaultValue={selectedSectionMarker}
+            disabled={selectedSectionMeasureIndex === null}
+            placeholder="Intro, A1, B..."
+            onBlur={(event) =>
+              onSectionMarkerChange(normalizeNullableInput(event.target.value))
+            }
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.currentTarget.blur();
+              }
+            }}
+          />
+        </label>
+      </section>
       <dl className="state-summary" aria-label="Current editor state">
         <div>
           <dt>Score</dt>
@@ -186,7 +271,7 @@ export function ScoreSettingsPanel({
           <dd>
             {selectedEventId ? (
               <>
-                {findScoreEvent(score, selectedEventId)?.event.id ?? 'None'}
+                {selectedEvent?.event.id ?? 'None'}
                 {selectedPitchIndex !== null
                   ? ` pitch ${selectedPitchIndex + 1}`
                   : ''}

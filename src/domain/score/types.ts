@@ -77,6 +77,8 @@ export interface BaseScoreEvent {
   duration: DurationValue;
   beat: number;
   dots?: number;
+  chordSymbol?: string;
+  lyric?: string;
 }
 
 export interface NoteEvent extends BaseScoreEvent {
@@ -106,6 +108,7 @@ export interface Measure {
   keySignature?: KeySignature;
   keySignatureSymbols?: KeySignatureSymbol[];
   repeatJump?: RepeatJumpKind;
+  sectionMarker?: string;
   voices: Voice[];
 }
 

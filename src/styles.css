@@ -364,6 +364,22 @@ button {
   color: var(--ink);
 }
 
+.annotation-editor {
+  margin-top: 1rem;
+  border-top: 1px solid rgb(36 31 26 / 12%);
+  padding-top: 1rem;
+}
+
+.annotation-editor h3 {
+  margin: 0 0 0.7rem;
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.annotation-editor input:disabled {
+  opacity: 0.55;
+}
+
 .state-summary {
   display: grid;
   gap: 0.55rem;
@@ -715,6 +731,43 @@ button {
   font-family: Bravura, "Noto Music", "Segoe UI Symbol", "Apple Symbols", serif;
   font-size: 25px;
   font-weight: 400;
+  pointer-events: none;
+}
+
+.vexflow-output .sheetlab-chord-symbol {
+  fill: #111111;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 17px;
+  font-style: italic;
+  font-weight: 700;
+  pointer-events: none;
+  text-anchor: middle;
+}
+
+.vexflow-output .sheetlab-lyric {
+  fill: #111111;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 15px;
+  pointer-events: none;
+  text-anchor: middle;
+}
+
+.vexflow-output .sheetlab-section-marker {
+  pointer-events: none;
+}
+
+.vexflow-output .sheetlab-section-marker rect {
+  fill: #ffffff;
+  stroke: #111111;
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
+}
+
+.vexflow-output .sheetlab-section-marker-text {
+  fill: #111111;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 14px;
+  font-weight: 700;
   pointer-events: none;
 }
 

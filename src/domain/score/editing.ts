@@ -69,6 +69,8 @@ export interface UpdateScoreEventRequest {
   staffId?: StaffId;
   dots?: number;
   voiceIndex?: number;
+  chordSymbol?: string | null;
+  lyric?: string | null;
 }
 
 export interface UpdateScoreEventResult {
@@ -186,8 +188,10 @@ function mergePitchedEventWithNote(
     id: eventId,
     kind: 'chord',
     beat: noteEvent.beat,
+    chordSymbol: existingEvent.chordSymbol,
     duration: noteEvent.duration,
     dots: noteEvent.dots,
+    lyric: existingEvent.lyric,
     pitches,
   };
 }
@@ -206,6 +210,41 @@ function applyPitchUpdate(
   };
 }
 
+function normalizeAnnotationText(value: string | null | undefined) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function createUpdatedEventBase(
+  event: ScoreEvent,
+  eventId: string,
+  beat: number,
+  duration: DurationValue,
+  update: UpdateScoreEventRequest,
+) {
+  const chordSymbol = normalizeAnnotationText(update.chordSymbol);
+  const lyric = normalizeAnnotationText(update.lyric);
+
+  return {
+    id: eventId,
+    beat,
+    duration,
+    dots: update.dots ?? event.dots,
+    chordSymbol:
+      chordSymbol === undefined ? event.chordSymbol : chordSymbol ?? undefined,
+    lyric: lyric === undefined ? event.lyric : lyric ?? undefined,
+  };
+}
+
 function createUpdatedScoreEvent(
   event: ScoreEvent,
   eventId: string,
@@ -215,11 +254,8 @@ function createUpdatedScoreEvent(
 ): ScoreEvent {
   if (event.kind === 'rest') {
     return {
-      id: eventId,
+      ...createUpdatedEventBase(event, eventId, beat, duration, update),
       kind: 'rest',
-      beat,
-      duration,
-      dots: update.dots ?? event.dots,
     };
   }
 
@@ -230,21 +266,15 @@ function createUpdatedScoreEvent(
     );
 
     return {
-      id: eventId,
+      ...createUpdatedEventBase(event, eventId, beat, duration, update),
       kind: 'chord',
-      beat,
-      duration,
-      dots: update.dots ?? event.dots,
       pitches: nextPitches.sort(comparePitches),
     };
   }
 
   return {
-    id: eventId,
+    ...createUpdatedEventBase(event, eventId, beat, duration, update),
     kind: 'note',
-    beat,
-    duration,
-    dots: update.dots ?? event.dots,
     pitch: applyPitchUpdate(event.pitch, update),
   };
 }
@@ -598,6 +628,32 @@ export function countScoreEvents(score: Score) {
       ),
     0,
   );
+}
+
+export function setMeasureSectionMarker(
+  score: Score,
+  measureIndex: number,
+  sectionMarker: string | null,
+) {
+  const normalizedText = normalizeAnnotationText(sectionMarker);
+
+  return {
+    ...score,
+    parts: score.parts.map((part) => ({
+      ...part,
+      staves: part.staves.map((staff) => ({
+        ...staff,
+        measures: staff.measures.map((measure) =>
+          measure.index === measureIndex
+            ? {
+                ...measure,
+                sectionMarker: normalizedText ?? undefined,
+              }
+            : measure,
+        ),
+      })),
+    })),
+  };
 }
 
 export function deleteScoreEvent(score: Score, eventId: string): Score {

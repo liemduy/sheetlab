@@ -4,6 +4,8 @@ import {
   placeScoreEvent,
   setMeasureKeySignature,
   setMeasureRepeatJump,
+  setMeasureSectionMarker,
+  tryUpdateScoreEvent,
 } from '../../domain/score/editing';
 import { createEmptyScore } from '../../domain/score/factories';
 import { trebleStudyFixture } from '../../domain/score/fixtures';
@@ -1643,6 +1645,31 @@ describe('StaffRenderer', () => {
         '[data-testid="score-event"][data-event-id="voice-two-note"][data-voice-index="1"]',
       ),
     ).not.toBeNull();
+  });
+
+  it('renders chord symbols, lyrics, and section markers from score annotations', async () => {
+    const noteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'annotated-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const annotatedScore = tryUpdateScoreEvent(noteScore, 'annotated-note', {
+      chordSymbol: 'E7/D',
+      lyric: 'cho',
+    }).score;
+    const score = setMeasureSectionMarker(annotatedScore, 0, 'A1');
+
+    render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-chord-symbol')).toHaveTextContent('E7/D');
+      expect(screen.getByTestId('rendered-lyric')).toHaveTextContent('cho');
+      expect(screen.getByTestId('rendered-section-marker')).toHaveTextContent('A1');
+    });
   });
 
   it('beams consecutive short notes independently per voice', () => {

@@ -92,6 +92,8 @@ function isScoreEvent(value: unknown): value is ScoreEvent {
     isString(value.id) &&
     DURATIONS.has(value.duration as DurationValue) &&
     isNumber(value.beat) &&
+    (value.chordSymbol === undefined || isString(value.chordSymbol)) &&
+    (value.lyric === undefined || isString(value.lyric)) &&
     (value.dots === undefined ||
       (isNumber(value.dots) && value.dots >= 0 && value.dots <= 1));
 
@@ -152,6 +154,8 @@ export function isScore(value: unknown): value is Score {
                     measure.keySignatureSymbols.every(isKeySignatureSymbol))) &&
                 (measure.repeatJump === undefined ||
                   isRepeatJumpKind(measure.repeatJump as RepeatJumpKind)) &&
+                (measure.sectionMarker === undefined ||
+                  isString(measure.sectionMarker)) &&
                 Array.isArray(measure.voices) &&
                 measure.voices.every(
                   (voice) =>

@@ -10,6 +10,7 @@ import {
   findScoreEvent,
   insertMeasureAt,
   placeScoreEvent,
+  setMeasureSectionMarker,
   tryPlaceScoreEvent,
   tryInsertScoreEvent,
   tryUpdateScoreEvent,
@@ -692,6 +693,54 @@ describe('score editing', () => {
       duration: 'half',
       pitch: { step: 'C', octave: 4, accidental: 'flat' },
     });
+  });
+
+  it('updates and clears chord symbols and lyrics on a selected event', () => {
+    const score = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'event-annotate-me',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const annotated = tryUpdateScoreEvent(score, 'event-annotate-me', {
+      chordSymbol: '  E7/D ',
+      lyric: ' cho ',
+    });
+    const cleared = tryUpdateScoreEvent(annotated.score, 'event-annotate-me', {
+      chordSymbol: '',
+    });
+
+    expect(annotated.updated).toBe(true);
+    expect(findScoreEvent(annotated.score, 'event-annotate-me')?.event).toMatchObject({
+      chordSymbol: 'E7/D',
+      lyric: 'cho',
+    });
+    expect(findScoreEvent(cleared.score, 'event-annotate-me')?.event).toMatchObject({
+      lyric: 'cho',
+    });
+    expect(
+      findScoreEvent(cleared.score, 'event-annotate-me')?.event.chordSymbol,
+    ).toBeUndefined();
+  });
+
+  it('sets and clears a section marker across the measure column', () => {
+    const score = createEmptyScore('grand', { measureCount: 2 });
+    const markedScore = setMeasureSectionMarker(score, 1, ' Intro ');
+    const clearedScore = setMeasureSectionMarker(markedScore, 1, null);
+
+    expect(
+      markedScore.parts[0]?.staves.map(
+        (staff) => staff.measures[1]?.sectionMarker,
+      ),
+    ).toEqual(['Intro', 'Intro']);
+    expect(
+      clearedScore.parts[0]?.staves.map(
+        (staff) => staff.measures[1]?.sectionMarker,
+      ),
+    ).toEqual([undefined, undefined]);
   });
 
   it('updates chord duration without collapsing it to a single note', () => {

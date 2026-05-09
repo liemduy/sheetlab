@@ -8,8 +8,10 @@ import {
   findScoreEvent,
   setMeasureKeySignature,
   setMeasureRepeatJump,
+  setMeasureSectionMarker,
   setScoreTimeSignature,
   tryMoveKeySignatureSymbol,
+  tryUpdateScoreEvent,
 } from '../../domain/score/editing';
 import { getActiveKeySignatureSelection } from '../../domain/score/keySignatures';
 import type {
@@ -394,6 +396,36 @@ function SheetLabApp() {
     setEditorMessage('Measure selected');
   }
 
+  function handleSelectedEventAnnotationChange(
+    update: { chordSymbol?: string | null; lyric?: string | null },
+    message: string,
+  ) {
+    if (!selectedEventId) {
+      return;
+    }
+
+    const result = tryUpdateScoreEvent(score, selectedEventId, update);
+
+    if (result.updated) {
+      commitScoreChange(result.score, message);
+    } else {
+      setEditorMessage(`Cannot update annotation: ${result.reason}`);
+    }
+  }
+
+  function handleSectionMarkerChange(sectionMarker: string | null) {
+    const measureIndex = getScoreEditTargetMeasureIndex();
+
+    commitScoreChange(
+      setMeasureSectionMarker(score, measureIndex, sectionMarker),
+      sectionMarker ? 'Section marker updated' : 'Section marker cleared',
+    );
+    selectMeasure({
+      staffId: selectedMeasure?.staffId ?? 'treble',
+      measureIndex,
+    });
+  }
+
   function handleSelectEvent(eventId: string, pitchIndex?: number | null) {
     const foundEvent = findScoreEvent(score, eventId);
 
@@ -570,8 +602,21 @@ function SheetLabApp() {
           selectedMeasure={selectedMeasure}
           selectedPitchIndex={selectedPitchIndex}
           toolState={toolState}
+          onChordSymbolChange={(chordSymbol) =>
+            handleSelectedEventAnnotationChange(
+              { chordSymbol },
+              chordSymbol ? 'Chord symbol updated' : 'Chord symbol cleared',
+            )
+          }
           onPageSizeChange={handlePageSizeChange}
+          onLyricChange={(lyric) =>
+            handleSelectedEventAnnotationChange(
+              { lyric },
+              lyric ? 'Lyric updated' : 'Lyric cleared',
+            )
+          }
           onScoreTypeChange={handleScoreTypeChange}
+          onSectionMarkerChange={handleSectionMarkerChange}
           onTempoChange={handleTempoChange}
           onTimeSignatureChange={handleTimeSignatureChange}
         />
