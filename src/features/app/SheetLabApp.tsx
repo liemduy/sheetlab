@@ -2,53 +2,21 @@ import { useRef, useState } from 'react';
 import type {
   MouseEvent as ReactMouseEvent,
 } from 'react';
-import { createEmptyScore } from '../../domain/score/factories';
-import {
-  addMeasure,
-  findScoreEvent,
-  setMeasureKeySignature,
-  setMeasureRepeatJump,
-  setMeasureSectionMarker,
-  setScoreTimeSignature,
-  tryMoveKeySignatureSymbol,
-  tryUpdateScoreEvent,
-} from '../../domain/score/editing';
-import { getActiveKeySignatureSelection } from '../../domain/score/keySignatures';
+import { findScoreEvent } from '../../domain/score/editing';
 import type {
   EditableVoiceIndex,
   EditorToolState,
   EntryMode,
   PlacementMode,
 } from '../editor/editorState';
-import {
-  DEFAULT_EDITOR_TOOL_STATE,
-  PAGE_SIZE_LABEL,
-} from '../editor/editorState';
+import { DEFAULT_EDITOR_TOOL_STATE } from '../editor/editorState';
 import {
   EditorToolbar,
   type ToolbarPalette,
 } from '../editor/EditorToolbar';
 import { ScoreSettingsPanel } from '../editor/ScoreSettingsPanel';
-import type {
-  KeySignature,
-  AnnotationKind,
-  AnnotationPlacementSide,
-  PageSize,
-  RepeatJumpKind,
-  Score,
-  ScoreType,
-  StaffId,
-} from '../../domain/score/types';
-import {
-  getTimeSignatureLabel,
-  parseTimeSignatureId,
-} from '../../domain/score/timeSignatures';
-import {
-  getMeasureRepeatJump,
-  getRepeatJumpOption,
-} from '../../domain/score/repeatJumps';
+import type { Score, StaffId } from '../../domain/score/types';
 import { getScoreRhythmIssues } from '../../domain/score/rhythm';
-import type { MusicPosition } from '../sheet/interaction';
 import { getMeasureKey } from '../sheet/measureKey';
 import { usePlaybackController } from './usePlaybackController';
 import { useProjectActions } from './useProjectActions';
@@ -61,6 +29,9 @@ import { useMeasureEditing } from './useMeasureEditing';
 import { useScoreEventEditing } from './useScoreEventEditing';
 import { useScoreHistory } from './useScoreHistory';
 import { useUndoRedoControls } from './useUndoRedoControls';
+import { useAnnotationCommands } from './useAnnotationCommands';
+import { useScoreCommands } from './useScoreCommands';
+import type { AnnotationContextMenuState } from './selectionTypes';
 import {
   isPdfExportMode,
   loadInitialScoreForApp,
@@ -137,12 +108,8 @@ function SheetLabApp() {
     selectMeasure,
   });
   const [openPalette, setOpenPalette] = useState<ToolbarPalette>(null);
-  const [annotationContextMenu, setAnnotationContextMenu] = useState<{
-    clientX: number;
-    clientY: number;
-    eventId: string;
-    kind: AnnotationKind;
-  } | null>(null);
+  const [annotationContextMenu, setAnnotationContextMenu] =
+    useState<AnnotationContextMenuState | null>(null);
   const notationViewportRef = useRef<HTMLDivElement | null>(null);
   const { canvasZoom, handleCanvasZoomChange } =
     useCanvasZoom(notationViewportRef);
@@ -205,6 +172,38 @@ function SheetLabApp() {
     updateToolState,
   });
 
+  const {
+    activeKeySignatureSelection,
+    activeRepeatJump,
+    handleAddMeasure,
+    handleKeySignatureChange,
+    handleMoveKeySignatureSymbol,
+    handlePageSizeChange,
+    handleRepeatJumpChange,
+    handleResetScore,
+    handleScoreTypeChange,
+    handleSectionMarkerChange,
+    handleTempoChange,
+    handleTimeSignatureChange,
+  } = useScoreCommands({
+    clearPointerState,
+    clearTransientInteraction,
+    commitScoreChange,
+    hoverPosition,
+    inputCursor,
+    score,
+    scrollNotationIntoView,
+    selectMeasure,
+    selectedEventId,
+    selectedMeasure,
+    setEditorMessage,
+    setOpenPalette,
+    setScore,
+    setSelectedMeasure,
+    toolState,
+    updateToolState,
+  });
+
   function handleClearInteraction() {
     updateToolState({ isInputArmed: false });
     clearTransientInteraction();
@@ -229,54 +228,6 @@ function SheetLabApp() {
     handleClearInteraction();
   }
 
-  function handleScoreTypeChange(scoreType: ScoreType) {
-    updateToolState({ scoreType, isInputArmed: false });
-    commitScoreChange(
-      createEmptyScore(scoreType, {
-        pageSize: score.pageSize,
-        tempo: toolState.tempo,
-        timeSignature: score.timeSignature,
-      }),
-      'New score',
-    );
-    clearTransientInteraction();
-    scrollNotationIntoView();
-  }
-
-  function handleResetScore() {
-    updateToolState({ placementMode: 'place', isInputArmed: false });
-    commitScoreChange(
-      createEmptyScore(toolState.scoreType, {
-        pageSize: score.pageSize,
-        tempo: toolState.tempo,
-        timeSignature: score.timeSignature,
-      }),
-      'Score reset',
-    );
-    clearTransientInteraction();
-    scrollNotationIntoView();
-  }
-
-  function handleAddMeasure() {
-    commitScoreChange(addMeasure(score), 'Measure added');
-  }
-
-  function getKeySignatureTargetMeasureIndex() {
-    if (selectedMeasure) {
-      return selectedMeasure.measureIndex;
-    }
-
-    if (selectedEventId) {
-      return findScoreEvent(score, selectedEventId)?.measureIndex ?? 0;
-    }
-
-    return inputCursor?.measureIndex ?? hoverPosition?.measureIndex ?? 0;
-  }
-
-  function getScoreEditTargetMeasureIndex() {
-    return getKeySignatureTargetMeasureIndex();
-  }
-
   function handleMeasureContextMenu(
     staffId: StaffId,
     measureIndex: number,
@@ -287,100 +238,6 @@ function SheetLabApp() {
     clearPointerState();
     openMeasureContextMenu({ staffId, measureIndex }, clientX, clientY);
     setEditorMessage('Measure selected');
-  }
-
-  function handleKeySignatureChange(keySignature: KeySignature) {
-    const measureIndex = getKeySignatureTargetMeasureIndex();
-
-    commitScoreChange(
-      setMeasureKeySignature(score, measureIndex, keySignature),
-      `Key signature set to ${keySignature}`,
-    );
-    setOpenPalette(null);
-    setSelectedMeasure((currentSelection) =>
-      currentSelection
-        ? {
-            ...currentSelection,
-            measureIndex,
-          }
-        : currentSelection,
-    );
-  }
-
-  function handleTimeSignatureChange(value: string) {
-    const timeSignature = parseTimeSignatureId(value);
-
-    if (!timeSignature) {
-      return;
-    }
-
-    commitScoreChange(
-      setScoreTimeSignature(score, timeSignature),
-      `Time signature set to ${getTimeSignatureLabel(timeSignature)}`,
-    );
-    clearPointerState();
-  }
-
-  function handleRepeatJumpChange(repeatJump: RepeatJumpKind | null) {
-    const measureIndex = getScoreEditTargetMeasureIndex();
-
-    commitScoreChange(
-      setMeasureRepeatJump(score, measureIndex, repeatJump),
-      repeatJump
-        ? `${getRepeatJumpOption(repeatJump)?.label ?? repeatJump} set at measure ${
-            measureIndex + 1
-          }`
-        : `Repeat/jump cleared at measure ${measureIndex + 1}`,
-    );
-    setOpenPalette(null);
-    selectMeasure({
-      staffId: selectedMeasure?.staffId ?? 'treble',
-      measureIndex,
-    });
-  }
-
-  function handleMoveKeySignatureSymbol(
-    sourceMeasureIndex: number,
-    symbolIndex: number,
-    position: MusicPosition,
-  ) {
-    const result = tryMoveKeySignatureSymbol(
-      score,
-      sourceMeasureIndex,
-      symbolIndex,
-      position.pitch,
-    );
-
-    if (result.moved) {
-      commitScoreChange(result.score, 'Key signature symbol moved');
-      clearPointerState();
-      selectMeasure({
-        staffId: position.staffId,
-        measureIndex: sourceMeasureIndex,
-      });
-    } else {
-      setEditorMessage(`Cannot move key signature: ${result.reason}`);
-    }
-  }
-
-  function handleTempoChange(value: string) {
-    const nextTempo = Number(value);
-
-    if (!Number.isNaN(nextTempo)) {
-      updateToolState({ tempo: nextTempo });
-      setScore((currentScore) => ({
-        ...currentScore,
-        tempo: nextTempo,
-      }));
-    }
-  }
-
-  function handlePageSizeChange(pageSize: PageSize) {
-    setScore((currentScore) => ({
-      ...currentScore,
-      pageSize,
-    }));
-    setEditorMessage(`Page size set to ${PAGE_SIZE_LABEL[pageSize]}`);
   }
 
   function handleEntryModeChange(entryMode: EntryMode) {
@@ -403,90 +260,23 @@ function SheetLabApp() {
     setEditorMessage('Measure selected');
   }
 
-  function handleSelectedEventAnnotationChange(
-    update: Parameters<typeof tryUpdateScoreEvent>[2],
-    message: string,
-  ) {
-    if (!selectedEventId) {
-      return;
-    }
-
-    const result = tryUpdateScoreEvent(score, selectedEventId, update);
-
-    if (result.updated) {
-      commitScoreChange(result.score, message);
-    } else {
-      setEditorMessage(`Cannot update annotation: ${result.reason}`);
-    }
-  }
-
-  function handleAnnotationContextMenu(
-    eventId: string,
-    kind: AnnotationKind,
-    clientX: number,
-    clientY: number,
-  ) {
-    updateToolState({ isInputArmed: false });
-    clearPointerState();
-    clearMeasureUiState();
-    selectEvent(eventId, null);
-    setAnnotationContextMenu({ clientX, clientY, eventId, kind });
-    setEditorMessage('Annotation selected');
-  }
-
-  function handleAnnotationPlacementChange(
-    side: AnnotationPlacementSide,
-  ) {
-    if (!annotationContextMenu) {
-      return;
-    }
-
-    const result = tryUpdateScoreEvent(score, annotationContextMenu.eventId, {
-      annotationPlacement: {
-        kind: annotationContextMenu.kind,
-        side,
-      },
-    });
-
-    if (result.updated) {
-      commitScoreChange(
-        result.score,
-        side === 'auto'
-          ? 'Annotation placement reset'
-          : `Annotation moved ${side}`,
-      );
-    } else {
-      setEditorMessage(`Cannot update annotation placement: ${result.reason}`);
-    }
-
-    setAnnotationContextMenu(null);
-  }
-
-  function handleLyricMapChange(eventId: string, targetEventIds: string[]) {
-    const result = tryUpdateScoreEvent(score, eventId, {
-      lyricMap: { eventIds: targetEventIds },
-    });
-
-    if (result.updated) {
-      commitScoreChange(result.score, 'Lyric map updated');
-      selectEvent(eventId, null);
-    } else {
-      setEditorMessage(`Cannot update lyric map: ${result.reason}`);
-    }
-  }
-
-  function handleSectionMarkerChange(sectionMarker: string | null) {
-    const measureIndex = getScoreEditTargetMeasureIndex();
-
-    commitScoreChange(
-      setMeasureSectionMarker(score, measureIndex, sectionMarker),
-      sectionMarker ? 'Section marker updated' : 'Section marker cleared',
-    );
-    selectMeasure({
-      staffId: selectedMeasure?.staffId ?? 'treble',
-      measureIndex,
-    });
-  }
+  const {
+    handleAnnotationContextMenu,
+    handleAnnotationPlacementChange,
+    handleLyricMapChange,
+    handleSelectedEventAnnotationChange,
+  } = useAnnotationCommands({
+    annotationContextMenu,
+    clearMeasureUiState,
+    clearPointerState,
+    commitScoreChange,
+    score,
+    selectEvent,
+    selectedEventId,
+    setAnnotationContextMenu,
+    setEditorMessage,
+    updateToolState,
+  });
 
   function handleSelectEvent(eventId: string, pitchIndex?: number | null) {
     const foundEvent = findScoreEvent(score, eventId);
@@ -563,14 +353,6 @@ function SheetLabApp() {
     score,
     setEditorMessage,
   });
-  const activeKeySignatureSelection = getActiveKeySignatureSelection(
-    score,
-    getKeySignatureTargetMeasureIndex(),
-  );
-  const activeRepeatJump = getMeasureRepeatJump(
-    score,
-    getScoreEditTargetMeasureIndex(),
-  );
   const rhythmIssues = getScoreRhythmIssues(score);
   const activeInvalidMeasureKeys = [
     ...new Set([

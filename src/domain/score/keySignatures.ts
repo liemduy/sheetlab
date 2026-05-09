@@ -232,7 +232,10 @@ export function applyActiveKeySignatureToPitch(
   );
 }
 
-export function getActiveKeySignatureSelection(score: Score, measureIndex: number) {
+export function getActiveKeySignatureSelection(
+  score: Score,
+  measureIndex: number,
+): KeySignature | 'custom' {
   const { symbols } = getActiveKeySignatureSymbolState(score, measureIndex);
 
   return inferKeySignatureFromSymbols(symbols) ?? 'custom';
