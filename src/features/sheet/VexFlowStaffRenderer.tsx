@@ -81,10 +81,88 @@ const REPETITION_TYPE_BY_REPEAT_JUMP = {
   'to-coda': Repetition.type.TO_CODA,
 } as const;
 
+interface RenderedBounds {
+  maxX: number;
+  maxY: number;
+  minX: number;
+  minY: number;
+}
+
 function getVexFlowEventClasses(event: ScoreEvent) {
   return isGeneratedRestEvent(event)
     ? 'vf-score-event vf-generated-rest'
     : 'vf-score-event vf-user-event';
+}
+
+function combineRenderedBounds(bounds: RenderedBounds[]) {
+  if (bounds.length === 0) {
+    return null;
+  }
+
+  return bounds.reduce<RenderedBounds>(
+    (combined, candidate) => ({
+      maxX: Math.max(combined.maxX, candidate.maxX),
+      maxY: Math.max(combined.maxY, candidate.maxY),
+      minX: Math.min(combined.minX, candidate.minX),
+      minY: Math.min(combined.minY, candidate.minY),
+    }),
+    bounds[0],
+  );
+}
+
+function getRenderedNoteBounds(note: StaveNote, svgElement: SVGElement) {
+  const bounds: RenderedBounds[] = [];
+
+  try {
+    const vexFlowBounds = note.getBoundingBox();
+    const x = vexFlowBounds.getX();
+    const y = vexFlowBounds.getY();
+    const width = vexFlowBounds.getW();
+    const height = vexFlowBounds.getH();
+
+    if (
+      Number.isFinite(x) &&
+      Number.isFinite(y) &&
+      Number.isFinite(width) &&
+      Number.isFinite(height)
+    ) {
+      bounds.push({
+        maxX: x + width,
+        maxY: y + height,
+        minX: x,
+        minY: y,
+      });
+    }
+  } catch {
+    // VexFlow can omit bounding boxes for some generated SVG fragments.
+  }
+
+  try {
+    const svgGraphicsElement = svgElement as SVGGraphicsElement;
+    const svgBounds =
+      typeof svgGraphicsElement.getBBox === 'function'
+        ? svgGraphicsElement.getBBox()
+        : null;
+
+    if (
+      svgBounds &&
+      Number.isFinite(svgBounds.x) &&
+      Number.isFinite(svgBounds.y) &&
+      Number.isFinite(svgBounds.width) &&
+      Number.isFinite(svgBounds.height)
+    ) {
+      bounds.push({
+        maxX: svgBounds.x + svgBounds.width,
+        maxY: svgBounds.y + svgBounds.height,
+        minX: svgBounds.x,
+        minY: svgBounds.y,
+      });
+    }
+  } catch {
+    // JSDOM does not implement SVG getBBox; the VexFlow bounds above cover tests.
+  }
+
+  return combineRenderedBounds(bounds);
 }
 
 function createVexFlowNote(
@@ -324,6 +402,7 @@ function drawVexFlowMeasureEvents({
         Number.isFinite(minX) && Number.isFinite(maxX)
           ? (minX + maxX) / 2
           : fallbackX;
+      const noteBounds = getRenderedNoteBounds(note, svgElement);
       const pitchYs =
         eventPitches.length > 0
           ? eventPitches.map((pitch) =>
@@ -340,18 +419,70 @@ function drawVexFlowMeasureEvents({
               getStaffTop(staffIndex, staffGap, measureIndex, systemGap) +
                 STAFF_LINE_SPACING * 2,
             ];
-      const minY = Math.min(...pitchYs);
-      const maxY = Math.max(...pitchYs);
+      const pitchLayouts = eventPitches.map((_, pitchIndex) => {
+        const noteHead = note.noteHeads[pitchIndex];
+        const noteHeadMinX = noteHead?.getAbsoluteX();
+        const noteHeadWidth = noteHead?.getWidth();
+        const pitchY =
+          pitchYs[pitchIndex] ??
+          getStaffTop(staffIndex, staffGap, measureIndex, systemGap) +
+            STAFF_LINE_SPACING * 2;
+        const minPitchX =
+          noteHead &&
+          noteHeadMinX !== undefined &&
+          Number.isFinite(noteHeadMinX)
+            ? noteHeadMinX
+            : renderedX - 6;
+        const pitchWidth =
+          noteHeadWidth !== undefined && Number.isFinite(noteHeadWidth)
+            ? noteHeadWidth
+            : 12;
+        const maxPitchX = minPitchX + pitchWidth;
+        const pitchLayout = {
+          isDisplaced: noteHead?.isDisplaced() ?? false,
+          maxX: maxPitchX,
+          minX: minPitchX,
+          pitchIndex,
+          x: (minPitchX + maxPitchX) / 2,
+          y: pitchY,
+        };
+        const noteHeadElement = noteHead?.getSVGElement();
+
+        if (noteHeadElement) {
+          noteHeadElement.classList.add('vf-user-notehead');
+          noteHeadElement.setAttribute('data-event-id', event.id);
+          noteHeadElement.setAttribute('data-pitch-index', String(pitchIndex));
+          noteHeadElement.setAttribute('data-notehead-x', pitchLayout.x.toFixed(2));
+          noteHeadElement.setAttribute('data-notehead-y', pitchLayout.y.toFixed(2));
+        }
+
+        return pitchLayout;
+      });
+      const minY = Math.min(
+        ...pitchYs,
+        noteBounds?.minY ?? Number.POSITIVE_INFINITY,
+      );
+      const maxY = Math.max(
+        ...pitchYs,
+        noteBounds?.maxY ?? Number.NEGATIVE_INFINITY,
+      );
 
       eventLayouts[event.id] = {
         beat: event.beat,
         isGeneratedRest: isGeneratedRestEvent(event),
         kind: event.kind,
-        maxX: Number.isFinite(maxX) ? maxX : renderedX + 10,
+        maxX: Math.max(
+          Number.isFinite(maxX) ? maxX : renderedX + 10,
+          noteBounds?.maxX ?? Number.NEGATIVE_INFINITY,
+        ),
         maxY,
         measureIndex,
-        minX: Number.isFinite(minX) ? minX : renderedX - 10,
+        minX: Math.min(
+          Number.isFinite(minX) ? minX : renderedX - 10,
+          noteBounds?.minX ?? Number.POSITIVE_INFINITY,
+        ),
         minY,
+        pitchLayouts,
         staffId: staff.id,
         x: renderedX,
         y: (minY + maxY) / 2,
@@ -508,6 +639,166 @@ function appendSvgText({
   return textElement;
 }
 
+type AnnotationKind =
+  | 'chordSymbol'
+  | 'dynamic'
+  | 'fermata'
+  | 'lyric'
+  | 'pedal'
+  | 'sectionMarker';
+
+interface AnnotationBounds {
+  maxX: number;
+  maxY: number;
+  minX: number;
+  minY: number;
+}
+
+interface AnnotationPlacement extends AnnotationBounds {
+  row: number;
+}
+
+const BELOW_STAFF_ANNOTATION_BASELINE = STAFF_LINE_SPACING * 4 + 30;
+const BELOW_STAFF_INK_GAP = 10;
+const BELOW_STAFF_ROW_GAP = 26;
+const ABOVE_STAFF_INK_GAP = 10;
+const ABOVE_STAFF_ROW_GAP = 26;
+const ANNOTATION_HORIZONTAL_GAP = 6;
+const MAX_ANNOTATION_ROW_ATTEMPTS = 8;
+
+const BELOW_STAFF_ROW_BY_ANNOTATION = {
+  dynamic: 1,
+  lyric: 0,
+  pedal: 2,
+} satisfies Record<'dynamic' | 'lyric' | 'pedal', number>;
+
+const ANNOTATION_METRICS = {
+  chordSymbol: { charWidth: 9.5, descent: 5, height: 20, minWidth: 22 },
+  dynamic: { charWidth: 9, descent: 5, height: 21, minWidth: 18 },
+  fermata: { charWidth: 14, descent: 5, height: 26, minWidth: 18 },
+  lyric: { charWidth: 8.2, descent: 5, height: 18, minWidth: 18 },
+  pedal: { charWidth: 8.5, descent: 5, height: 19, minWidth: 20 },
+  sectionMarker: { charWidth: 8, descent: 5, height: 20, minWidth: 34 },
+} satisfies Record<
+  AnnotationKind,
+  { charWidth: number; descent: number; height: number; minWidth: number }
+>;
+
+function getAnnotationBounds({
+  kind,
+  text,
+  x,
+  y,
+}: {
+  kind: AnnotationKind;
+  text: string;
+  x: number;
+  y: number;
+}): AnnotationBounds {
+  const metrics = ANNOTATION_METRICS[kind];
+  const width =
+    Math.max(metrics.minWidth, text.length * metrics.charWidth) +
+    ANNOTATION_HORIZONTAL_GAP * 2;
+
+  return {
+    maxX: x + width / 2,
+    maxY: y + metrics.descent,
+    minX: x - width / 2,
+    minY: y - metrics.height,
+  };
+}
+
+function doAnnotationBoundsOverlap(
+  first: AnnotationBounds,
+  second: AnnotationBounds,
+) {
+  return (
+    first.minX < second.maxX &&
+    first.maxX > second.minX &&
+    first.minY < second.maxY &&
+    first.maxY > second.minY
+  );
+}
+
+function moveAnnotationBoundsY(bounds: AnnotationBounds, deltaY: number) {
+  return {
+    ...bounds,
+    maxY: bounds.maxY + deltaY,
+    minY: bounds.minY + deltaY,
+  };
+}
+
+function placeAnnotationInRows({
+  direction,
+  placements,
+  preferredBounds,
+  preferredRow,
+}: {
+  direction: 'above' | 'below';
+  placements: AnnotationPlacement[];
+  preferredBounds: AnnotationBounds;
+  preferredRow: number;
+}) {
+  const rowGap =
+    direction === 'below' ? BELOW_STAFF_ROW_GAP : ABOVE_STAFF_ROW_GAP;
+  const rowDirection = direction === 'below' ? 1 : -1;
+
+  for (let offset = 0; offset < MAX_ANNOTATION_ROW_ATTEMPTS; offset += 1) {
+    const row = preferredRow + offset;
+    const bounds = moveAnnotationBoundsY(
+      preferredBounds,
+      rowDirection * offset * rowGap,
+    );
+    const hasCollision = placements.some((placement) =>
+      doAnnotationBoundsOverlap(bounds, placement),
+    );
+
+    if (!hasCollision) {
+      placements.push({ ...bounds, row });
+      return {
+        bounds,
+        row,
+      };
+    }
+  }
+
+  const fallbackOffset = MAX_ANNOTATION_ROW_ATTEMPTS;
+  const fallbackRow = preferredRow + fallbackOffset;
+  const fallbackBounds = moveAnnotationBoundsY(
+    preferredBounds,
+    rowDirection * fallbackOffset * rowGap,
+  );
+
+  placements.push({ ...fallbackBounds, row: fallbackRow });
+
+  return {
+    bounds: fallbackBounds,
+    row: fallbackRow,
+  };
+}
+
+function getMeasureEventLayoutBounds(
+  eventLayouts: Record<string, RenderedEventLayout>,
+  staffId: string,
+  measureIndex: number,
+) {
+  return combineRenderedBounds(
+    Object.values(eventLayouts)
+      .filter(
+        (layout) =>
+          layout.staffId === staffId &&
+          layout.measureIndex === measureIndex &&
+          !layout.isGeneratedRest,
+      )
+      .map((layout) => ({
+        maxX: layout.maxX,
+        maxY: layout.maxY,
+        minX: layout.minX,
+        minY: layout.minY,
+      })),
+  );
+}
+
 function drawTextAnnotations(
   container: HTMLDivElement,
   score: StaffRendererProps['score'],
@@ -540,6 +831,26 @@ function drawTextAnnotations(
   staves.forEach((staff, staffIndex) => {
     staff.measures.forEach((measure) => {
       const staffTop = getStaffTop(staffIndex, staffGap, measure.index, systemGap);
+      const staffBottom = staffTop + STAFF_LINE_SPACING * 4;
+      const measureInkBounds = getMeasureEventLayoutBounds(
+        eventLayouts,
+        staff.id,
+        measure.index,
+      );
+      const belowStaffBaseline = Math.max(
+        staffTop + BELOW_STAFF_ANNOTATION_BASELINE,
+        (measureInkBounds?.maxY ?? staffBottom) +
+          BELOW_STAFF_INK_GAP +
+          ANNOTATION_METRICS.lyric.height,
+      );
+      const chordSymbolBaseline = Math.min(
+        staffTop - 18,
+        (measureInkBounds?.minY ?? staffTop) -
+          ABOVE_STAFF_INK_GAP -
+          ANNOTATION_METRICS.chordSymbol.descent,
+      );
+      const aboveStaffPlacements: AnnotationPlacement[] = [];
+      const belowStaffPlacements: AnnotationPlacement[] = [];
 
       if (staffIndex === 0 && measure.sectionMarker) {
         const markerX = getMeasureContentLeft(measure.index, score) + 12;
@@ -557,6 +868,15 @@ function drawTextAnnotations(
         markerGroup.classList.add('sheetlab-section-marker');
         markerGroup.setAttribute('data-testid', 'rendered-section-marker');
         markerGroup.setAttribute('data-measure-index', String(measure.index));
+        aboveStaffPlacements.push({
+          ...getAnnotationBounds({
+            kind: 'sectionMarker',
+            text: measure.sectionMarker,
+            x: markerX,
+            y: markerY,
+          }),
+          row: 0,
+        });
         markerRect.setAttribute('x', (markerX - 9).toFixed(2));
         markerRect.setAttribute('y', (markerY - 15).toFixed(2));
         markerRect.setAttribute('width', markerWidth.toFixed(2));
@@ -586,72 +906,148 @@ function drawTextAnnotations(
           }
 
           if (event.chordSymbol) {
+            const placement = placeAnnotationInRows({
+              direction: 'above',
+              placements: aboveStaffPlacements,
+              preferredBounds: getAnnotationBounds({
+                kind: 'chordSymbol',
+                text: event.chordSymbol,
+                x: layout.x,
+                y: chordSymbolBaseline,
+              }),
+              preferredRow: 0,
+            });
+
             appendSvgText({
               className: 'sheetlab-chord-symbol',
               dataset: {
+                'data-annotation-row': String(placement.row),
                 'data-event-id': event.id,
                 'data-testid': 'rendered-chord-symbol',
               },
               svg,
               text: event.chordSymbol,
               x: layout.x,
-              y: staffTop - 18,
+              y: placement.bounds.maxY - ANNOTATION_METRICS.chordSymbol.descent,
             });
           }
 
           if (event.lyric) {
+            const placement = placeAnnotationInRows({
+              direction: 'below',
+              placements: belowStaffPlacements,
+              preferredBounds: getAnnotationBounds({
+                kind: 'lyric',
+                text: event.lyric,
+                x: layout.x,
+                y:
+                  belowStaffBaseline +
+                  BELOW_STAFF_ROW_BY_ANNOTATION.lyric * BELOW_STAFF_ROW_GAP,
+              }),
+              preferredRow: BELOW_STAFF_ROW_BY_ANNOTATION.lyric,
+            });
+
             appendSvgText({
               className: 'sheetlab-lyric',
               dataset: {
+                'data-annotation-row': String(placement.row),
                 'data-event-id': event.id,
                 'data-testid': 'rendered-lyric',
               },
               svg,
               text: event.lyric,
               x: layout.x,
-              y: staffTop + STAFF_LINE_SPACING * 4 + 30,
+              y: placement.bounds.maxY - ANNOTATION_METRICS.lyric.descent,
             });
           }
 
           if (event.dynamic) {
+            const placement = placeAnnotationInRows({
+              direction: 'below',
+              placements: belowStaffPlacements,
+              preferredBounds: getAnnotationBounds({
+                kind: 'dynamic',
+                text: event.dynamic,
+                x: layout.x,
+                y:
+                  belowStaffBaseline +
+                  BELOW_STAFF_ROW_BY_ANNOTATION.dynamic * BELOW_STAFF_ROW_GAP,
+              }),
+              preferredRow: BELOW_STAFF_ROW_BY_ANNOTATION.dynamic,
+            });
+
             appendSvgText({
               className: 'sheetlab-dynamic',
               dataset: {
+                'data-annotation-row': String(placement.row),
                 'data-event-id': event.id,
                 'data-testid': 'rendered-dynamic',
               },
               svg,
               text: event.dynamic,
               x: layout.x,
-              y: staffTop + STAFF_LINE_SPACING * 4 + 50,
+              y: placement.bounds.maxY - ANNOTATION_METRICS.dynamic.descent,
             });
           }
 
           if (event.fermata) {
+            const preferredY = Math.min(staffTop - 30, layout.minY - 18);
+            const placement = placeAnnotationInRows({
+              direction: 'above',
+              placements: aboveStaffPlacements,
+              preferredBounds: getAnnotationBounds({
+                kind: 'fermata',
+                text: FERMATA_SYMBOL,
+                x: layout.x,
+                y: preferredY,
+              }),
+              preferredRow: Math.max(
+                0,
+                Math.ceil((staffTop - 18 - preferredY) / ABOVE_STAFF_ROW_GAP),
+              ),
+            });
+
             appendSvgText({
               className: 'sheetlab-fermata',
               dataset: {
+                'data-annotation-row': String(placement.row),
                 'data-event-id': event.id,
                 'data-testid': 'rendered-fermata',
               },
               svg,
               text: FERMATA_SYMBOL,
               x: layout.x,
-              y: Math.min(staffTop - 30, layout.minY - 18),
+              y: placement.bounds.maxY - ANNOTATION_METRICS.fermata.descent,
             });
           }
 
           if (event.pedal) {
+            const pedalText = PEDAL_MARK_TEXT[event.pedal];
+            const placement = placeAnnotationInRows({
+              direction: 'below',
+              placements: belowStaffPlacements,
+              preferredBounds: getAnnotationBounds({
+                kind: 'pedal',
+                text: pedalText,
+                x: layout.x,
+                y:
+                  belowStaffBaseline +
+                  BELOW_STAFF_ROW_BY_ANNOTATION.pedal * BELOW_STAFF_ROW_GAP,
+              }),
+              preferredRow: BELOW_STAFF_ROW_BY_ANNOTATION.pedal,
+            });
+
             appendSvgText({
               className: 'sheetlab-pedal',
               dataset: {
+                'data-annotation-row': String(placement.row),
                 'data-event-id': event.id,
                 'data-testid': 'rendered-pedal',
               },
               svg,
-              text: PEDAL_MARK_TEXT[event.pedal],
+              text: pedalText,
               x: layout.x,
-              y: staffTop + STAFF_LINE_SPACING * 4 + 70,
+              y: placement.bounds.maxY - ANNOTATION_METRICS.pedal.descent,
             });
           }
 
@@ -758,6 +1154,19 @@ function syncVexFlowSelection(
       eventId !== null && activeEventIdSet.has(eventId),
     );
     element.classList.toggle('is-invalid-measure', isInvalidMeasure);
+  });
+
+  container.querySelectorAll('.vf-user-notehead').forEach((element) => {
+    const eventId = element.getAttribute('data-event-id');
+    const pitchIndex = Number(element.getAttribute('data-pitch-index'));
+    const isSelectedPitch =
+      eventId === selectedEventId &&
+      selectedPitchIndex !== null &&
+      selectedPitchIndex !== undefined &&
+      Number.isFinite(pitchIndex) &&
+      pitchIndex === selectedPitchIndex;
+
+    element.classList.toggle('is-selected-notehead', isSelectedPitch);
   });
 }
 

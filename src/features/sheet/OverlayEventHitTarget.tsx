@@ -255,19 +255,6 @@ export function EventHitTarget({
           y={y - targetHeight / 2}
         />
       </g>
-      {selectedEventId === event.id && selectedPitch && selectedPitchY !== null ? (
-        <ellipse
-          className="selected-notehead-overlay"
-          cx={x}
-          cy={selectedPitchY}
-          data-selection-style="notehead-color"
-          data-pitch-index={selectedPitchIndex ?? 0}
-          data-testid="selected-notehead"
-          rx={7.4}
-          ry={4.8}
-          transform={`rotate(-20 ${x} ${selectedPitchY})`}
-        />
-      ) : null}
       {selectedEventId === event.id ? (
         <g
           aria-label={deleteLabel}

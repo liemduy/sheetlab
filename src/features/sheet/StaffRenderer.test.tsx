@@ -766,7 +766,7 @@ describe('StaffRenderer', () => {
     expect(container.querySelectorAll('.score-event-notehead')).toHaveLength(0);
   });
 
-  it('selects the nearest notehead inside a chord column by pointer height', () => {
+  it('selects the nearest notehead inside a chord column by pointer height', async () => {
     const score = createEmptyScore('treble', { measureCount: 1 });
     const chord: ChordEvent = {
       id: 'ui-c-major',
@@ -804,19 +804,72 @@ describe('StaffRenderer', () => {
       />,
     );
 
-    const selectedNotehead = screen.getByTestId('selected-notehead');
-
-    expect(selectedNotehead).toHaveAttribute('data-pitch-index', '1');
-    expect(selectedNotehead).toHaveAttribute(
-      'data-selection-style',
-      'notehead-color',
-    );
-    expect(selectedNotehead).toHaveAttribute('transform');
+    await waitFor(() => {
+      expect(
+        container.querySelector(
+          '.vexflow-output .vf-user-notehead[data-event-id="ui-c-major"][data-pitch-index="1"].is-selected-notehead',
+        ),
+      ).not.toBeNull();
+    });
+    expect(screen.queryByTestId('selected-notehead')).not.toBeInTheDocument();
     expect(
       container.querySelector(
         '.vexflow-output .vf-user-event[data-event-id="ui-c-major"].is-selected',
       ),
     ).toBeNull();
+  });
+
+  it('highlights the actual displaced VexFlow notehead inside a second interval chord', async () => {
+    const score = createEmptyScore('treble', { measureCount: 1 });
+    const chord: ChordEvent = {
+      id: 'ui-second',
+      kind: 'chord',
+      beat: 0,
+      duration: 'quarter',
+      pitches: [
+        { step: 'C', octave: 4 },
+        { step: 'D', octave: 4 },
+      ],
+    };
+
+    score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events.push(chord);
+
+    const { container } = render(
+      <StaffRenderer
+        score={score}
+        selectedEventId="ui-second"
+        selectedPitchIndex={1}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelectorAll(
+          '.vexflow-output .vf-user-notehead[data-event-id="ui-second"]',
+        ),
+      ).toHaveLength(2);
+    });
+
+    const noteheads = [
+      ...container.querySelectorAll(
+        '.vexflow-output .vf-user-notehead[data-event-id="ui-second"]',
+      ),
+    ];
+    const selectedNotehead = container.querySelector(
+      '.vexflow-output .vf-user-notehead[data-event-id="ui-second"].is-selected-notehead',
+    );
+    const selectedX = Number(
+      selectedNotehead?.getAttribute('data-notehead-x'),
+    );
+    const rightmostX = Math.max(
+      ...noteheads.map((notehead) =>
+        Number(notehead.getAttribute('data-notehead-x')),
+      ),
+    );
+
+    expect(selectedNotehead).toHaveAttribute('data-pitch-index', '1');
+    expect(selectedX).toBeCloseTo(rightmostX, 2);
+    expect(screen.queryByTestId('selected-notehead')).not.toBeInTheDocument();
   });
 
   it('deletes only the selected pitch from a chord delete target', () => {
@@ -1816,6 +1869,156 @@ describe('StaffRenderer', () => {
       expect(screen.getByTestId('rendered-pedal')).toHaveTextContent('Ped.');
       expect(screen.getByTestId('rendered-glissando')).toBeInTheDocument();
     });
+  });
+
+  it('stacks lyric, dynamic, and pedal markings into separate below-staff rows', async () => {
+    const noteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'dense-annotation-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const score = tryUpdateScoreEvent(noteScore, 'dense-annotation-note', {
+      dynamic: 'mf',
+      lyric: 'sing',
+      pedal: 'start',
+    }).score;
+
+    render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-lyric')).toHaveTextContent('sing');
+      expect(screen.getByTestId('rendered-dynamic')).toHaveTextContent('mf');
+      expect(screen.getByTestId('rendered-pedal')).toHaveTextContent('Ped.');
+    });
+
+    const lyricY = Number(screen.getByTestId('rendered-lyric').getAttribute('y'));
+    const dynamicY = Number(screen.getByTestId('rendered-dynamic').getAttribute('y'));
+    const pedalY = Number(screen.getByTestId('rendered-pedal').getAttribute('y'));
+
+    expect(screen.getByTestId('rendered-lyric')).toHaveAttribute(
+      'data-annotation-row',
+      '0',
+    );
+    expect(screen.getByTestId('rendered-dynamic')).toHaveAttribute(
+      'data-annotation-row',
+      '1',
+    );
+    expect(screen.getByTestId('rendered-pedal')).toHaveAttribute(
+      'data-annotation-row',
+      '2',
+    );
+    expect(dynamicY - lyricY).toBeGreaterThanOrEqual(24);
+    expect(pedalY - dynamicY).toBeGreaterThanOrEqual(24);
+  });
+
+  it('places below-staff annotations under low note ink instead of the fixed staff bottom', async () => {
+    const lowPitch: Pitch = { step: 'A', octave: 3 };
+    const noteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'low-annotated-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'eighth',
+      entryMode: 'note',
+      pitch: lowPitch,
+    });
+    const score = tryUpdateScoreEvent(noteScore, 'low-annotated-note', {
+      dynamic: 'mf',
+      lyric: 'cc',
+      pedal: 'start',
+    }).score;
+
+    render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-lyric')).toHaveTextContent('cc');
+      expect(screen.getByTestId('rendered-dynamic')).toHaveTextContent('mf');
+      expect(screen.getByTestId('rendered-pedal')).toHaveTextContent('Ped.');
+    });
+
+    const lyricY = Number(screen.getByTestId('rendered-lyric').getAttribute('y'));
+    const dynamicY = Number(screen.getByTestId('rendered-dynamic').getAttribute('y'));
+    const pedalY = Number(screen.getByTestId('rendered-pedal').getAttribute('y'));
+    const lowPitchY = getPitchY(lowPitch, 'treble', 0);
+
+    expect(lyricY).toBeGreaterThan(lowPitchY + 24);
+    expect(dynamicY - lyricY).toBeGreaterThanOrEqual(24);
+    expect(pedalY - dynamicY).toBeGreaterThanOrEqual(24);
+  });
+
+  it('widens the grand staff gap so treble annotations do not overlap the bass staff', async () => {
+    const noteScore = placeScoreEvent(createEmptyScore('grand'), {
+      eventId: 'grand-low-annotated-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'A', octave: 3 },
+    });
+    const score = tryUpdateScoreEvent(noteScore, 'grand-low-annotated-note', {
+      dynamic: 'mf',
+      lyric: 'cc',
+      pedal: 'start',
+    }).score;
+
+    render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-pedal')).toHaveTextContent('Ped.');
+    });
+
+    const staffGap = getScoreStaffGap(score);
+    const bassTop = getStaffTop(1, staffGap, 0, getScoreSystemGap(score));
+    const pedalBaselineY = Number(
+      screen.getByTestId('rendered-pedal').getAttribute('y'),
+    );
+
+    expect(staffGap).toBeGreaterThan(STAFF_GAP);
+    expect(pedalBaselineY + 6).toBeLessThan(bassTop - 8);
+  });
+
+  it('moves nearby long lyrics to another row when they would overlap', async () => {
+    const firstNoteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'lyric-note-1',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const secondNoteScore = placeScoreEvent(firstNoteScore, {
+      eventId: 'lyric-note-2',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0.5,
+      duration: 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'D', octave: 4 },
+    });
+    const firstLyricScore = tryUpdateScoreEvent(secondNoteScore, 'lyric-note-1', {
+      lyric: 'overlapping',
+    }).score;
+    const score = tryUpdateScoreEvent(firstLyricScore, 'lyric-note-2', {
+      lyric: 'syllables',
+    }).score;
+
+    render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('rendered-lyric')).toHaveLength(2);
+    });
+
+    const lyricRows = screen
+      .getAllByTestId('rendered-lyric')
+      .map((node) => node.getAttribute('data-annotation-row'));
+
+    expect(new Set(lyricRows).size).toBeGreaterThan(1);
   });
 
   it('renders the real-world piano excerpt fixture annotations', async () => {

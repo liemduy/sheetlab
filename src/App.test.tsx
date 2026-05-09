@@ -337,8 +337,8 @@ describe('App editor state', () => {
     expect(screen.queryByLabelText('Note C4 measure 1 beat 1')).not.toBeInTheDocument();
   });
 
-  it('selects and deletes one notehead inside a chord column', () => {
-    render(<App />);
+  it('selects and deletes one notehead inside a chord column', async () => {
+    const { container } = render(<App />);
     startWriting();
 
     const overlay = screen.getByTestId('staff-renderer');
@@ -362,10 +362,14 @@ describe('App editor state', () => {
       clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
     });
 
-    expect(screen.getByTestId('selected-notehead')).toHaveAttribute(
-      'data-pitch-index',
-      '1',
-    );
+    await waitFor(() => {
+      expect(
+        container.querySelector(
+          '.vexflow-output .vf-user-notehead[data-event-id="event-3"][data-pitch-index="1"].is-selected-notehead',
+        ),
+      ).not.toBeNull();
+    });
+    expect(screen.queryByTestId('selected-notehead')).not.toBeInTheDocument();
     expect(
       within(screen.getByLabelText('Current editor state')).getByText(
         'event-3 pitch 2',

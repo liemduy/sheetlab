@@ -834,6 +834,12 @@ button {
   stroke: #b42318 !important;
 }
 
+.vexflow-output .vf-user-notehead.is-selected-notehead,
+.vexflow-output .vf-user-notehead.is-selected-notehead * {
+  fill: var(--accent-strong) !important;
+  stroke: var(--accent-strong) !important;
+}
+
 .notation-overlay {
   z-index: 2;
 }
@@ -999,14 +1005,6 @@ button {
 .score-event-hit.is-input-armed,
 .score-event-hit.is-input-armed .score-event-target {
   pointer-events: none;
-}
-
-.selected-notehead-overlay {
-  fill: var(--accent-strong);
-  opacity: 0.96;
-  pointer-events: none;
-  stroke: none;
-  vector-effect: non-scaling-stroke;
 }
 
 .score-event-visual {

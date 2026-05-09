@@ -29,6 +29,19 @@ export const VEXFLOW_STAVE_TOP_LINE_OFFSET = 44.5;
 const STAFF_DYNAMIC_PADDING = 28;
 const TREBLE_SYSTEM_GAP = 170;
 const GRAND_SYSTEM_PADDING = 152;
+const ANNOTATION_ROW_GAP = 26;
+const BELOW_STAFF_ANNOTATION_BASELINE = STAFF_LINE_SPACING * 4 + 30;
+const BELOW_STAFF_ANNOTATION_DESCENT = 5;
+const BELOW_STAFF_ANNOTATION_INK_GAP = 10;
+const BELOW_STAFF_ANNOTATION_TEXT_HEIGHT = 18;
+const BELOW_STAFF_NOTE_INK_ESTIMATE = 80;
+const ABOVE_STAFF_ANNOTATION_DESCENT = 5;
+const ABOVE_STAFF_ANNOTATION_GAP = 10;
+const ABOVE_STAFF_CHORD_SYMBOL_HEIGHT = 20;
+const ABOVE_STAFF_FERMATA_HEIGHT = 26;
+
+type ScoreMeasure = Score['parts'][number]['staves'][number]['measures'][number];
+type PitchBounds = { maxY: number; minY: number };
 
 function getPitchYRelativeToStaffTop(pitch: Pitch, clef: Clef) {
   const topLineValue = pitchToDiatonicValue(TOP_LINE_BY_CLEF[clef]);
@@ -67,6 +80,136 @@ function getStaffPitchBounds(score: Score, staffIndex: number) {
   };
 }
 
+function getMeasureBelowAnnotationRow(measure: ScoreMeasure) {
+  const rowCounts = new Map<number, number>();
+  let maxBaseRow = -1;
+
+  measure.voices.forEach((voice) => {
+    voice.events.forEach((event) => {
+      if (isGeneratedRestEvent(event)) {
+        return;
+      }
+
+      const rows = [
+        event.lyric ? 0 : null,
+        event.dynamic ? 1 : null,
+        event.pedal ? 2 : null,
+      ].filter((row): row is number => row !== null);
+
+      rows.forEach((row) => {
+        maxBaseRow = Math.max(maxBaseRow, row);
+        rowCounts.set(row, (rowCounts.get(row) ?? 0) + 1);
+      });
+    });
+  });
+
+  if (maxBaseRow < 0) {
+    return -1;
+  }
+
+  const collisionRows = Math.max(
+    0,
+    ...[...rowCounts.values()].map((count) => count - 1),
+  );
+
+  return maxBaseRow + collisionRows;
+}
+
+function getStaffBelowAnnotationRow(score: Score, staffIndex: number) {
+  const staff = score.parts[0]?.staves[staffIndex];
+
+  return Math.max(
+    -1,
+    ...(staff?.measures.map(getMeasureBelowAnnotationRow) ?? []),
+  );
+}
+
+function getMeasureAboveAnnotationRow(measure: ScoreMeasure) {
+  let annotationCount = 0;
+
+  measure.voices.forEach((voice) => {
+    voice.events.forEach((event) => {
+      if (isGeneratedRestEvent(event)) {
+        return;
+      }
+
+      if (event.chordSymbol) {
+        annotationCount += 1;
+      }
+
+      if (event.fermata) {
+        annotationCount += 1;
+      }
+    });
+  });
+
+  return annotationCount > 0 ? annotationCount - 1 : -1;
+}
+
+function getStaffAboveAnnotationRow(score: Score, staffIndex: number) {
+  const staff = score.parts[0]?.staves[staffIndex];
+
+  return Math.max(
+    -1,
+    ...(staff?.measures.map(getMeasureAboveAnnotationRow) ?? []),
+  );
+}
+
+function getStaffBelowAnnotationBottomExtent(
+  score: Score,
+  staffIndex: number,
+  pitchBounds: PitchBounds,
+) {
+  const maxAnnotationRow = getStaffBelowAnnotationRow(score, staffIndex);
+
+  if (maxAnnotationRow < 0) {
+    return pitchBounds.maxY;
+  }
+
+  const estimatedInkBottom = Math.max(
+    STAFF_LINE_SPACING * 4,
+    pitchBounds.maxY + BELOW_STAFF_NOTE_INK_ESTIMATE,
+  );
+  const baseline = Math.max(
+    BELOW_STAFF_ANNOTATION_BASELINE,
+    estimatedInkBottom +
+      BELOW_STAFF_ANNOTATION_INK_GAP +
+      BELOW_STAFF_ANNOTATION_TEXT_HEIGHT,
+  );
+
+  return (
+    baseline +
+    maxAnnotationRow * ANNOTATION_ROW_GAP +
+    BELOW_STAFF_ANNOTATION_DESCENT
+  );
+}
+
+function getStaffAboveAnnotationExtent(
+  score: Score,
+  staffIndex: number,
+  pitchBounds: PitchBounds,
+) {
+  const maxAnnotationRow = getStaffAboveAnnotationRow(score, staffIndex);
+
+  if (maxAnnotationRow < 0) {
+    return Math.max(0, -pitchBounds.minY);
+  }
+
+  const chordSymbolTop =
+    Math.min(
+      -18,
+      pitchBounds.minY -
+        ABOVE_STAFF_ANNOTATION_GAP -
+        ABOVE_STAFF_ANNOTATION_DESCENT,
+    ) - ABOVE_STAFF_CHORD_SYMBOL_HEIGHT;
+  const fermataTop =
+    Math.min(-30, pitchBounds.minY - 18) - ABOVE_STAFF_FERMATA_HEIGHT;
+  const annotationTop =
+    Math.min(chordSymbolTop, fermataTop) - maxAnnotationRow * ANNOTATION_ROW_GAP;
+
+  return Math.max(0, -pitchBounds.minY, -annotationTop);
+}
+
 export function getScoreStaffGap(score: Score | ScoreType) {
   if (score === 'treble' || score === 'grand') {
     return STAFF_GAP;
@@ -81,15 +224,21 @@ export function getScoreStaffGap(score: Score | ScoreType) {
   const trebleBelowStaff = Math.max(0, trebleBounds.maxY - STAFF_LINE_SPACING * 4);
   const bassAboveStaff = Math.max(0, -bassBounds.minY);
   const extraGap = trebleBelowStaff + bassAboveStaff;
-
-  if (extraGap === 0) {
-    return STAFF_GAP;
-  }
-
-  return Math.max(
-    STAFF_GAP,
-    STAFF_GAP + extraGap + STAFF_DYNAMIC_PADDING,
+  const pitchDrivenGap =
+    extraGap === 0 ? STAFF_GAP : STAFF_GAP + extraGap + STAFF_DYNAMIC_PADDING;
+  const trebleBottomExtent = Math.max(
+    STAFF_LINE_SPACING * 4,
+    trebleBounds.maxY,
+    getStaffBelowAnnotationBottomExtent(score, 0, trebleBounds),
   );
+  const bassAboveExtent = Math.max(
+    bassAboveStaff,
+    getStaffAboveAnnotationExtent(score, 1, bassBounds),
+  );
+  const annotationDrivenGap =
+    trebleBottomExtent + bassAboveExtent + STAFF_DYNAMIC_PADDING;
+
+  return Math.max(STAFF_GAP, pitchDrivenGap, annotationDrivenGap);
 }
 
 function getScoreMeasureCount(score: Score | ScoreType) {
