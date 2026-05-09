@@ -161,6 +161,7 @@ export function SheetSurface({
             selectedEventId={selectedEventId}
             selectedPitchIndex={selectedPitchIndex}
             score={score}
+            voiceIndex={toolState.voiceIndex}
             onClearInteraction={onClearInteraction}
             onHoverPositionChange={onHoverPositionChange}
             onPlaceAtPosition={onPlaceAtPosition}

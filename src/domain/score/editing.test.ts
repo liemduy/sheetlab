@@ -21,19 +21,21 @@ function getVoiceEvents(
   score: Score,
   staffId: StaffId = 'treble',
   measureIndex = 0,
+  voiceIndex = 0,
 ) {
   return score.parts[0]?.staves
     .find((staff) => staff.id === staffId)
     ?.measures.find((measure) => measure.index === measureIndex)
-    ?.voices[0]?.events;
+    ?.voices[voiceIndex]?.events;
 }
 
 function getPitchedEvents(
   score: Score,
   staffId: StaffId = 'treble',
   measureIndex = 0,
+  voiceIndex = 0,
 ) {
-  return getVoiceEvents(score, staffId, measureIndex)?.filter(
+  return getVoiceEvents(score, staffId, measureIndex, voiceIndex)?.filter(
     (event) => event.kind !== 'rest',
   );
 }
@@ -417,6 +419,74 @@ describe('score editing', () => {
       ],
     });
     expectMeasureEventsFillMeasure(nextScore);
+  });
+
+  it('places same-beat events into independent voices when requested', () => {
+    const voiceOneScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'event-voice-1',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+      voiceIndex: 0,
+    });
+    const nextScore = placeScoreEvent(voiceOneScore, {
+      eventId: 'event-voice-2',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+      voiceIndex: 1,
+    });
+
+    expect(getPitchedEvents(nextScore, 'treble', 0, 0)).toMatchObject([
+      {
+        id: 'event-voice-1',
+        kind: 'note',
+        pitch: { step: 'C', octave: 4 },
+      },
+    ]);
+    expect(getPitchedEvents(nextScore, 'treble', 0, 1)).toMatchObject([
+      {
+        id: 'event-voice-2',
+        kind: 'note',
+        pitch: { step: 'E', octave: 4 },
+      },
+    ]);
+    expect(findScoreEvent(nextScore, 'event-voice-2')).toMatchObject({
+      measureIndex: 0,
+      staffId: 'treble',
+      voiceIndex: 1,
+    });
+  });
+
+  it('updates events in their original voice by default', () => {
+    const score = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'event-voice-2-update',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+      voiceIndex: 1,
+    });
+    const result = tryUpdateScoreEvent(score, 'event-voice-2-update', {
+      duration: 'half',
+    });
+
+    expect(result.updated).toBe(true);
+    expect(findScoreEvent(result.score, 'event-voice-2-update')).toMatchObject({
+      voiceIndex: 1,
+      event: {
+        duration: 'half',
+      },
+    });
+    expect(getVoiceEvents(result.score, 'treble', 0, 0)).toEqual([]);
   });
 
   it('replaces a same-start event when the selected duration changes', () => {

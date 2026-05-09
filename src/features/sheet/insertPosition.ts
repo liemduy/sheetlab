@@ -10,12 +10,13 @@ function roundBeat(beat: number) {
 export function snapInsertPositionToEventBoundary(
   score: Score,
   position: MusicPosition,
+  voiceIndex = 0,
 ): MusicPosition {
   const targetVoice = score.parts
     .flatMap((part) => part.staves)
     .find((staff) => staff.id === position.staffId)
     ?.measures.find((measure) => measure.index === position.measureIndex)
-    ?.voices[0];
+    ?.voices[voiceIndex];
 
   if (!targetVoice) {
     return position;

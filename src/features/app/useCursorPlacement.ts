@@ -103,7 +103,7 @@ export function useCursorPlacement({
         isCursorSequenceLockedRef.current,
         position,
       ) &&
-      !hasPitchedEventAtPosition(score, position)
+      !hasPitchedEventAtPosition(score, position, toolState.voiceIndex)
         ? inputCursor
         : null;
     const sequentialPlacementPosition =
@@ -112,7 +112,7 @@ export function useCursorPlacement({
         : position;
     const placementPosition =
       toolState.placementMode === 'insert'
-        ? snapInsertPositionToEventBoundary(score, position)
+        ? snapInsertPositionToEventBoundary(score, position, toolState.voiceIndex)
         : sequentialPlacementPosition;
     const accidental =
       toolState.accidental === 'none' ? undefined : toolState.accidental;
@@ -128,6 +128,7 @@ export function useCursorPlacement({
       measureIndex: placementPosition.measureIndex,
       pitch: placementPosition.pitch,
       staffId: placementPosition.staffId,
+      voiceIndex: toolState.voiceIndex,
     };
     const result =
       toolState.placementMode === 'insert'
@@ -160,6 +161,7 @@ export function useCursorPlacement({
           placementPosition,
           toolState.duration,
           toolState.dots,
+          toolState.voiceIndex,
         ),
       );
       setCursorSequenceLocked(true);

@@ -32,13 +32,14 @@ function getMeasureVoiceEvents(
   score: Score,
   staffId: StaffId,
   measureIndex: number,
+  voiceIndex = 0,
 ) {
   return (
     score.parts
       .flatMap((part) => part.staves)
       .find((staff) => staff.id === staffId)
       ?.measures.find((measure) => measure.index === measureIndex)
-      ?.voices[0]?.events ?? []
+      ?.voices[voiceIndex]?.events ?? []
   );
 }
 
@@ -73,8 +74,9 @@ export function getRhythmSlotsForMeasure(
   score: Score,
   staffId: StaffId,
   measureIndex: number,
+  voiceIndex = 0,
 ): RhythmSlot[] {
-  const events = getMeasureVoiceEvents(score, staffId, measureIndex);
+  const events = getMeasureVoiceEvents(score, staffId, measureIndex, voiceIndex);
 
   if (events.length === 0) {
     return createVirtualEmptyMeasureSlots(score, staffId, measureIndex);
@@ -113,11 +115,16 @@ export function getRawBeatFromMeasureX(score: Score, measureIndex: number, x: nu
   );
 }
 
-export function findRhythmSlotAtPosition(score: Score, position: MusicPosition) {
+export function findRhythmSlotAtPosition(
+  score: Score,
+  position: MusicPosition,
+  voiceIndex = 0,
+) {
   const slots = getRhythmSlotsForMeasure(
     score,
     position.staffId,
     position.measureIndex,
+    voiceIndex,
   );
 
   if (slots.length === 0) {
@@ -145,6 +152,7 @@ export function findNextRhythmSlotAfter(
   staffId: StaffId,
   measureIndex: number,
   beat: number,
+  voiceIndex = 0,
 ) {
   const staff = score.parts
     .flatMap((part) => part.staves)
@@ -159,7 +167,12 @@ export function findNextRhythmSlotAfter(
     currentMeasureIndex < staff.measures.length;
     currentMeasureIndex += 1
   ) {
-    const slots = getRhythmSlotsForMeasure(score, staffId, currentMeasureIndex);
+    const slots = getRhythmSlotsForMeasure(
+      score,
+      staffId,
+      currentMeasureIndex,
+      voiceIndex,
+    );
     const minBeat =
       currentMeasureIndex === measureIndex ? beat + SLOT_EPSILON : -SLOT_EPSILON;
     const nextSlot = slots.find((slot) => slot.beat > minBeat);
@@ -175,8 +188,9 @@ export function findNextRhythmSlotAfter(
 export function snapPositionToRhythmSlot(
   score: Score,
   position: MusicPosition,
+  voiceIndex = 0,
 ): MusicPosition {
-  const slot = findRhythmSlotAtPosition(score, position);
+  const slot = findRhythmSlotAtPosition(score, position, voiceIndex);
 
   return slot
     ? {

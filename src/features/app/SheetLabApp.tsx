@@ -13,6 +13,7 @@ import {
 } from '../../domain/score/editing';
 import { getActiveKeySignatureSelection } from '../../domain/score/keySignatures';
 import type {
+  EditableVoiceIndex,
   EditorToolState,
   EntryMode,
   PlacementMode,
@@ -375,6 +376,11 @@ function SheetLabApp() {
     updateToolState({ entryMode });
   }
 
+  function handleVoiceIndexChange(voiceIndex: EditableVoiceIndex) {
+    updateToolState({ voiceIndex });
+    setCursorSequenceLocked(false);
+  }
+
   function handlePlacementModeChange(placementMode: PlacementMode) {
     updateToolState({ placementMode });
     setCursorSequenceLocked(false);
@@ -389,7 +395,15 @@ function SheetLabApp() {
   }
 
   function handleSelectEvent(eventId: string, pitchIndex?: number | null) {
-    updateToolState({ isInputArmed: false });
+    const foundEvent = findScoreEvent(score, eventId);
+
+    updateToolState({
+      isInputArmed: false,
+      voiceIndex:
+        foundEvent?.voiceIndex === 1 || foundEvent?.voiceIndex === 0
+          ? foundEvent.voiceIndex
+          : toolState.voiceIndex,
+    });
     clearPointerState();
     selectEvent(eventId, pitchIndex ?? null);
     setEditorMessage(
@@ -538,6 +552,7 @@ function SheetLabApp() {
           onSaveProject={handleSaveProject}
           onTimeSignatureChange={handleTimeSignatureChange}
           onUndo={handleUndo}
+          onVoiceIndexChange={handleVoiceIndexChange}
         />
       </header>
 

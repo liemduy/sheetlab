@@ -42,6 +42,7 @@ export interface StaffRendererProps {
   placementMode?: PlacementMode;
   inputCursor?: InputCursor | null;
   invalidMeasureKeys?: readonly string[];
+  voiceIndex?: number;
 }
 
 export function StaffRenderer(props: StaffRendererProps) {

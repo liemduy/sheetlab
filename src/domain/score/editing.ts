@@ -24,6 +24,7 @@ import {
 } from './measureEvents';
 import { ensureMeasureCount } from './measureEditing';
 import { getMeasureBeats } from './timeSignatures';
+import { ensureMeasureVoiceCount, normalizeVoiceIndex } from './voices';
 
 export {
   addMeasure,
@@ -49,6 +50,7 @@ export interface PlaceScoreEventRequest {
   pitch: Pitch;
   accidental?: Accidental;
   dots?: number;
+  voiceIndex?: number;
 }
 
 export interface PlaceScoreEventResult {
@@ -66,6 +68,7 @@ export interface UpdateScoreEventRequest {
   pitchIndex?: number;
   staffId?: StaffId;
   dots?: number;
+  voiceIndex?: number;
 }
 
 export interface UpdateScoreEventResult {
@@ -250,19 +253,26 @@ function getTargetVoice(
   score: Score,
   staffId: StaffId,
   measureIndex: number,
+  voiceIndex = 0,
 ) {
+  const normalizedVoiceIndex = normalizeVoiceIndex(voiceIndex);
   const targetStaff = score.parts
     .flatMap((part) => part.staves)
     .find((staff) => staff.id === staffId);
   const targetMeasure = targetStaff?.measures.find(
     (measure) => measure.index === measureIndex,
   );
-  const targetVoice = targetMeasure?.voices[0];
+  const targetMeasureWithVoice = targetMeasure
+    ? ensureMeasureVoiceCount(targetMeasure, staffId, normalizedVoiceIndex)
+    : undefined;
+  const targetVoice = targetMeasureWithVoice?.voices[normalizedVoiceIndex];
 
   return {
     targetMeasure,
+    targetMeasureWithVoice,
     targetStaff,
     targetVoice,
+    voiceIndex: normalizedVoiceIndex,
   };
 }
 
@@ -271,15 +281,22 @@ function writeScoreEvent(
   staffId: StaffId,
   measureIndex: number,
   nextEvent: ScoreEvent,
-  options: { allowSameStartPitchedReplacement: boolean },
+  options: { allowSameStartPitchedReplacement: boolean; voiceIndex?: number },
 ): PlaceScoreEventResult {
-  const { targetMeasure, targetStaff, targetVoice } = getTargetVoice(
+  const {
+    targetMeasure,
+    targetMeasureWithVoice,
+    targetStaff,
+    targetVoice,
+    voiceIndex: targetVoiceIndex,
+  } = getTargetVoice(
     score,
     staffId,
     measureIndex,
+    options.voiceIndex,
   );
 
-  if (!targetStaff || !targetMeasure || !targetVoice) {
+  if (!targetStaff || !targetMeasure || !targetMeasureWithVoice || !targetVoice) {
     return {
       score,
       placed: false,
@@ -353,8 +370,8 @@ function writeScoreEvent(
                 measure.index === measureIndex
                   ? {
                       ...measure,
-                      voices: measure.voices.map((voice, voiceIndex) =>
-                        voiceIndex === 0
+                      voices: targetMeasureWithVoice.voices.map((voice, voiceIndex) =>
+                        voiceIndex === targetVoiceIndex
                           ? {
                               ...voice,
                               events: nextVoiceEvents,
@@ -385,6 +402,7 @@ export function tryPlaceScoreEvent(
     score,
     request.staffId,
     request.measureIndex,
+    request.voiceIndex,
   );
   const sameSlotPitchedEvent = targetVoice?.events.find(
     (event) =>
@@ -403,9 +421,16 @@ export function tryPlaceScoreEvent(
         )
       : candidateEvent;
 
-  return writeScoreEvent(score, request.staffId, request.measureIndex, nextEvent, {
-    allowSameStartPitchedReplacement: true,
-  });
+  return writeScoreEvent(
+    score,
+    request.staffId,
+    request.measureIndex,
+    nextEvent,
+    {
+      allowSameStartPitchedReplacement: true,
+      voiceIndex: request.voiceIndex,
+    },
+  );
 }
 
 export function placeScoreEvent(score: Score, request: PlaceScoreEventRequest) {
@@ -426,9 +451,13 @@ export function tryInsertScoreEvent(
   const targetMeasure = targetStaff?.measures.find(
     (measure) => measure.index === request.measureIndex,
   );
-  const targetVoice = targetMeasure?.voices[0];
+  const targetVoiceIndex = normalizeVoiceIndex(request.voiceIndex);
+  const targetMeasureWithVoice = targetMeasure
+    ? ensureMeasureVoiceCount(targetMeasure, request.staffId, targetVoiceIndex)
+    : undefined;
+  const targetVoice = targetMeasureWithVoice?.voices[targetVoiceIndex];
 
-  if (!targetStaff || !targetMeasure || !targetVoice) {
+  if (!targetStaff || !targetMeasure || !targetMeasureWithVoice || !targetVoice) {
     return {
       score,
       placed: false,
@@ -453,7 +482,8 @@ export function tryInsertScoreEvent(
   const insertGlobalBeat = request.measureIndex * beatsPerMeasure + request.beat;
   const insertDuration = getDurationBeats(request.duration, request.dots ?? 0);
   const flatEvents = targetStaff.measures.flatMap((measure) =>
-    measure.voices[0]?.events.map((event) => ({
+    ensureMeasureVoiceCount(measure, request.staffId, targetVoiceIndex)
+      .voices[targetVoiceIndex]?.events.map((event) => ({
       event,
       globalBeat: measure.index * beatsPerMeasure + event.beat,
     })) ?? [],
@@ -510,8 +540,12 @@ export function tryInsertScoreEvent(
                 ...staff,
                 measures: staff.measures.map((measure) => ({
                   ...measure,
-                  voices: measure.voices.map((voice, voiceIndex) =>
-                        voiceIndex === 0
+                  voices: ensureMeasureVoiceCount(
+                    measure,
+                    staff.id,
+                    targetVoiceIndex,
+                  ).voices.map((voice, voiceIndex) =>
+                        voiceIndex === targetVoiceIndex
                           ? {
                               ...voice,
                               events: materializeMeasureEvents(
@@ -682,7 +716,7 @@ export function findScoreEvent(score: Score, eventId: string) {
   for (const part of score.parts) {
     for (const staff of part.staves) {
       for (const measure of staff.measures) {
-        for (const voice of measure.voices) {
+        for (const [voiceIndex, voice] of measure.voices.entries()) {
           const event = voice.events.find((candidate) => candidate.id === eventId);
 
           if (event) {
@@ -690,6 +724,7 @@ export function findScoreEvent(score: Score, eventId: string) {
               event,
               measureIndex: measure.index,
               staffId: staff.id,
+              voiceIndex,
             };
           }
         }
@@ -720,6 +755,7 @@ export function tryUpdateScoreEvent(
   const targetStaffId = update.staffId ?? found.staffId;
   const targetMeasureIndex = update.measureIndex ?? found.measureIndex;
   const targetBeat = update.beat ?? found.event.beat;
+  const targetVoiceIndex = update.voiceIndex ?? found.voiceIndex;
   const candidateEvent = createUpdatedScoreEvent(
     found.event,
     eventId,
@@ -734,6 +770,7 @@ export function tryUpdateScoreEvent(
     candidateEvent,
     {
       allowSameStartPitchedReplacement: false,
+      voiceIndex: targetVoiceIndex,
     },
   );
 

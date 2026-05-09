@@ -1,5 +1,6 @@
 import type { Measure, Score, Staff, StaffId } from './types';
 import { materializeMeasureEvents } from './measureEvents';
+import { createVoiceId } from './voices';
 
 function createEmptyMeasure(staff: Staff, index: number): Measure {
   return {
@@ -7,7 +8,7 @@ function createEmptyMeasure(staff: Staff, index: number): Measure {
     index,
     voices: [
       {
-        id: `voice-${staff.id}-${index + 1}-main`,
+        id: createVoiceId(staff.id, index, 0),
         events: [],
       },
     ],
@@ -65,7 +66,7 @@ function reindexStaffMeasures(
       ...voice,
       id:
         voiceIndex === 0
-          ? `voice-${staff.id}-${index + 1}-main`
+          ? createVoiceId(staff.id, index, 0)
           : `${voice.id}-m${index + 1}`,
       events:
         voice.events.length > 0

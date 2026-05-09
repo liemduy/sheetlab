@@ -11,6 +11,8 @@ export type PlacementMode = 'place' | 'insert';
 
 export type AccidentalChoice = Accidental | 'none';
 
+export type EditableVoiceIndex = 0 | 1;
+
 export interface EditorToolState {
   scoreType: ScoreType;
   duration: DurationValue;
@@ -20,6 +22,7 @@ export interface EditorToolState {
   accidental: AccidentalChoice;
   isInputArmed: boolean;
   tempo: number;
+  voiceIndex: EditableVoiceIndex;
 }
 
 export const DURATION_OPTIONS: DurationValue[] = [
@@ -31,6 +34,8 @@ export const DURATION_OPTIONS: DurationValue[] = [
   'thirtySecond',
 ];
 
+export const VOICE_OPTIONS: EditableVoiceIndex[] = [0, 1];
+
 export const DEFAULT_EDITOR_TOOL_STATE: EditorToolState = {
   scoreType: 'grand',
   duration: 'quarter',
@@ -40,6 +45,7 @@ export const DEFAULT_EDITOR_TOOL_STATE: EditorToolState = {
   accidental: 'none',
   isInputArmed: false,
   tempo: 96,
+  voiceIndex: 0,
 };
 
 export const DURATION_LABEL: Record<DurationValue, string> = {
@@ -87,4 +93,9 @@ export const ACCIDENTAL_SYMBOL: Record<AccidentalChoice, string> = {
   natural: '\u266e',
   sharp: '\u266f',
   flat: '\u266d',
+};
+
+export const VOICE_LABEL: Record<EditableVoiceIndex, string> = {
+  0: 'Voice 1',
+  1: 'Voice 2',
 };

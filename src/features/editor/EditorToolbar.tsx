@@ -21,6 +21,7 @@ import {
 } from '../../domain/score/timeSignatures';
 import type {
   AccidentalChoice,
+  EditableVoiceIndex,
   EditorToolState,
   EntryMode,
   PlacementMode,
@@ -32,6 +33,8 @@ import {
   DURATION_OPTIONS,
   DURATION_SYMBOL,
   PLACEMENT_MODE_LABEL,
+  VOICE_LABEL,
+  VOICE_OPTIONS,
 } from './editorState';
 
 export const ZOOM_MIN = 70;
@@ -213,6 +216,7 @@ interface EditorToolbarProps {
   onSaveProject: () => void;
   onTimeSignatureChange: (value: string) => void;
   onUndo: () => void;
+  onVoiceIndexChange: (voiceIndex: EditableVoiceIndex) => void;
 }
 
 export function EditorToolbar({
@@ -252,6 +256,7 @@ export function EditorToolbar({
   onSaveProject,
   onTimeSignatureChange,
   onUndo,
+  onVoiceIndexChange,
 }: EditorToolbarProps) {
   return (
     <nav className="toolbar" aria-label="Editor toolbar">
@@ -467,6 +472,24 @@ export function EditorToolbar({
             <span className="tool-symbol" aria-hidden="true">
               {entryMode === 'note' ? '\u2669' : String.fromCodePoint(0x1d13d)}
             </span>
+          </button>
+        ))}
+      </div>
+      <div className="toolbar-group" aria-label="Voice tools">
+        <span className="toolbar-group-label">Voice</span>
+        {VOICE_OPTIONS.map((voiceIndex) => (
+          <button
+            key={voiceIndex}
+            type="button"
+            aria-label={VOICE_LABEL[voiceIndex]}
+            className={`tool-button${
+              toolState.voiceIndex === voiceIndex ? ' is-active' : ''
+            }`}
+            aria-pressed={toolState.voiceIndex === voiceIndex}
+            title={`${VOICE_LABEL[voiceIndex]} entry lane`}
+            onClick={() => onVoiceIndexChange(voiceIndex)}
+          >
+            V{voiceIndex + 1}
           </button>
         ))}
       </div>

@@ -209,19 +209,21 @@ function StaffLines({
       })}
 
       {staff.measures.flatMap((measure) =>
-        measure.voices[0]?.events.map((event) => (
-          <EventGlyph
-            key={event.id}
-            beatsPerMeasure={beatsPerMeasure}
-            event={event}
-            measureIndex={measure.index}
-            onSelectEvent={onSelectEvent}
-            activeEventId={activeEventId}
-            selectedEventId={selectedEventId}
-            staff={staff}
-            staffIndex={staffIndex}
-          />
-        )),
+        measure.voices.flatMap((voice) =>
+          voice.events.map((event) => (
+            <EventGlyph
+              key={event.id}
+              beatsPerMeasure={beatsPerMeasure}
+              event={event}
+              measureIndex={measure.index}
+              onSelectEvent={onSelectEvent}
+              activeEventId={activeEventId}
+              selectedEventId={selectedEventId}
+              staff={staff}
+              staffIndex={staffIndex}
+            />
+          )),
+        ),
       )}
     </g>
   );

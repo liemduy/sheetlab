@@ -10,7 +10,9 @@ import {
   Stave,
   StaveConnector,
   StaveNote,
+  Stem,
   Volta,
+  Voice as VexFlowVoice,
 } from 'vexflow';
 import type { ScoreEvent, Staff } from '../../domain/score/types';
 import { getDurationBeats } from '../../domain/score/durations';
@@ -78,7 +80,11 @@ function getVexFlowEventClasses(event: ScoreEvent) {
     : 'vf-score-event vf-user-event';
 }
 
-function createVexFlowNote(event: ScoreEvent, staff: Staff) {
+function createVexFlowNote(
+  event: ScoreEvent,
+  staff: Staff,
+  stemDirection?: number,
+) {
   const eventDots = getEventDots(event);
   const eventPitches = getEventPitches(event).map((pitch) =>
     clampPitchToClefRange(pitch, staff.clef),
@@ -90,12 +96,14 @@ function createVexFlowNote(event: ScoreEvent, staff: Staff) {
           dots: eventDots || undefined,
           duration: durationToVexFlowDuration(event.duration, true),
           keys: [REST_KEY_BY_CLEF[staff.clef]],
+          stemDirection,
         })
       : new StaveNote({
           clef: staff.clef,
           dots: eventDots || undefined,
           duration: durationToVexFlowDuration(event.duration),
           keys: eventPitches.map(pitchToVexFlowKey),
+          stemDirection,
         });
 
   staveNote.addClass(getVexFlowEventClasses(event));
@@ -215,85 +223,133 @@ function drawVexFlowMeasureEvents({
   stave: Stave;
 }) {
   const measure = staff.measures.find((candidate) => candidate.index === measureIndex);
-  const measureEvents = measure?.voices[0]?.events ?? [];
-  const events =
-    measureEvents.length > 0
-      ? measureEvents
-      : createEmptyMeasureDisplayRests(staff.id, measureIndex, beatsPerMeasure);
-  const notes = events.map((event) => createVexFlowNote(event, staff));
-  const eventLayouts: Record<string, RenderedEventLayout> = {};
-  const beams = Beam.generateBeams(notes, {
-    beamRests: false,
-    groups: Beam.getDefaultBeamGroups(
-      `${score.timeSignature.beats}/${score.timeSignature.beatUnit}`,
-    ),
-  });
+  const voiceGroups =
+    measure?.voices
+      .map((voice, voiceIndex) => ({
+        events: voice.events,
+        voiceIndex,
+      }))
+      .filter((voice) => voice.events.length > 0) ?? [];
+  const renderGroups =
+    voiceGroups.length > 0
+      ? voiceGroups
+      : [
+          {
+            events: createEmptyMeasureDisplayRests(
+              staff.id,
+              measureIndex,
+              beatsPerMeasure,
+            ),
+            voiceIndex: 0,
+          },
+        ];
+  const hasMultipleVoices = renderGroups.length > 1;
+  const renderedVoices = renderGroups.map((voiceGroup) => {
+    const stemDirection =
+      hasMultipleVoices
+        ? voiceGroup.voiceIndex === 0
+          ? Stem.UP
+          : Stem.DOWN
+        : undefined;
+    const notes = voiceGroup.events.map((event) =>
+      createVexFlowNote(event, staff, stemDirection),
+    );
 
-  Formatter.FormatAndDraw(context, stave, notes, {
-    alignRests: true,
+    return {
+      ...voiceGroup,
+      notes,
+      vexFlowVoice: new VexFlowVoice({
+        beatValue: score.timeSignature.beatUnit,
+        numBeats: score.timeSignature.beats,
+      })
+        .setMode(VexFlowVoice.Mode.SOFT)
+        .addTickables(notes),
+    };
   });
+  const eventLayouts: Record<string, RenderedEventLayout> = {};
+  const beams = renderedVoices.flatMap(({ notes }) =>
+    Beam.generateBeams(notes, {
+      beamRests: false,
+      groups: Beam.getDefaultBeamGroups(
+        `${score.timeSignature.beats}/${score.timeSignature.beatUnit}`,
+      ),
+      maintainStemDirections: hasMultipleVoices,
+    }),
+  );
+  const vexFlowVoices = renderedVoices.map((voice) => voice.vexFlowVoice);
+
+  new Formatter()
+    .joinVoices(vexFlowVoices)
+    .formatToStave(vexFlowVoices, stave, {
+      alignRests: true,
+      context,
+    });
+  vexFlowVoices.forEach((voice) => voice.draw(context, stave));
   beams.forEach((beam) => beam.setContext(context).draw());
 
-  notes.forEach((note, noteIndex) => {
-    const event = events[noteIndex];
-    const svgElement = note.getSVGElement();
+  renderedVoices.forEach(({ events, notes, voiceIndex }) => {
+    notes.forEach((note, noteIndex) => {
+      const event = events[noteIndex];
+      const svgElement = note.getSVGElement();
 
-    if (!event || !svgElement) {
-      return;
-    }
+      if (!event || !svgElement) {
+        return;
+      }
 
-    svgElement.classList.add(...getVexFlowEventClasses(event).split(' '));
-    svgElement.setAttribute('data-event-id', event.id);
-    svgElement.setAttribute('data-duration', event.duration);
-    svgElement.setAttribute('data-measure-index', String(measureIndex));
-    svgElement.setAttribute('data-pitch-count', String(getEventPitches(event).length));
-    svgElement.setAttribute('data-staff-id', staff.id);
+      svgElement.classList.add(...getVexFlowEventClasses(event).split(' '));
+      svgElement.setAttribute('data-event-id', event.id);
+      svgElement.setAttribute('data-duration', event.duration);
+      svgElement.setAttribute('data-measure-index', String(measureIndex));
+      svgElement.setAttribute('data-pitch-count', String(getEventPitches(event).length));
+      svgElement.setAttribute('data-staff-id', staff.id);
+      svgElement.setAttribute('data-voice-index', String(voiceIndex));
 
-    const eventPitches = getEventPitches(event);
-    const fallbackX = getBeatX(
-      measureIndex,
-      event.beat,
-      beatsPerMeasure,
-      score,
-    );
-    const minX = note.getNoteHeadBeginX();
-    const maxX = note.getNoteHeadEndX();
-    const renderedX =
-      Number.isFinite(minX) && Number.isFinite(maxX)
-        ? (minX + maxX) / 2
-        : fallbackX;
-    const pitchYs =
-      eventPitches.length > 0
-        ? eventPitches.map((pitch) =>
-            getPitchY(
-              clampPitchToClefRange(pitch, staff.clef),
-              staff.clef,
-              staffIndex,
-              staffGap,
-              measureIndex,
-              systemGap,
-            ),
-          )
-        : [
-            getStaffTop(staffIndex, staffGap, measureIndex, systemGap) +
-              STAFF_LINE_SPACING * 2,
-          ];
-    const minY = Math.min(...pitchYs);
-    const maxY = Math.max(...pitchYs);
+      const eventPitches = getEventPitches(event);
+      const fallbackX = getBeatX(
+        measureIndex,
+        event.beat,
+        beatsPerMeasure,
+        score,
+      );
+      const minX = note.getNoteHeadBeginX();
+      const maxX = note.getNoteHeadEndX();
+      const renderedX =
+        Number.isFinite(minX) && Number.isFinite(maxX)
+          ? (minX + maxX) / 2
+          : fallbackX;
+      const pitchYs =
+        eventPitches.length > 0
+          ? eventPitches.map((pitch) =>
+              getPitchY(
+                clampPitchToClefRange(pitch, staff.clef),
+                staff.clef,
+                staffIndex,
+                staffGap,
+                measureIndex,
+                systemGap,
+              ),
+            )
+          : [
+              getStaffTop(staffIndex, staffGap, measureIndex, systemGap) +
+                STAFF_LINE_SPACING * 2,
+            ];
+      const minY = Math.min(...pitchYs);
+      const maxY = Math.max(...pitchYs);
 
-    eventLayouts[event.id] = {
-      beat: event.beat,
-      isGeneratedRest: isGeneratedRestEvent(event),
-      kind: event.kind,
-      maxX: Number.isFinite(maxX) ? maxX : renderedX + 10,
-      maxY,
-      measureIndex,
-      minX: Number.isFinite(minX) ? minX : renderedX - 10,
-      minY,
-      staffId: staff.id,
-      x: renderedX,
-      y: (minY + maxY) / 2,
-    };
+      eventLayouts[event.id] = {
+        beat: event.beat,
+        isGeneratedRest: isGeneratedRestEvent(event),
+        kind: event.kind,
+        maxX: Number.isFinite(maxX) ? maxX : renderedX + 10,
+        maxY,
+        measureIndex,
+        minX: Number.isFinite(minX) ? minX : renderedX - 10,
+        minY,
+        staffId: staff.id,
+        x: renderedX,
+        y: (minY + maxY) / 2,
+      };
+    });
   });
 
   return eventLayouts;
@@ -563,6 +619,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         selectedMeasure={props.selectedMeasure}
         selectedPitchIndex={props.selectedPitchIndex}
         svgHeight={height}
+        voiceIndex={props.voiceIndex}
       />
     </div>
   );

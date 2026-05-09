@@ -11,6 +11,7 @@ import type {
   TimeSignature,
 } from './types';
 import { assertScore } from './validation';
+import { createVoiceId } from './voices';
 
 const DEFAULT_TIME_SIGNATURE: TimeSignature = {
   beats: 4,
@@ -20,17 +21,13 @@ const DEFAULT_TIME_SIGNATURE: TimeSignature = {
 const DEFAULT_TEMPO = 96;
 const DEFAULT_PAGE_SIZE: PageSize = 'a4';
 
-function createVoiceId(staffId: StaffId, measureIndex: number) {
-  return `voice-${staffId}-${measureIndex + 1}-main`;
-}
-
 function createMeasure(staffId: StaffId, index: number): Measure {
   return {
     id: `measure-${staffId}-${index + 1}`,
     index,
     voices: [
       {
-        id: createVoiceId(staffId, index),
+        id: createVoiceId(staffId, index, 0),
         events: [],
       },
     ],

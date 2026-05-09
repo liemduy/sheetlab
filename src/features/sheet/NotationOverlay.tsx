@@ -93,6 +93,7 @@ interface NotationOverlayProps {
   selectedMeasure?: { staffId: StaffId; measureIndex: number } | null;
   selectedPitchIndex?: number | null;
   svgHeight: number;
+  voiceIndex?: number;
 }
 
 function inputCursorToMusicPosition(
@@ -150,8 +151,9 @@ function snapPositionToInputGrid(
   score: Score,
   staffGap: number,
   eventLayouts: Record<string, RenderedEventLayout> = {},
+  voiceIndex = 0,
 ) {
-  const rhythmSlotPosition = snapPositionToRhythmSlot(score, position);
+  const rhythmSlotPosition = snapPositionToRhythmSlot(score, position, voiceIndex);
   const snappedPosition =
     inputCursorToMusicPosition(
       createInputCursorFromPosition(
@@ -168,6 +170,7 @@ function snapPositionToInputGrid(
     score,
     snappedPosition.staffId,
     snappedPosition.measureIndex,
+    voiceIndex,
   ).find((slot) => Math.abs(slot.beat - snappedPosition.beat) <= BEAT_MATCH_EPSILON);
   const activeSlotLayout = activeSlot ? eventLayouts[activeSlot.eventId] : undefined;
 
@@ -210,6 +213,7 @@ export function NotationOverlay({
   selectedMeasure,
   selectedPitchIndex,
   svgHeight,
+  voiceIndex = 0,
 }: NotationOverlayProps) {
   const [dragState, setDragState] = useState<{
     eventId: string;
@@ -259,6 +263,7 @@ export function NotationOverlay({
         score,
         staffGap,
         eventLayouts,
+        voiceIndex,
       )
     : null;
   const shouldShowInputPreview =
@@ -269,7 +274,7 @@ export function NotationOverlay({
     !selectedEventId;
   const displayHoverPosition =
     shouldShowInputPreview && placementMode === 'insert' && snappedHoverPosition
-      ? snapInsertPositionToEventBoundary(score, snappedHoverPosition)
+      ? snapInsertPositionToEventBoundary(score, snappedHoverPosition, voiceIndex)
       : shouldShowInputPreview
         ? snappedHoverPosition
         : null;
@@ -492,6 +497,7 @@ export function NotationOverlay({
                 score,
                 staffGap,
                 eventLayouts,
+                voiceIndex,
               )
             : null,
         );
@@ -551,6 +557,7 @@ export function NotationOverlay({
               score,
               staffGap,
               eventLayouts,
+              voiceIndex,
             )
           : null;
 
@@ -585,6 +592,7 @@ export function NotationOverlay({
         inputCursor={inputCursor}
         isInputArmed={shouldShowInputPreview}
         score={score}
+        voiceIndex={voiceIndex}
       />
       {!dragState && displayHoverPosition ? (
         <StaffHoverGuide
@@ -700,7 +708,8 @@ export function NotationOverlay({
             ));
           })}
           {staff.measures.flatMap((measure) =>
-            measure.voices[0]?.events.map((event) => (
+            measure.voices.flatMap((voice) =>
+              voice.events.map((event) => (
               <EventHitTarget
                 key={event.id}
                 activeEventId={activeEventId}
@@ -736,7 +745,8 @@ export function NotationOverlay({
                 staffIndex={staffIndex}
                 systemGap={systemGap}
               />
-            )),
+              )),
+            ),
           )}
         </g>
       ))}

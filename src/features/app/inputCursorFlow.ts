@@ -32,12 +32,24 @@ export function musicPositionFromCursor(
   };
 }
 
-export function hasPitchedEventAtPosition(score: Score, position: MusicPosition) {
+export function hasPitchedEventAtPosition(
+  score: Score,
+  position: MusicPosition,
+  voiceIndex = 0,
+) {
+  return hasPitchedEventAtPositionInVoice(score, position, voiceIndex);
+}
+
+export function hasPitchedEventAtPositionInVoice(
+  score: Score,
+  position: MusicPosition,
+  voiceIndex = 0,
+) {
   const voice = score.parts
     .flatMap((part) => part.staves)
     .find((staff) => staff.id === position.staffId)
     ?.measures.find((measure) => measure.index === position.measureIndex)
-    ?.voices[0];
+    ?.voices[voiceIndex];
 
   return (
     voice?.events.some(
@@ -78,12 +90,14 @@ export function createCursorAfterPlacement(
   placementPosition: MusicPosition,
   duration: DurationValue,
   dots: number,
+  voiceIndex = 0,
 ) {
   const nextSlot = findNextRhythmSlotAfter(
     score,
     placementPosition.staffId,
     placementPosition.measureIndex,
     placementPosition.beat,
+    voiceIndex,
   );
   const nextPosition = nextSlot
     ? {

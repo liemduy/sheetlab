@@ -110,11 +110,13 @@ function getActiveSlotLayout(
   cursor: InputCursor,
   eventLayouts: Record<string, InputSlotEventLayout>,
   score: Score,
+  voiceIndex = 0,
 ) {
   const activeSlot = getRhythmSlotsForMeasure(
     score,
     cursor.staffId,
     cursor.measureIndex,
+    voiceIndex,
   ).find((slot) => Math.abs(slot.beat - cursor.beat) <= BEAT_MATCH_EPSILON);
   const activeSlotLayout = activeSlot
     ? eventLayouts[activeSlot.eventId]
@@ -128,13 +130,20 @@ export function getInputSlotLayout({
   eventLayouts = {},
   includePitchPreview = true,
   score,
+  voiceIndex = 0,
 }: {
   cursor: InputCursor;
   eventLayouts?: Record<string, InputSlotEventLayout>;
   includePitchPreview?: boolean;
   score: Score;
+  voiceIndex?: number;
 }): InputSlotLayout {
-  const activeSlotLayout = getActiveSlotLayout(cursor, eventLayouts, score);
+  const activeSlotLayout = getActiveSlotLayout(
+    cursor,
+    eventLayouts,
+    score,
+    voiceIndex,
+  );
   const beatsPerMeasure = getMeasureBeats(score.timeSignature);
   const centerX =
     activeSlotLayout?.x ??

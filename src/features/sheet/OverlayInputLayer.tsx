@@ -213,12 +213,14 @@ export function RhythmSlots({
   inputCursor,
   isInputArmed,
   score,
+  voiceIndex = 0,
 }: {
   entryMode: EntryMode;
   eventLayouts?: Record<string, RenderedEventLayout>;
   inputCursor?: InputCursor | null;
   isInputArmed?: boolean;
   score: Score;
+  voiceIndex?: number;
 }) {
   if (!isInputArmed || !inputCursor) {
     return null;
@@ -229,6 +231,7 @@ export function RhythmSlots({
     eventLayouts,
     includePitchPreview: entryMode === 'note',
     score,
+    voiceIndex,
   });
 
   return (
@@ -250,6 +253,7 @@ export function RhythmSlots({
           data-slot-center-x={slotLayout.centerX}
           data-slot-end-beat={slotLayout.slotEndBeat}
           data-staff-id={inputCursor.staffId}
+          data-voice-index={voiceIndex}
           data-testid="rhythm-slot"
           height={slotLayout.height}
           rx={7}
