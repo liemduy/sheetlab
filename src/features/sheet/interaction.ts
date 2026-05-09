@@ -13,14 +13,14 @@ import {
   pitchToDiatonicValue,
 } from '../../domain/score/pitchRange';
 import {
-  MEASURES_PER_SYSTEM,
   STAFF_LEFT,
   STAFF_GAP,
   STAFF_LINE_SPACING,
   getMeasureContentLeft,
   getMeasureContentWidth,
-  getMeasureCountForSystem,
   getMeasureRight,
+  getScoreSystemCount,
+  getScoreSystemMeasureIndexes,
   getScoreStaffTop,
   getStaffRight,
   getStaffTop,
@@ -105,14 +105,14 @@ function findStaffAtY(
 ) {
   const staves = score.parts[0]?.staves ?? [];
   const measureCount = staves[0]?.measures.length ?? 0;
-  const systemCount = Math.max(1, Math.ceil(measureCount / MEASURES_PER_SYSTEM));
+  const systemCount = getScoreSystemCount(score);
   const isInsideGrandStaffDeadZone = (systemIndex: number) => {
     if (staves.length < 2) {
       return false;
     }
 
     for (let staffIndex = 0; staffIndex < staves.length - 1; staffIndex += 1) {
-      const measureIndex = systemIndex * MEASURES_PER_SYSTEM;
+      const measureIndex = getScoreSystemMeasureIndexes(score, systemIndex)[0] ?? 0;
       const upperStaffBottom =
         getScoreStaffTop(score, staffIndex, measureIndex) + STAFF_LINE_SPACING * 4;
       const lowerStaffTop = getScoreStaffTop(
@@ -133,7 +133,7 @@ function findStaffAtY(
   const candidates = staves
     .flatMap((staff, staffIndex) =>
       Array.from({ length: systemCount }, (_, systemIndex) => {
-        const measureIndex = systemIndex * MEASURES_PER_SYSTEM;
+        const measureIndex = getScoreSystemMeasureIndexes(score, systemIndex)[0] ?? 0;
         const staffTop = getScoreStaffTop(score, staffIndex, measureIndex);
         const staffBottom = staffTop + STAFF_LINE_SPACING * 4;
         const staffCenter = staffTop + STAFF_LINE_SPACING * 2;
@@ -162,11 +162,12 @@ function findMeasureIndexAtX(
   measureCount: number,
   x: number,
 ) {
-  const systemMeasureCount = getMeasureCountForSystem(measureCount, systemIndex);
-  const firstMeasureIndex = systemIndex * MEASURES_PER_SYSTEM;
+  const systemMeasureIndexes = getScoreSystemMeasureIndexes(score, systemIndex);
+  const systemMeasureCount = systemMeasureIndexes.length;
+  const firstMeasureIndex = systemMeasureIndexes[0] ?? 0;
 
   for (let offset = 0; offset < systemMeasureCount; offset += 1) {
-    const measureIndex = firstMeasureIndex + offset;
+    const measureIndex = systemMeasureIndexes[offset] ?? firstMeasureIndex;
 
     if (x <= getMeasureRight(measureIndex, score)) {
       return measureIndex;
@@ -186,13 +187,15 @@ export function mapPointToMusicPosition(
   const staff = staffMatch?.staff;
   const measureCount = staff?.measures.length ?? 0;
   const systemIndex = staffMatch?.systemIndex ?? 0;
-  const systemMeasureCount = getMeasureCountForSystem(measureCount, systemIndex);
+  const systemMeasureIndexes = getScoreSystemMeasureIndexes(score, systemIndex);
+  const systemMeasureCount = systemMeasureIndexes.length;
+  const firstMeasureIndex = systemMeasureIndexes[0] ?? 0;
 
   if (
     !staff ||
     systemMeasureCount === 0 ||
     point.x < STAFF_LEFT ||
-    point.x > getStaffRight(measureCount, systemIndex * MEASURES_PER_SYSTEM, score)
+    point.x > getStaffRight(measureCount, firstMeasureIndex, score)
   ) {
     return null;
   }

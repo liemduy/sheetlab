@@ -207,6 +207,7 @@ interface EditorToolbarProps {
   onImportProjectFile: (fileList: FileList | null) => void | Promise<void>;
   onKeySignatureChange: (keySignature: KeySignature) => void;
   onLoadProject: () => void;
+  onLyricMapToggle: (show: boolean) => void;
   onOpenPaletteChange: (palette: ToolbarPalette) => void;
   onPlacementModeChange: (placementMode: PlacementMode) => void;
   onPlaybackToggle: () => void | Promise<void>;
@@ -247,6 +248,7 @@ export function EditorToolbar({
   onImportProjectFile,
   onKeySignatureChange,
   onLoadProject,
+  onLyricMapToggle,
   onOpenPaletteChange,
   onPlacementModeChange,
   onPlaybackToggle,
@@ -514,6 +516,19 @@ export function EditorToolbar({
             {PLACEMENT_MODE_LABEL[placementMode]}
           </button>
         ))}
+      </div>
+      <div className="toolbar-group" aria-label="Annotation view tools">
+        <span className="toolbar-group-label">Annotations</span>
+        <button
+          type="button"
+          aria-label="Show lyric map"
+          aria-pressed={toolState.showLyricMap}
+          className={`tool-button${toolState.showLyricMap ? ' is-active' : ''}`}
+          title="Show dashed lyric-note links"
+          onClick={() => onLyricMapToggle(!toolState.showLyricMap)}
+        >
+          Map
+        </button>
       </div>
       <div className="toolbar-group" aria-label="Transport and history">
         <span className="toolbar-group-label">Transport</span>

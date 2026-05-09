@@ -98,7 +98,7 @@ export function getKeySignatureSymbolLayouts(score: Score) {
       );
       const shouldRender =
         symbols.length > 0 &&
-        (getLocalMeasureIndex(measure.index) === 0 ||
+        (getLocalMeasureIndex(measure.index, score) === 0 ||
           measure.index === sourceMeasureIndex);
 
       if (!shouldRender || measure.index >= measureCount) {
@@ -107,7 +107,7 @@ export function getKeySignatureSymbolLayouts(score: Score) {
 
       const xStart =
         getMeasureX(measure.index, score) +
-        (getLocalMeasureIndex(measure.index) === 0
+        (getLocalMeasureIndex(measure.index, score) === 0
           ? SYSTEM_START_X_OFFSET
           : MID_MEASURE_X_OFFSET);
       const staffTop = getScoreStaffTop(score, staffIndex, measure.index);

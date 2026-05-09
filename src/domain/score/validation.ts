@@ -6,6 +6,7 @@ import type {
   DurationValue,
   KeySignature,
   KeySignatureAccidental,
+  LyricMap,
   NoteStep,
   PageSize,
   PedalMark,
@@ -114,6 +115,14 @@ function isAnnotationPlacements(value: unknown) {
   );
 }
 
+function isLyricMap(value: unknown): value is LyricMap {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.eventIds) &&
+    value.eventIds.every(isString)
+  );
+}
+
 function isScoreEvent(value: unknown): value is ScoreEvent {
   if (!isRecord(value)) {
     return false;
@@ -130,6 +139,7 @@ function isScoreEvent(value: unknown): value is ScoreEvent {
     (value.annotationPlacements === undefined ||
       isAnnotationPlacements(value.annotationPlacements)) &&
     (value.lyric === undefined || isString(value.lyric)) &&
+    (value.lyricMap === undefined || isLyricMap(value.lyricMap)) &&
     (value.pedal === undefined || PEDAL_MARKS.has(value.pedal as PedalMark)) &&
     (value.dots === undefined ||
       (isNumber(value.dots) && value.dots >= 0 && value.dots <= 1));

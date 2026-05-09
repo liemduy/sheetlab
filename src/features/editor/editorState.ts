@@ -23,6 +23,7 @@ export interface EditorToolState {
   isInputArmed: boolean;
   tempo: number;
   voiceIndex: EditableVoiceIndex;
+  showLyricMap: boolean;
 }
 
 export const DURATION_OPTIONS: DurationValue[] = [
@@ -46,6 +47,7 @@ export const DEFAULT_EDITOR_TOOL_STATE: EditorToolState = {
   isInputArmed: false,
   tempo: 96,
   voiceIndex: 0,
+  showLyricMap: false,
 };
 
 export const DURATION_LABEL: Record<DurationValue, string> = {

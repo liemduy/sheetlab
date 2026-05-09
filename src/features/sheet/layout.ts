@@ -50,6 +50,12 @@ const MIN_MEASURE_READABLE_WIDTH = 128;
 const MIN_FIRST_MEASURE_READABLE_WIDTH = 170;
 const MEASURE_COMPLEXITY_WEIGHT_SCALE = 1.5;
 const MEASURE_COMPLEXITY_WIDTH_SCALE = 24;
+const MAX_SYSTEM_NOTEHEADS = 18;
+
+interface ScoreSystemLayout {
+  firstMeasureIndex: number;
+  measureIndexes: number[];
+}
 
 type PitchBounds = { maxY: number; minY: number };
 type AnnotationSide = Exclude<AnnotationPlacementSide, 'auto'>;
@@ -64,7 +70,9 @@ type AnnotationPlacement = AnnotationBounds & {
   side: AnnotationSide;
 };
 type ScoreLayoutCache = {
+  measureSystemIndexes: number[];
   maxStaffGap: number;
+  systems: ScoreSystemLayout[];
   systemGaps: number[];
   systemTops: number[];
 };
@@ -100,6 +108,7 @@ function getStaffPitchBounds(
   score: Score,
   staffIndex: number,
   systemIndex?: number,
+  measureIndexes?: number[],
 ) {
   const staff = score.parts[0]?.staves[staffIndex];
   const measureStart = systemIndex === undefined
@@ -110,8 +119,10 @@ function getStaffPitchBounds(
     staff?.measures
       .filter(
         (measure) =>
-          systemIndex === undefined ||
-          (measure.index >= measureStart && measure.index < measureEnd),
+          measureIndexes
+            ? measureIndexes.includes(measure.index)
+            : systemIndex === undefined ||
+              (measure.index >= measureStart && measure.index < measureEnd),
       )
       .flatMap((measure) =>
         measure.voices.flatMap((voice) =>
@@ -144,6 +155,7 @@ function getStaffVoicePitchBounds(
   staffIndex: number,
   systemIndex: number,
   voiceIndex: number,
+  measureIndexes?: number[],
 ) {
   const staff = score.parts[0]?.staves[staffIndex];
   const measureStart = systemIndex * MEASURES_PER_SYSTEM;
@@ -151,7 +163,10 @@ function getStaffVoicePitchBounds(
   const eventPitches =
     staff?.measures
       .filter(
-        (measure) => measure.index >= measureStart && measure.index < measureEnd,
+        (measure) =>
+          measureIndexes
+            ? measureIndexes.includes(measure.index)
+            : measure.index >= measureStart && measure.index < measureEnd,
       )
       .flatMap((measure) =>
         measure.voices[voiceIndex]?.events.flatMap((event) =>
@@ -179,14 +194,22 @@ function getStaffVoicePitchBounds(
   };
 }
 
-function getSystemMeasures(score: Score, staffIndex: number, systemIndex: number) {
+function getSystemMeasures(
+  score: Score,
+  staffIndex: number,
+  systemIndex: number,
+  measureIndexes?: number[],
+) {
   const staff = score.parts[0]?.staves[staffIndex];
   const measureStart = systemIndex * MEASURES_PER_SYSTEM;
   const measureEnd = measureStart + MEASURES_PER_SYSTEM;
 
   return (
     staff?.measures.filter(
-      (measure) => measure.index >= measureStart && measure.index < measureEnd,
+      (measure) =>
+        measureIndexes
+          ? measureIndexes.includes(measure.index)
+          : measure.index >= measureStart && measure.index < measureEnd,
     ) ?? []
   );
 }
@@ -334,11 +357,12 @@ function getStaffSystemAnnotationExtents(
   staffIndex: number,
   systemIndex: number,
   pitchBounds: PitchBounds,
+  measureIndexes?: number[],
 ) {
   const abovePlacements: AnnotationPlacement[] = [];
   const belowPlacements: AnnotationPlacement[] = [];
 
-  getSystemMeasures(score, staffIndex, systemIndex)
+  getSystemMeasures(score, staffIndex, systemIndex, measureIndexes)
     .flatMap((measure) =>
       measure.voices.flatMap((voice, voiceIndex) =>
         voice.events
@@ -354,15 +378,25 @@ function getStaffSystemAnnotationExtents(
         a.event.id.localeCompare(b.event.id),
     )
     .forEach(({ event, measure, voiceIndex }) => {
+      const localMeasureIndex = measureIndexes
+        ? Math.max(0, measureIndexes.indexOf(measure.index))
+        : getLocalMeasureIndex(measure.index);
+      const measureLeftPadding =
+        localMeasureIndex === 0 ? FIRST_MEASURE_LEFT_PADDING : MEASURE_LEFT_PADDING;
+      const estimatedMeasureX = STAFF_LEFT + localMeasureIndex * MEASURE_WIDTH;
+      const estimatedMeasureContentWidth =
+        MEASURE_WIDTH - measureLeftPadding - MEASURE_RIGHT_PADDING;
       const x =
-        getMeasureContentLeft(measure.index, score) +
+        estimatedMeasureX +
+        measureLeftPadding +
         (event.beat / getMeasureBeats(score.timeSignature)) *
-          getMeasureContentWidth(measure.index, score);
+          estimatedMeasureContentWidth;
       const voicePitchBounds = getStaffVoicePitchBounds(
         score,
         staffIndex,
         systemIndex,
         voiceIndex,
+        measureIndexes,
       );
       const estimatedInkBottom = Math.max(
         STAFF_LINE_SPACING * 4,
@@ -438,9 +472,13 @@ function getStaffSystemAnnotationExtents(
   };
 }
 
-function computeSystemStaffGap(score: Score, systemIndex: number) {
-  const trebleBounds = getStaffPitchBounds(score, 0, systemIndex);
-  const bassBounds = getStaffPitchBounds(score, 1, systemIndex);
+function computeSystemStaffGap(
+  score: Score,
+  systemIndex: number,
+  measureIndexes?: number[],
+) {
+  const trebleBounds = getStaffPitchBounds(score, 0, systemIndex, measureIndexes);
+  const bassBounds = getStaffPitchBounds(score, 1, systemIndex, measureIndexes);
   const trebleBelowStaff = Math.max(0, trebleBounds.maxY - STAFF_LINE_SPACING * 4);
   const bassAboveStaff = Math.max(0, -bassBounds.minY);
   const extraGap = trebleBelowStaff + bassAboveStaff;
@@ -451,12 +489,14 @@ function computeSystemStaffGap(score: Score, systemIndex: number) {
     0,
     systemIndex,
     trebleBounds,
+    measureIndexes,
   );
   const bassAnnotationExtents = getStaffSystemAnnotationExtents(
     score,
     1,
     systemIndex,
     bassBounds,
+    measureIndexes,
   );
   const trebleBottomExtent = Math.max(
     STAFF_LINE_SPACING * 4,
@@ -486,8 +526,63 @@ function getScoreMeasureCount(score: Score | ScoreType) {
   );
 }
 
-function getScoreSystemCount(score: Score | ScoreType) {
+function getStaticSystemCount(score: Score | ScoreType) {
   return Math.max(1, Math.ceil(getScoreMeasureCount(score) / MEASURES_PER_SYSTEM));
+}
+
+function computeScoreSystems(score: Score): ScoreSystemLayout[] {
+  const measureCount = getScoreMeasureCount(score);
+  const systems: ScoreSystemLayout[] = [];
+  let currentSystemMeasureIndexes: number[] = [];
+  let currentSystemNoteheads = 0;
+
+  for (let measureIndex = 0; measureIndex < measureCount; measureIndex += 1) {
+    const measureNoteheads = countMeasureNoteheads(score, measureIndex);
+    const shouldBreakForCount =
+      currentSystemMeasureIndexes.length >= MEASURES_PER_SYSTEM;
+    const shouldBreakForDensity =
+      currentSystemMeasureIndexes.length > 0 &&
+      currentSystemNoteheads + measureNoteheads > MAX_SYSTEM_NOTEHEADS;
+
+    if (shouldBreakForCount || shouldBreakForDensity) {
+      systems.push({
+        firstMeasureIndex: currentSystemMeasureIndexes[0] ?? measureIndex,
+        measureIndexes: currentSystemMeasureIndexes,
+      });
+      currentSystemMeasureIndexes = [];
+      currentSystemNoteheads = 0;
+    }
+
+    currentSystemMeasureIndexes.push(measureIndex);
+    currentSystemNoteheads += measureNoteheads;
+  }
+
+  if (currentSystemMeasureIndexes.length > 0) {
+    systems.push({
+      firstMeasureIndex: currentSystemMeasureIndexes[0] ?? 0,
+      measureIndexes: currentSystemMeasureIndexes,
+    });
+  }
+
+  return systems.length > 0
+    ? systems
+    : [
+        {
+          firstMeasureIndex: 0,
+          measureIndexes: Array.from(
+            { length: Math.min(MEASURES_PER_SYSTEM, measureCount) },
+            (_, index) => index,
+          ),
+        },
+      ];
+}
+
+export function getScoreSystemCount(score: Score | ScoreType) {
+  if (typeof score === 'string') {
+    return getStaticSystemCount(score);
+  }
+
+  return getScoreLayoutCache(score).systems.length;
 }
 
 function getScoreLayoutCache(score: Score) {
@@ -497,22 +592,33 @@ function getScoreLayoutCache(score: Score) {
     return cached;
   }
 
-  const systemCount = getScoreSystemCount(score);
-  const systemGaps = Array.from({ length: systemCount }, (_, systemIndex) =>
-    score.type === 'grand' ? computeSystemStaffGap(score, systemIndex) : STAFF_GAP,
+  const systems = computeScoreSystems(score);
+  const systemGaps = systems.map((system, systemIndex) =>
+    score.type === 'grand'
+      ? computeSystemStaffGap(score, systemIndex, system.measureIndexes)
+      : STAFF_GAP,
   );
   const systemTops: number[] = [];
+  const measureSystemIndexes = Array.from(
+    { length: getScoreMeasureCount(score) },
+    () => 0,
+  );
   let y = FIRST_STAFF_Y;
 
-  for (let systemIndex = 0; systemIndex < systemCount; systemIndex += 1) {
+  systems.forEach((system, systemIndex) => {
     systemTops[systemIndex] = y;
+    system.measureIndexes.forEach((measureIndex) => {
+      measureSystemIndexes[measureIndex] = systemIndex;
+    });
     y += score.type === 'grand'
       ? systemGaps[systemIndex] + GRAND_SYSTEM_PADDING
       : TREBLE_SYSTEM_GAP;
-  }
+  });
 
   const nextCache = {
+    measureSystemIndexes,
     maxStaffGap: Math.max(STAFF_GAP, ...systemGaps),
+    systems,
     systemGaps,
     systemTops,
   };
@@ -537,14 +643,30 @@ export function getScoreStaffGap(
 
   return measureIndex === undefined
     ? cache.maxStaffGap
-    : cache.systemGaps[getSystemIndex(measureIndex)] ?? STAFF_GAP;
+    : cache.systemGaps[getSystemIndex(measureIndex, score)] ?? STAFF_GAP;
 }
 
-export function getSystemIndex(measureIndex: number) {
+export function getSystemIndex(measureIndex: number, score?: Score | ScoreType) {
+  if (score && typeof score !== 'string') {
+    return (
+      getScoreLayoutCache(score).measureSystemIndexes[Math.max(0, measureIndex)] ??
+      Math.floor(Math.max(0, measureIndex) / MEASURES_PER_SYSTEM)
+    );
+  }
+
   return Math.floor(Math.max(0, measureIndex) / MEASURES_PER_SYSTEM);
 }
 
-export function getLocalMeasureIndex(measureIndex: number) {
+export function getLocalMeasureIndex(measureIndex: number, score?: Score | ScoreType) {
+  if (score && typeof score !== 'string') {
+    const system = getScoreLayoutCache(score).systems[getSystemIndex(measureIndex, score)];
+    const localMeasureIndex = system?.measureIndexes.indexOf(measureIndex) ?? -1;
+
+    return localMeasureIndex >= 0
+      ? localMeasureIndex
+      : Math.max(0, measureIndex) % MEASURES_PER_SYSTEM;
+  }
+
   return Math.max(0, measureIndex) % MEASURES_PER_SYSTEM;
 }
 
@@ -560,7 +682,7 @@ export function getScoreSystemGap(
 }
 
 export function getScoreSystemTop(score: Score | ScoreType, measureIndex = 0) {
-  const targetSystemIndex = getSystemIndex(measureIndex);
+  const targetSystemIndex = getSystemIndex(measureIndex, score);
 
   if (typeof score === 'string') {
     return FIRST_STAFF_Y + targetSystemIndex * getScoreSystemGap(score);
@@ -580,17 +702,62 @@ export function getScoreStaffTop(
   );
 }
 
-export function getSystemFirstMeasureIndex(measureIndex: number) {
+export function getSystemFirstMeasureIndex(
+  measureIndex: number,
+  score?: Score | ScoreType,
+) {
+  if (score && typeof score !== 'string') {
+    return (
+      getScoreLayoutCache(score).systems[getSystemIndex(measureIndex, score)]
+        ?.firstMeasureIndex ?? 0
+    );
+  }
+
   return getSystemIndex(measureIndex) * MEASURES_PER_SYSTEM;
 }
 
 export function getMeasureCountForSystem(
   measureCount: number,
   systemIndex: number,
+  score?: Score | ScoreType,
 ) {
+  if (score && typeof score !== 'string') {
+    return getScoreLayoutCache(score).systems[systemIndex]?.measureIndexes.length ?? 0;
+  }
+
   const remainingMeasures = measureCount - systemIndex * MEASURES_PER_SYSTEM;
 
   return Math.max(0, Math.min(MEASURES_PER_SYSTEM, remainingMeasures));
+}
+
+export function getScoreSystemMeasureIndexes(
+  score: Score | ScoreType,
+  systemIndex: number,
+) {
+  if (typeof score === 'string') {
+    const measureCount = getScoreMeasureCount(score);
+    const firstMeasureIndex = systemIndex * MEASURES_PER_SYSTEM;
+    const measureCountForSystem = getMeasureCountForSystem(
+      measureCount,
+      systemIndex,
+    );
+
+    return Array.from(
+      { length: measureCountForSystem },
+      (_, offset) => firstMeasureIndex + offset,
+    );
+  }
+
+  return getScoreLayoutCache(score).systems[systemIndex]?.measureIndexes ?? [];
+}
+
+export function isScoreSystemEndMeasure(score: Score, measureIndex: number) {
+  const systemMeasureIndexes = getScoreSystemMeasureIndexes(
+    score,
+    getSystemIndex(measureIndex, score),
+  );
+
+  return systemMeasureIndexes[systemMeasureIndexes.length - 1] === measureIndex;
 }
 
 export function getStaffTop(
@@ -653,6 +820,36 @@ function countMeasureRhythmIntervals(score: Score, measureIndex: number) {
   }, 0);
 }
 
+function countMeasureNoteheads(score: Score, measureIndex: number) {
+  return score.parts
+    .flatMap((part) => part.staves)
+    .reduce((total, staff) => {
+      const measure = staff.measures.find(
+        (candidate) => candidate.index === measureIndex,
+      );
+
+      if (!measure) {
+        return total;
+      }
+
+      return (
+        total +
+        measure.voices.reduce(
+          (measureTotal, voice) =>
+            measureTotal +
+            voice.events.reduce((voiceTotal, event) => {
+              if (isGeneratedRestEvent(event) || event.kind === 'rest') {
+                return voiceTotal;
+              }
+
+              return voiceTotal + getEventPitches(event).length;
+            }, 0),
+          0,
+        )
+      );
+    }, 0);
+}
+
 export function getMeasureSlotWeight(score: Score, measureIndex: number) {
   const beatsPerMeasure = getMeasureBeats(score.timeSignature);
 
@@ -662,8 +859,8 @@ export function getMeasureSlotWeight(score: Score, measureIndex: number) {
   );
 }
 
-function getMeasureReadableMinWidth(measureIndex: number) {
-  return getLocalMeasureIndex(measureIndex) === 0
+function getMeasureReadableMinWidth(measureIndex: number, score?: Score) {
+  return getLocalMeasureIndex(measureIndex, score) === 0
     ? MIN_FIRST_MEASURE_READABLE_WIDTH
     : MIN_MEASURE_READABLE_WIDTH;
 }
@@ -679,14 +876,7 @@ function getMeasureDistributionWeight(score: Score, measureIndex: number) {
 }
 
 function getSystemMeasureIndexes(score: Score, systemIndex: number) {
-  const measureCount = getScoreMeasureCount(score);
-  const measureCountForSystem = getMeasureCountForSystem(measureCount, systemIndex);
-  const firstMeasureIndex = systemIndex * MEASURES_PER_SYSTEM;
-
-  return Array.from(
-    { length: measureCountForSystem },
-    (_, offset) => firstMeasureIndex + offset,
-  );
+  return getScoreLayoutCache(score).systems[systemIndex]?.measureIndexes ?? [];
 }
 
 function getSystemMeasureWidths(score: Score, systemIndex: number) {
@@ -696,7 +886,9 @@ function getSystemMeasureWidths(score: Score, systemIndex: number) {
     return [];
   }
 
-  const minWidths = systemMeasureIndexes.map(getMeasureReadableMinWidth);
+  const minWidths = systemMeasureIndexes.map((measureIndex) =>
+    getMeasureReadableMinWidth(measureIndex, score),
+  );
   const weights = systemMeasureIndexes.map((index) =>
     getMeasureDistributionWeight(score, index),
   );
@@ -762,7 +954,7 @@ export function getMeasureWidth(measureIndex: number, score?: Score) {
     return MEASURE_WIDTH;
   }
 
-  const systemIndex = getSystemIndex(measureIndex);
+  const systemIndex = getSystemIndex(measureIndex, score);
   const systemMeasureIndexes = getSystemMeasureIndexes(
     score,
     systemIndex,
@@ -784,7 +976,7 @@ export function getMeasureX(measureIndex: number, score?: Score) {
     return STAFF_LEFT + getLocalMeasureIndex(measureIndex) * MEASURE_WIDTH;
   }
 
-  const firstMeasureIndex = getSystemFirstMeasureIndex(measureIndex);
+  const firstMeasureIndex = getSystemFirstMeasureIndex(measureIndex, score);
   let x = STAFF_LEFT;
 
   for (let index = firstMeasureIndex; index < measureIndex; index += 1) {
@@ -800,7 +992,7 @@ export function getMeasureRight(measureIndex: number, score?: Score) {
 
 function getMeasureLeftPadding(measureIndex: number, score?: Score) {
   const desiredPadding =
-    getLocalMeasureIndex(measureIndex) === 0
+    getLocalMeasureIndex(measureIndex, score) === 0
       ? FIRST_MEASURE_LEFT_PADDING
       : MEASURE_LEFT_PADDING;
 
@@ -845,15 +1037,15 @@ export function getStaffRight(
     );
   }
 
-  const systemIndex = getSystemIndex(measureIndex);
-  const measureCountForSystem = getMeasureCountForSystem(measureCount, systemIndex);
+  const systemIndex = getSystemIndex(measureIndex, score);
+  const systemMeasureIndexes = getScoreSystemMeasureIndexes(score, systemIndex);
+  const measureCountForSystem = systemMeasureIndexes.length;
 
   if (measureCountForSystem <= 0) {
     return STAFF_LEFT;
   }
 
-  const lastMeasureIndex =
-    systemIndex * MEASURES_PER_SYSTEM + measureCountForSystem - 1;
+  const lastMeasureIndex = systemMeasureIndexes[measureCountForSystem - 1] ?? measureIndex;
 
   return getMeasureRight(lastMeasureIndex, score);
 }
@@ -865,7 +1057,12 @@ export function getStaticMeasureX(measureIndex: number) {
 export function getScoreSvgHeight(score: Score | ScoreType) {
   const scoreType = typeof score === 'string' ? score : score.type;
   const systemCount = getScoreSystemCount(score);
-  const lastMeasureIndex = (systemCount - 1) * MEASURES_PER_SYSTEM;
+  const lastSystemMeasureIndexes = getScoreSystemMeasureIndexes(
+    score,
+    systemCount - 1,
+  );
+  const lastMeasureIndex =
+    lastSystemMeasureIndexes[lastSystemMeasureIndexes.length - 1] ?? 0;
 
   if (scoreType === 'grand') {
     const lastStaffBottom =

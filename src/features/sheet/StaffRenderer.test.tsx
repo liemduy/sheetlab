@@ -1884,6 +1884,46 @@ describe('StaffRenderer', () => {
     });
   });
 
+  it('renders lyric-note map connectors only when the annotation map is enabled', async () => {
+    const firstNoteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'lyric-map-start',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const secondNoteScore = placeScoreEvent(firstNoteScore, {
+      eventId: 'lyric-map-follow',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 1,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+    const score = tryUpdateScoreEvent(secondNoteScore, 'lyric-map-start', {
+      lyric: 'sing',
+      lyricMap: { eventIds: ['lyric-map-start', 'lyric-map-follow'] },
+    }).score;
+    const { rerender } = render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-lyric')).toHaveTextContent('sing');
+    });
+    expect(screen.queryByTestId('lyric-map-connector')).not.toBeInTheDocument();
+
+    rerender(<StaffRenderer score={score} showLyricMap />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('lyric-map-connector')).toHaveAttribute(
+        'data-target-event-ids',
+        'lyric-map-start lyric-map-follow',
+      );
+    });
+  });
+
   it('renders dynamic, fermata, pedal, and glissando event markings', async () => {
     const firstNoteScore = placeScoreEvent(createEmptyScore('treble'), {
       eventId: 'marked-note-1',

@@ -3,6 +3,7 @@ import type {
   AnnotationKind,
   AnnotationPlacementSide,
   DurationValue,
+  LyricMap,
   PedalMark,
   Pitch,
   Score,
@@ -81,6 +82,7 @@ export interface UpdateScoreEventRequest {
     side: AnnotationPlacementSide;
   };
   lyric?: string | null;
+  lyricMap?: LyricMap | null;
   pedal?: PedalMark | null;
 }
 
@@ -152,6 +154,7 @@ function clampScoreEventToStaffRange(event: ScoreEvent, staff: Staff): ScoreEven
         fermata: event.fermata,
         glissando: event.glissando,
         lyric: event.lyric,
+        lyricMap: event.lyricMap,
         pedal: event.pedal,
         pitch,
       };
@@ -214,6 +217,7 @@ function mergePitchedEventWithNote(
     glissando: existingEvent.glissando,
     annotationPlacements: existingEvent.annotationPlacements,
     lyric: existingEvent.lyric,
+    lyricMap: existingEvent.lyricMap,
     pedal: existingEvent.pedal,
     pitches,
   };
@@ -292,6 +296,8 @@ function createUpdatedEventBase(
         : update.glissando || undefined,
     annotationPlacements: normalizedAnnotationPlacements,
     lyric: lyric === undefined ? event.lyric : lyric ?? undefined,
+    lyricMap:
+      update.lyricMap === undefined ? event.lyricMap : update.lyricMap ?? undefined,
     pedal: update.pedal === undefined ? event.pedal : update.pedal ?? undefined,
   };
 }
@@ -759,12 +765,11 @@ function removePitchFromEvent(event: ScoreEvent, pitchIndex: number): ScoreEvent
       return null;
     }
 
+    const { pitches: _pitches, ...eventBase } = event;
+
     return {
-      id: event.id,
+      ...eventBase,
       kind: 'note',
-      beat: event.beat,
-      duration: event.duration,
-      dots: event.dots,
       pitch: remainingPitch,
     };
   }

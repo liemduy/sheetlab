@@ -52,6 +52,7 @@ interface SheetSurfaceProps {
   onAnnotationPlacementChange: (side: AnnotationPlacementSide) => void;
   onDeleteEvent: (eventId: string, pitchIndex?: number | null) => void;
   onHoverPositionChange: (position: MusicPosition | null) => void;
+  onLyricMapChange: (eventId: string, targetEventIds: string[]) => void;
   onInsertMeasureAfter: () => void;
   onInsertMeasureBefore: () => void;
   onMeasureContextMenu: (
@@ -111,6 +112,7 @@ export function SheetSurface({
   onAnnotationPlacementChange,
   onDeleteEvent,
   onHoverPositionChange,
+  onLyricMapChange,
   onInsertMeasureAfter,
   onInsertMeasureBefore,
   onMeasureContextMenu,
@@ -186,10 +188,12 @@ export function SheetSurface({
             selectedEventId={selectedEventId}
             selectedPitchIndex={selectedPitchIndex}
             score={score}
+            showLyricMap={toolState.showLyricMap}
             voiceIndex={toolState.voiceIndex}
             onClearInteraction={onClearInteraction}
             onAnnotationContextMenu={onAnnotationContextMenu}
             onHoverPositionChange={onHoverPositionChange}
+            onLyricMapChange={onLyricMapChange}
             onPlaceAtPosition={onPlaceAtPosition}
             onDeleteEvent={onDeleteEvent}
             onMoveKeySignatureSymbol={onMoveKeySignatureSymbol}

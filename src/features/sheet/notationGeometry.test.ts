@@ -15,7 +15,10 @@ import {
   getMeasureSlotWeight,
   getMeasureWidth,
   getMeasureX,
+  getScoreStaffTop,
+  getScoreSystemCount,
   getScoreSystemGap,
+  getSystemIndex,
   getStaffTop,
 } from './layout';
 import { getBeatX, getPitchY } from './notationGeometry';
@@ -91,6 +94,49 @@ describe('notation geometry', () => {
     expect(sparseMeasureWidth).toBeGreaterThan(150);
     expect(denseMeasureWidth / sparseMeasureWidth).toBeLessThan(2);
     expect(getMeasureRight(3, score)).toBeCloseTo(STAFF_RIGHT, 2);
+  });
+
+  it('moves dense measures to the next system before sparse measures get crushed', () => {
+    const denseMeasureScore = Array.from({ length: 16 }, (_, index) => index).reduce(
+      (currentScore, index) =>
+        placeScoreEvent(currentScore, {
+          eventId: `dense-grand-sixteenth-${index}`,
+          staffId: 'treble',
+          measureIndex: 0,
+          beat: index / 4,
+          duration: 'sixteenth',
+          entryMode: 'note',
+          pitch: {
+            step: index % 2 === 0 ? 'E' : 'G',
+            octave: 4,
+          },
+        }),
+      createEmptyScore('grand', { measureCount: 4 }),
+    );
+    const score = Array.from({ length: 4 }, (_, index) => index).reduce(
+      (currentScore, index) =>
+        placeScoreEvent(currentScore, {
+          eventId: `next-measure-quarter-${index}`,
+          staffId: 'bass',
+          measureIndex: 1,
+          beat: index,
+          duration: 'quarter',
+          entryMode: 'note',
+          pitch: {
+            step: index % 2 === 0 ? 'C' : 'E',
+            octave: 3,
+          },
+        }),
+      denseMeasureScore,
+    );
+
+    expect(getScoreSystemCount(score)).toBeGreaterThan(1);
+    expect(getSystemIndex(0, score)).toBe(0);
+    expect(getSystemIndex(1, score)).toBe(1);
+    expect(getMeasureX(1, score)).toBeCloseTo(STAFF_LEFT, 2);
+    expect(getScoreStaffTop(score, 0, 1)).toBeGreaterThan(
+      getScoreStaffTop(score, 0, 0),
+    );
   });
 
   it('wraps measure x positions and moves later systems down the page', () => {

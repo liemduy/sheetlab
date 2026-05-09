@@ -41,13 +41,13 @@ import type {
 } from './renderedEventLayout';
 import {
   STAFF_LINE_SPACING,
-  MEASURES_PER_SYSTEM,
   SVG_WIDTH,
   VEXFLOW_STAVE_TOP_LINE_OFFSET,
   getLocalMeasureIndex,
   getMeasureContentLeft,
   getMeasureX,
   getMeasureWidth,
+  getScoreSystemMeasureIndexes,
   getScoreStaffTop,
   getScoreSvgHeight,
   getSystemIndex,
@@ -520,7 +520,7 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
         },
       );
 
-      if (getLocalMeasureIndex(measure.index) === 0) {
+      if (getLocalMeasureIndex(measure.index, score) === 0) {
         stave.addClef(staff.clef);
         const activeKeySignature = getActiveKeySignature(score, measure.index);
 
@@ -555,7 +555,7 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
 
   if (score.type === 'grand' && renderedStaves.length >= 2) {
     renderedStaves[0].forEach((trebleStave, measureIndex) => {
-      if (getLocalMeasureIndex(measureIndex) !== 0) {
+      if (getLocalMeasureIndex(measureIndex, score) !== 0) {
         return;
       }
 
@@ -774,21 +774,18 @@ function placeAnnotationInRows({
 
 function getSystemVoiceEventLayoutBounds(
   eventLayouts: Record<string, RenderedEventLayout>,
+  score: StaffRendererProps['score'],
   staffId: string,
   systemIndex: number,
   voiceIndex: number,
 ) {
-  const firstMeasureIndex = systemIndex * MEASURES_PER_SYSTEM;
-  const lastMeasureIndex = firstMeasureIndex + MEASURES_PER_SYSTEM - 1;
-
   return combineRenderedBounds(
     Object.values(eventLayouts)
       .filter(
         (layout) =>
           layout.staffId === staffId &&
           layout.voiceIndex === voiceIndex &&
-          layout.measureIndex >= firstMeasureIndex &&
-          layout.measureIndex <= lastMeasureIndex &&
+          getSystemIndex(layout.measureIndex, score) === systemIndex &&
           !layout.isGeneratedRest,
       )
       .map((layout) => ({
@@ -946,14 +943,17 @@ function drawTextAnnotations(
 
   staves.forEach((staff, staffIndex) => {
     const systemIndexes = [
-      ...new Set(staff.measures.map((measure) => getSystemIndex(measure.index))),
+      ...new Set(
+        staff.measures.map((measure) => getSystemIndex(measure.index, score)),
+      ),
     ];
 
     systemIndexes.forEach((systemIndex) => {
       const systemMeasures = staff.measures.filter(
-        (measure) => getSystemIndex(measure.index) === systemIndex,
+        (measure) => getSystemIndex(measure.index, score) === systemIndex,
       );
-      const systemFirstMeasureIndex = systemIndex * MEASURES_PER_SYSTEM;
+      const systemFirstMeasureIndex =
+        getScoreSystemMeasureIndexes(score, systemIndex)[0] ?? 0;
       const staffTop = getScoreStaffTop(score, staffIndex, systemFirstMeasureIndex);
       const staffBottom = staffTop + STAFF_LINE_SPACING * 4;
       const aboveStaffPlacements: AnnotationPlacement[] = [];
@@ -1009,6 +1009,7 @@ function drawTextAnnotations(
         measure.voices.forEach((voice, voiceIndex) => {
           const voiceInkBounds = getSystemVoiceEventLayoutBounds(
             eventLayouts,
+            score,
             staff.id,
             systemIndex,
             voiceIndex,
@@ -1342,6 +1343,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         onClearInteraction={props.onClearInteraction}
         onDeleteEvent={props.onDeleteEvent}
         onHoverPositionChange={props.onHoverPositionChange}
+        onLyricMapChange={props.onLyricMapChange}
         onMeasureContextMenu={props.onMeasureContextMenu}
         onAnnotationContextMenu={props.onAnnotationContextMenu}
         onMoveEvent={props.onMoveEvent}
@@ -1355,6 +1357,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         selectedEventId={props.selectedEventId}
         selectedMeasure={props.selectedMeasure}
         selectedPitchIndex={props.selectedPitchIndex}
+        showLyricMap={props.showLyricMap ?? false}
         svgHeight={height}
         voiceIndex={props.voiceIndex}
       />

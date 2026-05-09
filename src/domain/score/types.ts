@@ -70,6 +70,10 @@ export type AnnotationPlacements = Partial<
   Record<AnnotationKind, AnnotationPlacementSide>
 >;
 
+export interface LyricMap {
+  eventIds: string[];
+}
+
 export interface TimeSignature {
   beats: number;
   beatUnit: number;
@@ -98,6 +102,7 @@ export interface BaseScoreEvent {
   glissando?: boolean;
   annotationPlacements?: AnnotationPlacements;
   lyric?: string;
+  lyricMap?: LyricMap;
   pedal?: PedalMark;
 }
 

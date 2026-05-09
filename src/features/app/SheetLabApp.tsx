@@ -462,6 +462,19 @@ function SheetLabApp() {
     setAnnotationContextMenu(null);
   }
 
+  function handleLyricMapChange(eventId: string, targetEventIds: string[]) {
+    const result = tryUpdateScoreEvent(score, eventId, {
+      lyricMap: { eventIds: targetEventIds },
+    });
+
+    if (result.updated) {
+      commitScoreChange(result.score, 'Lyric map updated');
+      selectEvent(eventId, null);
+    } else {
+      setEditorMessage(`Cannot update lyric map: ${result.reason}`);
+    }
+  }
+
   function handleSectionMarkerChange(sectionMarker: string | null) {
     const measureIndex = getScoreEditTargetMeasureIndex();
 
@@ -626,6 +639,7 @@ function SheetLabApp() {
           onImportProjectFile={handleImportProjectFile}
           onKeySignatureChange={handleKeySignatureChange}
           onLoadProject={handleLoadProject}
+          onLyricMapToggle={(showLyricMap) => updateToolState({ showLyricMap })}
           onOpenPaletteChange={setOpenPalette}
           onPlacementModeChange={handlePlacementModeChange}
           onPlaybackToggle={handlePlaybackToggle}
@@ -726,6 +740,7 @@ function SheetLabApp() {
           onHoverPositionChange={handleHoverPositionChange}
           onInsertMeasureAfter={handleInsertMeasureAfter}
           onInsertMeasureBefore={handleInsertMeasureBefore}
+          onLyricMapChange={handleLyricMapChange}
           onMeasureContextMenu={handleMeasureContextMenu}
           onMoveEvent={handleMoveEvent}
           onMoveKeySignatureSymbol={handleMoveKeySignatureSymbol}

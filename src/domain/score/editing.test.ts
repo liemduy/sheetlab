@@ -708,21 +708,27 @@ describe('score editing', () => {
     const annotated = tryUpdateScoreEvent(score, 'event-annotate-me', {
       chordSymbol: '  E7/D ',
       lyric: ' cho ',
+      lyricMap: { eventIds: ['event-annotate-me', 'event-annotate-next'] },
     });
     const cleared = tryUpdateScoreEvent(annotated.score, 'event-annotate-me', {
       chordSymbol: '',
+      lyricMap: null,
     });
 
     expect(annotated.updated).toBe(true);
     expect(findScoreEvent(annotated.score, 'event-annotate-me')?.event).toMatchObject({
       chordSymbol: 'E7/D',
       lyric: 'cho',
+      lyricMap: { eventIds: ['event-annotate-me', 'event-annotate-next'] },
     });
     expect(findScoreEvent(cleared.score, 'event-annotate-me')?.event).toMatchObject({
       lyric: 'cho',
     });
     expect(
       findScoreEvent(cleared.score, 'event-annotate-me')?.event.chordSymbol,
+    ).toBeUndefined();
+    expect(
+      findScoreEvent(cleared.score, 'event-annotate-me')?.event.lyricMap,
     ).toBeUndefined();
   });
 

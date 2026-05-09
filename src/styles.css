@@ -906,6 +906,35 @@ button {
   pointer-events: all;
 }
 
+.lyric-map-layer {
+  pointer-events: auto;
+}
+
+.lyric-map-connector {
+  fill: none;
+  pointer-events: none;
+  stroke: #16725f;
+  stroke-dasharray: 4 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.lyric-map-hit-target {
+  cursor: grab;
+  fill: none;
+  pointer-events: stroke;
+  stroke: transparent;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 14;
+}
+
+.lyric-map-preview {
+  opacity: 0.7;
+}
+
 .measure-hit.is-input-armed,
 .measure-hit.is-input-armed .measure-hit-target {
   pointer-events: none;

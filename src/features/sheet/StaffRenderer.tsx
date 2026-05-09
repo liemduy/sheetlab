@@ -29,6 +29,7 @@ export interface StaffRendererProps {
     clientX: number,
     clientY: number,
   ) => void;
+  onLyricMapChange?: (eventId: string, targetEventIds: string[]) => void;
   onMoveEvent?: (
     eventId: string,
     position: MusicPosition,
@@ -49,6 +50,7 @@ export interface StaffRendererProps {
   placementMode?: PlacementMode;
   inputCursor?: InputCursor | null;
   invalidMeasureKeys?: readonly string[];
+  showLyricMap?: boolean;
   voiceIndex?: number;
 }
 

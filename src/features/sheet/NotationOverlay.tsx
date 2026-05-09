@@ -1,7 +1,12 @@
 import { useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 import type { Score } from '../../domain/score/types';
-import type { AnnotationKind, DurationValue, StaffId } from '../../domain/score/types';
+import type {
+  AnnotationKind,
+  DurationValue,
+  ScoreEvent,
+  StaffId,
+} from '../../domain/score/types';
 import { getMeasureBeats } from '../../domain/score/timeSignatures';
 import { getKeySignatureSymbolMoveIssue } from '../../domain/score/keySignatures';
 import { getEventDots, isGeneratedRestEvent } from '../../domain/score/events';
@@ -17,12 +22,12 @@ import type { MusicPosition } from './interaction';
 import {
   STAFF_LEFT,
   STAFF_LINE_SPACING,
-  MEASURES_PER_SYSTEM,
   SVG_WIDTH,
   getLocalMeasureIndex,
   getScoreStaffTop,
   getMeasureX,
   getMeasureRight,
+  isScoreSystemEndMeasure,
 } from './layout';
 import { snapInsertPositionToEventBoundary } from './insertPosition';
 import { getBeatX, getPitchYForScore } from './notationGeometry';
@@ -72,6 +77,7 @@ interface NotationOverlayProps {
   inputCursor?: InputCursor | null;
   isInputArmed?: boolean;
   invalidMeasureKeys?: readonly string[];
+  showLyricMap?: boolean;
   onClearInteraction?: () => void;
   onHoverPositionChange?: (position: MusicPosition | null) => void;
   onPlaceAtPosition?: (position: MusicPosition) => void;
@@ -89,6 +95,7 @@ interface NotationOverlayProps {
     clientX: number,
     clientY: number,
   ) => void;
+  onLyricMapChange?: (eventId: string, targetEventIds: string[]) => void;
   onMoveEvent?: (
     eventId: string,
     position: MusicPosition,
@@ -348,6 +355,262 @@ function AnnotationHitTargets({
   );
 }
 
+interface ScoreEventContext {
+  event: ScoreEvent;
+  measureIndex: number;
+  staffId: StaffId;
+  voiceIndex: number;
+}
+
+function findScoreEventContextById(
+  score: Score,
+  eventId: string,
+): ScoreEventContext | null {
+  for (const part of score.parts) {
+    for (const staff of part.staves) {
+      for (const measure of staff.measures) {
+        for (const [voiceIndex, voice] of measure.voices.entries()) {
+          const event = voice.events.find((candidate) => candidate.id === eventId);
+
+          if (event) {
+            return {
+              event,
+              measureIndex: measure.index,
+              staffId: staff.id,
+              voiceIndex,
+            };
+          }
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+function getClosestPitchedEventId(
+  point: { x: number; y: number },
+  eventLayouts: Record<string, RenderedEventLayout>,
+) {
+  let closestEventId: string | null = null;
+  let closestDistance = Number.POSITIVE_INFINITY;
+
+  Object.entries(eventLayouts).forEach(([eventId, layout]) => {
+    if (layout.isGeneratedRest || layout.pitchLayouts.length === 0) {
+      return;
+    }
+
+    layout.pitchLayouts.forEach((pitchLayout) => {
+      const distance = Math.hypot(point.x - pitchLayout.x, point.y - pitchLayout.y);
+
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestEventId = eventId;
+      }
+    });
+  });
+
+  return closestDistance <= 36 ? closestEventId : null;
+}
+
+function getLyricMapTargetEventIds(
+  score: Score,
+  sourceEventId: string,
+  targetEventId: string,
+) {
+  const sourceContext = findScoreEventContextById(score, sourceEventId);
+  const targetContext = findScoreEventContextById(score, targetEventId);
+
+  if (!sourceContext || !targetContext) {
+    return [sourceEventId];
+  }
+
+  if (
+    sourceContext.staffId !== targetContext.staffId ||
+    sourceContext.voiceIndex !== targetContext.voiceIndex
+  ) {
+    return [targetEventId];
+  }
+
+  const staff = score.parts
+    .flatMap((part) => part.staves)
+    .find((candidate) => candidate.id === sourceContext.staffId);
+  const orderedEvents =
+    staff?.measures
+      .flatMap((measure) =>
+        (measure.voices[sourceContext.voiceIndex]?.events ?? []).map((event) => ({
+          event,
+          measureIndex: measure.index,
+        })),
+      )
+      .filter(
+        ({ event }) =>
+          !isGeneratedRestEvent(event) && event.kind !== 'rest',
+      )
+      .sort(
+        (first, second) =>
+          first.measureIndex - second.measureIndex ||
+          first.event.beat - second.event.beat ||
+          first.event.id.localeCompare(second.event.id),
+      ) ?? [];
+  const sourceIndex = orderedEvents.findIndex(
+    ({ event }) => event.id === sourceEventId,
+  );
+  const targetIndex = orderedEvents.findIndex(
+    ({ event }) => event.id === targetEventId,
+  );
+
+  if (sourceIndex < 0 || targetIndex < 0) {
+    return [sourceEventId];
+  }
+
+  const startIndex = Math.min(sourceIndex, targetIndex);
+  const endIndex = Math.max(sourceIndex, targetIndex);
+
+  return orderedEvents
+    .slice(startIndex, endIndex + 1)
+    .map(({ event }) => event.id);
+}
+
+function getLyricMapAnchor(layout: RenderedEventLayout) {
+  const pitchLayout =
+    layout.pitchLayouts.length > 0
+      ? layout.pitchLayouts.reduce((lowest, candidate) =>
+          candidate.y > lowest.y ? candidate : lowest,
+        )
+      : undefined;
+
+  return {
+    x: pitchLayout?.x ?? layout.x,
+    y: (pitchLayout?.y ?? layout.y) + 9,
+  };
+}
+
+function LyricMapConnectors({
+  annotationLayouts,
+  eventLayouts,
+  onStartDrag,
+  score,
+  show,
+}: {
+  annotationLayouts: RenderedAnnotationLayout[];
+  eventLayouts: Record<string, RenderedEventLayout>;
+  onStartDrag?: (drag: {
+    anchorX: number;
+    anchorY: number;
+    eventId: string;
+  }) => void;
+  score: Score;
+  show: boolean;
+}) {
+  if (!show) {
+    return null;
+  }
+
+  return (
+    <g aria-hidden="true" className="lyric-map-layer">
+      {annotationLayouts
+        .filter((layout) => layout.kind === 'lyric')
+        .map((layout) => {
+          const eventContext = findScoreEventContextById(score, layout.eventId);
+          const targetEventIds =
+            eventContext?.event.lyricMap?.eventIds &&
+            eventContext.event.lyricMap.eventIds.length > 0
+              ? [...new Set(eventContext.event.lyricMap.eventIds)]
+              : [layout.eventId];
+          const targets = targetEventIds
+            .map((targetEventId) => eventLayouts[targetEventId])
+            .filter((targetLayout): targetLayout is RenderedEventLayout =>
+              Boolean(targetLayout),
+            )
+            .map(getLyricMapAnchor);
+
+          if (targets.length === 0) {
+            return null;
+          }
+
+          const lyricAnchorY =
+            layout.side === 'below' ? layout.minY - 3 : layout.maxY + 3;
+          const handleStartDrag = (event: MouseEvent<SVGElement>) => {
+            if (!onStartDrag) {
+              return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            onStartDrag({
+              anchorX: layout.x,
+              anchorY: lyricAnchorY,
+              eventId: layout.eventId,
+            });
+          };
+
+          if (targets.length === 1) {
+            const target = targets[0];
+
+            return target ? (
+              <g key={layout.id}>
+                <line
+                  className="lyric-map-connector"
+                  data-event-id={layout.eventId}
+                  data-target-event-ids={targetEventIds.join(' ')}
+                  data-testid="lyric-map-connector"
+                  x1={layout.x}
+                  x2={target.x}
+                  y1={lyricAnchorY}
+                  y2={target.y}
+                />
+                <line
+                  className="lyric-map-hit-target"
+                  x1={layout.x}
+                  x2={target.x}
+                  y1={lyricAnchorY}
+                  y2={target.y}
+                  onMouseDown={handleStartDrag}
+                />
+              </g>
+            ) : null;
+          }
+
+          const sortedTargets = [...targets].sort((a, b) => a.x - b.x);
+          const firstTarget = sortedTargets[0];
+          const lastTarget = sortedTargets[sortedTargets.length - 1];
+
+          if (!firstTarget || !lastTarget) {
+            return null;
+          }
+
+          const bridgeY =
+            layout.side === 'below' ? layout.minY - 12 : layout.maxY + 12;
+          const pathData = [
+            `M ${layout.x} ${lyricAnchorY} L ${layout.x} ${bridgeY}`,
+            `M ${firstTarget.x} ${bridgeY} L ${lastTarget.x} ${bridgeY}`,
+            ...sortedTargets.map(
+              (target) => `M ${target.x} ${bridgeY} L ${target.x} ${target.y}`,
+            ),
+          ].join(' ');
+
+          return (
+            <g key={layout.id}>
+              <path
+                className="lyric-map-connector"
+                d={pathData}
+                data-event-id={layout.eventId}
+                data-target-event-ids={targetEventIds.join(' ')}
+                data-testid="lyric-map-connector"
+              />
+              <path
+                className="lyric-map-hit-target"
+                d={pathData}
+                onMouseDown={handleStartDrag}
+              />
+            </g>
+          );
+        })}
+    </g>
+  );
+}
+
 const KEY_SIGNATURE_SYMBOL_TEXT = {
   flat: '♭',
   sharp: '♯',
@@ -370,6 +633,7 @@ export function NotationOverlay({
   onMoveEvent,
   onMoveKeySignatureSymbol,
   onAnnotationContextMenu,
+  onLyricMapChange,
   onPlaceAtPosition,
   onDeleteEvent,
   onMeasureContextMenu,
@@ -381,6 +645,7 @@ export function NotationOverlay({
   selectedEventId,
   selectedMeasure,
   selectedPitchIndex,
+  showLyricMap = false,
   svgHeight,
   voiceIndex = 0,
 }: NotationOverlayProps) {
@@ -403,6 +668,12 @@ export function NotationOverlay({
     startClientY: number;
     startSvgX: number;
     startSvgY: number;
+  } | null>(null);
+  const [lyricMapDragState, setLyricMapDragState] = useState<{
+    anchorX: number;
+    anchorY: number;
+    eventId: string;
+    previewPoint: { x: number; y: number } | null;
   } | null>(null);
   const [deleteHoverEventId, setDeleteHoverEventId] = useState<string | null>(
     null,
@@ -445,6 +716,7 @@ export function NotationOverlay({
     isInputArmed &&
     !dragState &&
     !keySignatureDragState &&
+    !lyricMapDragState &&
     !deleteHoverEventId &&
     !selectedEventId;
   const displayHoverPosition =
@@ -627,6 +899,17 @@ export function NotationOverlay({
       role="img"
       viewBox={`0 0 ${SVG_WIDTH} ${svgHeight}`}
       onMouseMove={(event) => {
+        if (lyricMapDragState) {
+          const point = getSvgPoint(event, svgHeight);
+
+          setLyricMapDragState({
+            ...lyricMapDragState,
+            previewPoint: point,
+          });
+          onHoverPositionChange?.(null);
+          return;
+        }
+
         if (keySignatureDragState) {
           const point = getSvgPoint(event, svgHeight);
           const clientMovement = Math.hypot(
@@ -693,10 +976,31 @@ export function NotationOverlay({
       onMouseLeave={() => {
         setDragState(null);
         setKeySignatureDragState(null);
+        setLyricMapDragState(null);
         setDeleteHoverEventId(null);
         onHoverPositionChange?.(null);
       }}
       onMouseUp={(event) => {
+        if (lyricMapDragState) {
+          const point = getSvgPoint(event, svgHeight);
+          const targetEventId = getClosestPitchedEventId(point, eventLayouts);
+
+          if (targetEventId) {
+            suppressNextPlaceRef.current = true;
+            onLyricMapChange?.(
+              lyricMapDragState.eventId,
+              getLyricMapTargetEventIds(
+                score,
+                lyricMapDragState.eventId,
+                targetEventId,
+              ),
+            );
+          }
+
+          setLyricMapDragState(null);
+          return;
+        }
+
         if (keySignatureDragState) {
           const position = getKeySignatureDragMusicPosition(event);
 
@@ -789,7 +1093,7 @@ export function NotationOverlay({
       ) : null}
       {score.type === 'grand' && staves.length > 1
         ? (staves[0]?.measures ?? [])
-            .filter((measure) => getLocalMeasureIndex(measure.index) === 0)
+            .filter((measure) => getLocalMeasureIndex(measure.index, score) === 0)
             .map((measure) => (
               <line
                 key={`grand-${measure.index}`}
@@ -860,7 +1164,7 @@ export function NotationOverlay({
               },
             ];
             const isSystemEnd =
-              getLocalMeasureIndex(measure.index) === MEASURES_PER_SYSTEM - 1 ||
+              isScoreSystemEndMeasure(score, measure.index) ||
               measureOffset === staff.measures.length - 1;
 
             if (isSystemEnd) {
@@ -925,6 +1229,30 @@ export function NotationOverlay({
           )}
         </g>
       ))}
+      <LyricMapConnectors
+        annotationLayouts={annotationLayouts}
+        eventLayouts={eventLayouts}
+        onStartDrag={(drag) => {
+          suppressNextPlaceRef.current = true;
+          setLyricMapDragState({
+            ...drag,
+            previewPoint: null,
+          });
+          onHoverPositionChange?.(null);
+        }}
+        score={score}
+        show={showLyricMap}
+      />
+      {lyricMapDragState?.previewPoint ? (
+        <line
+          className="lyric-map-connector lyric-map-preview"
+          data-testid="lyric-map-preview"
+          x1={lyricMapDragState.anchorX}
+          x2={lyricMapDragState.previewPoint.x}
+          y1={lyricMapDragState.anchorY}
+          y2={lyricMapDragState.previewPoint.y}
+        />
+      ) : null}
       <AnnotationHitTargets
         layouts={annotationLayouts}
         onAnnotationContextMenu={onAnnotationContextMenu}
