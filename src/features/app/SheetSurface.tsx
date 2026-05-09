@@ -12,6 +12,7 @@ import type { MeasureContextMenuState, MeasureTarget } from './selectionTypes';
 
 interface SheetSurfaceProps {
   activeEventId: string | null;
+  activeEventIds: readonly string[];
   activeInvalidMeasureKeys: string[];
   canvasZoom: number;
   inputCursor: InputCursor | null;
@@ -66,6 +67,7 @@ interface SheetSurfaceProps {
 
 export function SheetSurface({
   activeEventId,
+  activeEventIds,
   activeInvalidMeasureKeys,
   canvasZoom,
   getMeasureCount,
@@ -152,6 +154,7 @@ export function SheetSurface({
             dots={toolState.dots}
             entryMode={toolState.entryMode}
             activeEventId={activeEventId}
+            activeEventIds={activeEventIds}
             hoverPosition={hoverPosition}
             inputCursor={inputCursor}
             isInputArmed={toolState.isInputArmed}

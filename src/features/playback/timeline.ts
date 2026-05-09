@@ -145,12 +145,17 @@ export function getActiveTimelineEvent(
   timeline: PlaybackTimelineEvent[],
   elapsedSeconds: number,
 ) {
-  return (
-    timeline.find(
-      (event) =>
-        elapsedSeconds >= event.startSeconds &&
-        elapsedSeconds < event.startSeconds + event.durationSeconds,
-    ) ?? null
+  return getActiveTimelineEvents(timeline, elapsedSeconds)[0] ?? null;
+}
+
+export function getActiveTimelineEvents(
+  timeline: PlaybackTimelineEvent[],
+  elapsedSeconds: number,
+) {
+  return timeline.filter(
+    (event) =>
+      elapsedSeconds >= event.startSeconds &&
+      elapsedSeconds < event.startSeconds + event.durationSeconds,
   );
 }
 

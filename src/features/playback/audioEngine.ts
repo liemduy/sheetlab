@@ -3,7 +3,22 @@ import { pitchToToneNote } from './pitch';
 import type { Pitch } from '../../domain/score/types';
 
 export interface PlaybackController {
+  startedAtMs: number;
   stop: () => void;
+}
+
+const PLAYBACK_SCHEDULE_LEAD_SECONDS = 0.08;
+
+function getAudioOutputLatencySeconds(Tone: typeof import('tone')) {
+  const rawContext = Tone.getContext().rawContext as AudioContext & {
+    outputLatency?: number;
+  };
+  const outputLatency =
+    typeof rawContext.outputLatency === 'number' ? rawContext.outputLatency : 0;
+  const baseLatency =
+    typeof rawContext.baseLatency === 'number' ? rawContext.baseLatency : 0;
+
+  return Math.max(outputLatency, baseLatency, 0);
 }
 
 export async function playTimelineAudio(
@@ -17,6 +32,7 @@ export async function playTimelineAudio(
 
   if (!AudioContextConstructor) {
     return {
+      startedAtMs: performance.now(),
       stop: () => undefined,
     };
   }
@@ -24,19 +40,34 @@ export async function playTimelineAudio(
   const Tone = await import('tone');
   await Tone.start();
   const synth = new Tone.PolySynth(Tone.Synth).toDestination();
-  const now = Tone.now();
+  const audioNowSeconds = Tone.now();
+  const audioImmediateSeconds = Tone.immediate();
+  const toneLookAheadSeconds = Math.max(
+    0,
+    audioNowSeconds - audioImmediateSeconds,
+  );
+  const outputLatencySeconds = getAudioOutputLatencySeconds(Tone);
+  const scheduledStartSeconds =
+    audioNowSeconds + PLAYBACK_SCHEDULE_LEAD_SECONDS;
+  const startedAtMs =
+    performance.now() +
+    (toneLookAheadSeconds +
+      PLAYBACK_SCHEDULE_LEAD_SECONDS +
+      outputLatencySeconds) *
+      1000;
 
   timeline.forEach((event) => {
     if (event.pitches.length > 0) {
       synth.triggerAttackRelease(
         event.pitches.map(pitchToToneNote),
         event.durationSeconds,
-        now + event.startSeconds,
+        scheduledStartSeconds + event.startSeconds,
       );
     }
   });
 
   return {
+    startedAtMs,
     stop: () => {
       synth.releaseAll();
       synth.dispose();

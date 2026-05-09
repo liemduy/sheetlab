@@ -14,9 +14,7 @@ import type { MusicPosition } from '../sheet/interaction';
 import { snapInsertPositionToEventBoundary } from '../sheet/insertPosition';
 import {
   createCursorAfterPlacement,
-  hasPitchedEventAtPosition,
   musicPositionFromCursor,
-  shouldUseSequentialCursor,
 } from './inputCursorFlow';
 
 interface UseCursorPlacementOptions {
@@ -43,16 +41,10 @@ export function useCursorPlacement({
   const [hoverPosition, setHoverPosition] = useState<MusicPosition | null>(null);
   const [inputCursor, setInputCursor] = useState<InputCursor | null>(null);
   const eventCounter = useRef(1);
-  const isCursorSequenceLockedRef = useRef(false);
-
-  function setCursorSequenceLocked(isLocked: boolean) {
-    isCursorSequenceLockedRef.current = isLocked;
-  }
 
   function clearPointerState() {
     setHoverPosition(null);
     setInputCursor(null);
-    setCursorSequenceLocked(false);
   }
 
   function handleHoverPositionChange(position: MusicPosition | null) {
@@ -63,31 +55,16 @@ export function useCursorPlacement({
       return;
     }
 
-    setInputCursor((currentCursor) => {
-      const sequentialCursor =
-        currentCursor &&
-        shouldUseSequentialCursor(
-          currentCursor,
-          isCursorSequenceLockedRef.current,
-          nextHoverPosition,
-        )
-          ? currentCursor
-          : null;
-      const cursorPosition = sequentialCursor
-        ? musicPositionFromCursor(sequentialCursor, nextHoverPosition)
-        : nextHoverPosition;
-      const nextCursor = createInputCursorFromPosition(
-        cursorPosition,
-        toolState.duration,
-        'note-input',
-        getMeasureBeats(score.timeSignature),
-        toolState.dots,
-      );
+    const nextCursor = createInputCursorFromPosition(
+      nextHoverPosition,
+      toolState.duration,
+      'note-input',
+      getMeasureBeats(score.timeSignature),
+      toolState.dots,
+    );
 
-      setHoverPosition(musicPositionFromCursor(nextCursor, cursorPosition));
-
-      return nextCursor;
-    });
+    setInputCursor(nextCursor);
+    setHoverPosition(musicPositionFromCursor(nextCursor, nextHoverPosition));
   }
 
   function handlePlaceAtPosition(position: MusicPosition) {
@@ -96,24 +73,10 @@ export function useCursorPlacement({
       return;
     }
 
-    const sequentialCursor =
-      inputCursor &&
-      shouldUseSequentialCursor(
-        inputCursor,
-        isCursorSequenceLockedRef.current,
-        position,
-      ) &&
-      !hasPitchedEventAtPosition(score, position, toolState.voiceIndex)
-        ? inputCursor
-        : null;
-    const sequentialPlacementPosition =
-      sequentialCursor
-        ? musicPositionFromCursor(sequentialCursor, position)
-        : position;
     const placementPosition =
       toolState.placementMode === 'insert'
         ? snapInsertPositionToEventBoundary(score, position, toolState.voiceIndex)
-        : sequentialPlacementPosition;
+        : position;
     const accidental =
       toolState.accidental === 'none' ? undefined : toolState.accidental;
     const eventId = `event-${eventCounter.current++}`;
@@ -164,7 +127,6 @@ export function useCursorPlacement({
           toolState.voiceIndex,
         ),
       );
-      setCursorSequenceLocked(true);
       clearSelection();
     } else {
       markInvalidMeasure(
@@ -181,6 +143,5 @@ export function useCursorPlacement({
     handlePlaceAtPosition,
     hoverPosition,
     inputCursor,
-    setCursorSequenceLocked,
   };
 }

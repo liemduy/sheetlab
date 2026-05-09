@@ -103,7 +103,6 @@ function SheetLabApp() {
     handlePlaceAtPosition,
     hoverPosition,
     inputCursor,
-    setCursorSequenceLocked,
   } = useCursorPlacement({
     clearSelection,
     commitScoreChange,
@@ -381,12 +380,10 @@ function SheetLabApp() {
 
   function handleVoiceIndexChange(voiceIndex: EditableVoiceIndex) {
     updateToolState({ voiceIndex });
-    setCursorSequenceLocked(false);
   }
 
   function handlePlacementModeChange(placementMode: PlacementMode) {
     updateToolState({ placementMode });
-    setCursorSequenceLocked(false);
   }
 
   function handleSelectMeasure(staffId: StaffId, measureIndex: number) {
@@ -494,6 +491,7 @@ function SheetLabApp() {
   });
   const {
     activePlaybackEvent,
+    activePlaybackEventIds,
     handlePlaybackToggle,
     isPlaying,
     playbackBeat,
@@ -649,6 +647,7 @@ function SheetLabApp() {
 
         <SheetSurface
           activeEventId={activePlaybackEvent?.id ?? null}
+          activeEventIds={activePlaybackEventIds}
           activeInvalidMeasureKeys={activeInvalidMeasureKeys}
           canvasZoom={canvasZoom}
           getMeasureCount={getMeasureCount}

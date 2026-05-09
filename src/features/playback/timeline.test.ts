@@ -10,6 +10,7 @@ import {
   buildPlaybackMeasureOrder,
   buildPlaybackTimeline,
   getActiveTimelineEvent,
+  getActiveTimelineEvents,
   getPlaybackBeatAtSeconds,
   getPlaybackScoreBeatAtSeconds,
   getTimelineDurationSeconds,
@@ -58,7 +59,52 @@ describe('playback timeline', () => {
       pitch: { step: 'C', octave: 3 },
     });
 
-    expect(buildPlaybackTimeline(score)).toHaveLength(2);
+    const timeline = buildPlaybackTimeline(score);
+
+    expect(timeline).toHaveLength(2);
+    expect(timeline.map((event) => event.startSeconds)).toEqual([0, 0]);
+    expect(timeline.map((event) => event.pitches)).toEqual([
+      [{ step: 'C', octave: 3 }],
+      [{ step: 'C', octave: 5 }],
+    ]);
+  });
+
+  it('keeps right-hand chords and left-hand notes on the same attack time', () => {
+    const score = createEmptyScore('grand', { measureCount: 1, tempo: 120 });
+    const rightHandChord: ChordEvent = {
+      id: 'right-hand-c-major',
+      kind: 'chord',
+      beat: 0,
+      duration: 'quarter',
+      pitches: [
+        { step: 'C', octave: 5 },
+        { step: 'E', octave: 5 },
+      ],
+    };
+
+    score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events.push(rightHandChord);
+    const scoreWithLeftHand = placeScoreEvent(score, {
+      eventId: 'left-hand-c',
+      staffId: 'bass',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'half',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 3 },
+    });
+    const timeline = buildPlaybackTimeline(scoreWithLeftHand);
+
+    expect(timeline.map((event) => event.startSeconds)).toEqual([0, 0]);
+    expect(timeline.map((event) => event.durationSeconds)).toEqual([1, 0.5]);
+    expect(timeline.flatMap((event) => event.pitches)).toEqual([
+      { step: 'C', octave: 3 },
+      { step: 'C', octave: 5 },
+      { step: 'E', octave: 5 },
+    ]);
+    expect(getActiveTimelineEvents(timeline, 0).map((event) => event.id)).toEqual([
+      'left-hand-c',
+      'right-hand-c-major',
+    ]);
   });
 
   it('keeps chord columns as one timeline event with multiple pitches', () => {

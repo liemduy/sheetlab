@@ -1,4 +1,3 @@
-import { isPitchedScoreEvent } from '../../domain/score/events';
 import { getMeasureBeats } from '../../domain/score/timeSignatures';
 import type {
   DurationValue,
@@ -30,59 +29,6 @@ export function musicPositionFromCursor(
     staffId: cursor.staffId,
     staffIndex: cursor.staffIndex,
   };
-}
-
-export function hasPitchedEventAtPosition(
-  score: Score,
-  position: MusicPosition,
-  voiceIndex = 0,
-) {
-  return hasPitchedEventAtPositionInVoice(score, position, voiceIndex);
-}
-
-export function hasPitchedEventAtPositionInVoice(
-  score: Score,
-  position: MusicPosition,
-  voiceIndex = 0,
-) {
-  const voice = score.parts
-    .flatMap((part) => part.staves)
-    .find((staff) => staff.id === position.staffId)
-    ?.measures.find((measure) => measure.index === position.measureIndex)
-    ?.voices[voiceIndex];
-
-  return (
-    voice?.events.some(
-      (event) => isPitchedScoreEvent(event) && event.beat === position.beat,
-    ) ?? false
-  );
-}
-
-const SEQUENTIAL_CLICK_CLIENT_RADIUS = 32;
-
-function isNearSequentialCursor(cursor: InputCursor, position: MusicPosition) {
-  if (cursor.clientX === undefined || position.clientX === undefined) {
-    return false;
-  }
-
-  return (
-    Math.abs(position.clientX - cursor.clientX) <=
-    SEQUENTIAL_CLICK_CLIENT_RADIUS
-  );
-}
-
-export function shouldUseSequentialCursor(
-  cursor: InputCursor,
-  isSequenceLocked: boolean,
-  position: MusicPosition,
-) {
-  return (
-    isSequenceLocked &&
-    cursor.mode === 'note-input' &&
-    cursor.staffId === position.staffId &&
-    (cursor.measureIndex === position.measureIndex ||
-      isNearSequentialCursor(cursor, position))
-  );
 }
 
 export function createCursorAfterPlacement(

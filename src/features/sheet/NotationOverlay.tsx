@@ -4,7 +4,7 @@ import type { Score } from '../../domain/score/types';
 import type { DurationValue, StaffId } from '../../domain/score/types';
 import { getMeasureBeats } from '../../domain/score/timeSignatures';
 import { getKeySignatureSymbolMoveIssue } from '../../domain/score/keySignatures';
-import { getEventDots } from '../../domain/score/events';
+import { getEventDots, isGeneratedRestEvent } from '../../domain/score/events';
 import type { EntryMode, PlacementMode } from '../editor/editorState';
 import type { InputCursor } from '../editor/inputCursor';
 import { createInputCursorFromPosition } from '../editor/inputCursor';
@@ -54,8 +54,14 @@ import type { RenderedEventLayout } from './renderedEventLayout';
 
 const BEAT_MATCH_EPSILON = 0.0001;
 
+interface PlayheadAnchor {
+  beat: number;
+  x: number;
+}
+
 interface NotationOverlayProps {
   activeEventId?: string | null;
+  activeEventIds?: readonly string[];
   dots: number;
   duration: DurationValue;
   entryMode: EntryMode;
@@ -182,6 +188,114 @@ function snapPositionToInputGrid(
     : snappedPosition;
 }
 
+function getRenderedBeatAnchors(
+  score: Score,
+  measureIndex: number,
+  beatsPerMeasure: number,
+  eventLayouts: Record<string, RenderedEventLayout>,
+) {
+  const anchorsByBeat = new Map<number, number[]>();
+
+  score.parts
+    .flatMap((part) => part.staves)
+    .forEach((staff) => {
+      const measure = staff.measures.find(
+        (candidate) => candidate.index === measureIndex,
+      );
+
+      measure?.voices.forEach((voice) => {
+        voice.events.forEach((event) => {
+          if (isGeneratedRestEvent(event)) {
+            return;
+          }
+
+          const layout = eventLayouts[event.id];
+
+          if (!layout || layout.measureIndex !== measureIndex) {
+            return;
+          }
+
+          const beat = Number(Math.min(
+            beatsPerMeasure,
+            Math.max(0, event.beat),
+          ).toFixed(4));
+          const existing = anchorsByBeat.get(beat) ?? [];
+
+          anchorsByBeat.set(beat, [...existing, layout.x]);
+        });
+      });
+    });
+
+  const anchors: PlayheadAnchor[] = [...anchorsByBeat.entries()].map(
+    ([beat, xs]) => ({
+      beat,
+      x: xs.reduce((total, x) => total + x, 0) / xs.length,
+    }),
+  );
+
+  if (!anchorsByBeat.has(0)) {
+    anchors.push({
+      beat: 0,
+      x: getBeatX(measureIndex, 0, beatsPerMeasure, score),
+    });
+  }
+
+  if (!anchorsByBeat.has(beatsPerMeasure)) {
+    anchors.push({
+      beat: beatsPerMeasure,
+      x: getBeatX(measureIndex, beatsPerMeasure, beatsPerMeasure, score),
+    });
+  }
+
+  return anchors.sort((a, b) => a.beat - b.beat);
+}
+
+function getRenderedPlaybackX({
+  beat,
+  beatsPerMeasure,
+  eventLayouts,
+  measureIndex,
+  score,
+}: {
+  beat: number;
+  beatsPerMeasure: number;
+  eventLayouts: Record<string, RenderedEventLayout>;
+  measureIndex: number;
+  score: Score;
+}) {
+  const anchors = getRenderedBeatAnchors(
+    score,
+    measureIndex,
+    beatsPerMeasure,
+    eventLayouts,
+  );
+  const exactAnchor = anchors.find(
+    (anchor) => Math.abs(anchor.beat - beat) <= BEAT_MATCH_EPSILON,
+  );
+
+  if (exactAnchor) {
+    return exactAnchor.x;
+  }
+
+  const previousAnchor = [...anchors]
+    .reverse()
+    .find((anchor) => anchor.beat < beat);
+  const nextAnchor = anchors.find((anchor) => anchor.beat > beat);
+
+  if (
+    previousAnchor &&
+    nextAnchor &&
+    nextAnchor.beat - previousAnchor.beat > BEAT_MATCH_EPSILON
+  ) {
+    const progress =
+      (beat - previousAnchor.beat) / (nextAnchor.beat - previousAnchor.beat);
+
+    return previousAnchor.x + (nextAnchor.x - previousAnchor.x) * progress;
+  }
+
+  return getBeatX(measureIndex, beat, beatsPerMeasure, score);
+}
+
 const KEY_SIGNATURE_SYMBOL_TEXT = {
   flat: '♭',
   sharp: '♯',
@@ -189,6 +303,7 @@ const KEY_SIGNATURE_SYMBOL_TEXT = {
 
 export function NotationOverlay({
   activeEventId,
+  activeEventIds = [],
   dots,
   duration,
   entryMode,
@@ -245,6 +360,10 @@ export function NotationOverlay({
   const beatsPerMeasure = getMeasureBeats(score.timeSignature);
   const keySignatureSymbolLayouts = getKeySignatureSymbolLayouts(score);
   const invalidMeasureKeySet = new Set(invalidMeasureKeys);
+  const activeEventIdSet = new Set([
+    ...activeEventIds,
+    ...(activeEventId ? [activeEventId] : []),
+  ]);
   const ariaLabel =
     score.type === 'grand' ? 'Grand staff notation system' : 'Treble staff notation system';
   const draggedEvent =
@@ -255,9 +374,14 @@ export function NotationOverlay({
           .flatMap((measure) => measure.voices)
           .flatMap((voice) => voice.events)
           .find((event) => event.id === dragState.eventId) ?? null;
-  const snappedHoverPosition = hoverPosition
+  const inputCursorPosition =
+    inputCursor && hoverPosition
+      ? inputCursorToMusicPosition(inputCursor, score, staffGap)
+      : null;
+  const hoverSourcePosition = inputCursorPosition ?? hoverPosition;
+  const snappedHoverPosition = hoverSourcePosition
     ? snapPositionToInputGrid(
-        hoverPosition,
+        hoverSourcePosition,
         duration,
         dots,
         score,
@@ -278,6 +402,24 @@ export function NotationOverlay({
       : shouldShowInputPreview
         ? snappedHoverPosition
         : null;
+  const playheadMeasureIndex =
+    playbackBeat !== null && playbackBeat !== undefined
+      ? Math.floor(playbackBeat / beatsPerMeasure)
+      : null;
+  const playheadBeat =
+    playbackBeat !== null && playbackBeat !== undefined
+      ? playbackBeat % beatsPerMeasure
+      : null;
+  const playheadX =
+    playheadMeasureIndex !== null && playheadBeat !== null
+      ? getRenderedPlaybackX({
+          beat: playheadBeat,
+          beatsPerMeasure,
+          eventLayouts,
+          measureIndex: playheadMeasureIndex,
+          score,
+        })
+      : null;
 
   function getEventMusicPosition(event: MouseEvent<SVGSVGElement>) {
     const position = mapPointToMusicPosition(
@@ -594,7 +736,7 @@ export function NotationOverlay({
         score={score}
         voiceIndex={voiceIndex}
       />
-      {!dragState && displayHoverPosition ? (
+      {!dragState && displayHoverPosition && !inputCursor ? (
         <StaffHoverGuide
           position={displayHoverPosition}
           score={score}
@@ -713,6 +855,7 @@ export function NotationOverlay({
               <EventHitTarget
                 key={event.id}
                 activeEventId={activeEventId}
+                isPlaybackActive={activeEventIdSet.has(event.id)}
                 beatsPerMeasure={beatsPerMeasure}
                 event={event}
                 eventLayout={eventLayouts[event.id]}
@@ -771,27 +914,19 @@ export function NotationOverlay({
           }}
         />
       ))}
-      {playbackBeat !== null && playbackBeat !== undefined ? (
+      {playheadX !== null && playheadMeasureIndex !== null ? (
         <line
           className="playhead"
           data-testid="playhead"
-          x1={getBeatX(
-            Math.floor(playbackBeat / beatsPerMeasure),
-            playbackBeat % beatsPerMeasure,
-            beatsPerMeasure,
-            score,
-          )}
-          x2={getBeatX(
-            Math.floor(playbackBeat / beatsPerMeasure),
-            playbackBeat % beatsPerMeasure,
-            beatsPerMeasure,
-            score,
-          )}
+          data-beat={playheadBeat ?? undefined}
+          data-measure-index={playheadMeasureIndex}
+          x1={playheadX}
+          x2={playheadX}
           y1={
             getStaffTop(
               0,
               staffGap,
-              Math.floor(playbackBeat / beatsPerMeasure),
+              playheadMeasureIndex,
               systemGap,
             ) - 24
           }
@@ -799,7 +934,7 @@ export function NotationOverlay({
             getStaffTop(
               staves.length - 1,
               staffGap,
-              Math.floor(playbackBeat / beatsPerMeasure),
+              playheadMeasureIndex,
               systemGap,
             ) +
             STAFF_LINE_SPACING * 4 +

@@ -38,6 +38,7 @@ export interface StaffRendererProps {
   selectedPitchIndex?: number | null;
   selectedMeasure?: { staffId: StaffId; measureIndex: number } | null;
   activeEventId?: string | null;
+  activeEventIds?: readonly string[];
   playbackBeat?: number | null;
   placementMode?: PlacementMode;
   inputCursor?: InputCursor | null;

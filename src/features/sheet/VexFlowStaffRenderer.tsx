@@ -727,9 +727,14 @@ function syncVexFlowSelection(
   selectedEventId?: string | null,
   selectedPitchIndex?: number | null,
   activeEventId?: string | null,
+  activeEventIds: readonly string[] = [],
   invalidMeasureKeys: readonly string[] = [],
 ) {
   const invalidMeasureKeySet = new Set(invalidMeasureKeys);
+  const activeEventIdSet = new Set([
+    ...activeEventIds,
+    ...(activeEventId ? [activeEventId] : []),
+  ]);
 
   container.querySelectorAll('.vf-user-event').forEach((element) => {
     const eventId = element.getAttribute('data-event-id');
@@ -748,7 +753,10 @@ function syncVexFlowSelection(
           selectedPitchIndex === undefined ||
           pitchCount <= 1),
     );
-    element.classList.toggle('is-playing', eventId === activeEventId);
+    element.classList.toggle(
+      'is-playing',
+      eventId !== null && activeEventIdSet.has(eventId),
+    );
     element.classList.toggle('is-invalid-measure', isInvalidMeasure);
   });
 }
@@ -769,16 +777,11 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         props.selectedEventId,
         props.selectedPitchIndex,
         props.activeEventId,
+        props.activeEventIds,
         props.invalidMeasureKeys,
       );
     }
-  }, [
-    props.activeEventId,
-    props.invalidMeasureKeys,
-    props.score,
-    props.selectedEventId,
-    props.selectedPitchIndex,
-  ]);
+  }, [props.score]);
 
   useEffect(() => {
     if (containerRef.current) {
@@ -787,6 +790,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         props.selectedEventId,
         props.selectedPitchIndex,
         props.activeEventId,
+        props.activeEventIds,
         props.invalidMeasureKeys,
       );
     }
@@ -796,6 +800,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
     props.invalidMeasureKeys,
     props.selectedEventId,
     props.selectedPitchIndex,
+    props.activeEventIds,
   ]);
 
   return (
@@ -812,6 +817,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
       <div ref={containerRef} className="vexflow-output" aria-hidden="true" />
       <NotationOverlay
         activeEventId={props.activeEventId}
+        activeEventIds={props.activeEventIds}
         duration={props.duration ?? 'quarter'}
         dots={props.dots ?? 0}
         entryMode={props.entryMode ?? 'note'}

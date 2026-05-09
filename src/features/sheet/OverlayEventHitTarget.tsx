@@ -21,6 +21,7 @@ interface EventHitTargetProps {
   event: ScoreEvent;
   eventLayout?: RenderedEventLayout;
   isInputArmed?: boolean;
+  isPlaybackActive?: boolean;
   measureIndex: number;
   onDeleteEvent?: (eventId: string, pitchIndex?: number | null) => void;
   onDeleteHoverChange: (eventId: string | null) => void;
@@ -48,6 +49,7 @@ export function EventHitTarget({
   event,
   eventLayout,
   isInputArmed,
+  isPlaybackActive,
   measureIndex,
   onDeleteEvent,
   onDeleteHoverChange,
@@ -207,7 +209,7 @@ export function EventHitTarget({
         aria-label={label}
         className={`score-event-hit${
           selectedEventId === event.id ? ' is-selected' : ''
-        }${activeEventId === event.id ? ' is-playing' : ''}${
+        }${isPlaybackActive || activeEventId === event.id ? ' is-playing' : ''}${
           isInputArmed ? ' is-input-armed' : ''
         }`}
         data-duration={event.duration}

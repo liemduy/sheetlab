@@ -380,6 +380,54 @@ describe('StaffRenderer', () => {
     expect(Number(ghostNoteHead?.getAttribute('cx'))).toBeCloseTo(slotCenterX, 2);
   });
 
+  it('keeps the ghost note on the active cursor column when hover x is stale', () => {
+    const score = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'quarter-note-1',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+
+    render(
+      <StaffRenderer
+        duration="quarter"
+        hoverPosition={{
+          beat: 1,
+          measureIndex: 0,
+          pitch: { step: 'G', octave: 4 },
+          staffId: 'treble',
+          staffIndex: 0,
+          x: getBeatX(0, 2, 4, score),
+          y: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
+        }}
+        inputCursor={{
+          beat: 1,
+          duration: 'quarter',
+          measureIndex: 0,
+          mode: 'note-input',
+          pitchPreview: { step: 'G', octave: 4 },
+          staffId: 'treble',
+          staffIndex: 0,
+        }}
+        score={score}
+      />,
+    );
+
+    const slot = screen.getByTestId('rhythm-slot');
+    const slotCenterX = Number(slot.getAttribute('data-slot-center-x'));
+    const ghostNoteHead = screen
+      .getByTestId('ghost-event')
+      .querySelector('ellipse');
+    const ghostCenterX = Number(ghostNoteHead?.getAttribute('cx'));
+
+    expect(slot).toHaveAttribute('data-beat', '1');
+    expect(ghostCenterX).toBeCloseTo(slotCenterX, 2);
+    expect(ghostCenterX).not.toBeCloseTo(getBeatX(0, 2, 4, score), 2);
+  });
+
   it('renders an empty grand staff system', () => {
     render(<StaffRenderer score={createEmptyScore('grand', { measureCount: 4 })} />);
 
@@ -607,6 +655,65 @@ describe('StaffRenderer', () => {
       container.querySelector('.vexflow-output [data-event-id="treble-m1-e1"]'),
     ).not.toBeNull();
     expect(container.querySelectorAll('.score-event-notehead')).toHaveLength(0);
+  });
+
+  it('marks simultaneous active playback events on both staves', async () => {
+    const scoreWithTreble = placeScoreEvent(createEmptyScore('grand'), {
+      eventId: 'playing-treble',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'half',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 5 },
+    });
+    const score = placeScoreEvent(scoreWithTreble, {
+      eventId: 'playing-bass',
+      staffId: 'bass',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'half',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 3 },
+    });
+    const { container } = render(
+      <StaffRenderer
+        activeEventIds={['playing-treble', 'playing-bass']}
+        score={score}
+      />,
+    );
+
+    expect(
+      screen.getByRole('button', { name: 'Note C5 measure 1 beat 1' }),
+    ).toHaveClass('is-playing');
+    expect(
+      screen.getByRole('button', { name: 'Note C3 measure 1 beat 1' }),
+    ).toHaveClass('is-playing');
+    await waitFor(() => {
+      expect(
+        container.querySelectorAll('.vexflow-output .vf-user-event.is-playing'),
+      ).toHaveLength(2);
+    });
+  });
+
+  it('aligns the playhead to the rendered VexFlow event column', async () => {
+    render(<StaffRenderer playbackBeat={1} score={trebleStudyFixture} />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: 'Note D4 measure 1 beat 2' }),
+      ).toHaveAttribute('data-layout-x');
+    });
+
+    const eventX = Number(
+      screen
+        .getByRole('button', { name: 'Note D4 measure 1 beat 2' })
+        .getAttribute('data-layout-x'),
+    );
+    const playheadX = Number(screen.getByTestId('playhead').getAttribute('x1'));
+
+    expect(playheadX).toBeCloseTo(eventX, 2);
+    expect(playheadX).not.toBeCloseTo(getBeatX(0, 1, 4, trebleStudyFixture), 2);
   });
 
   it('marks every note and the staff lines in an invalid measure', () => {

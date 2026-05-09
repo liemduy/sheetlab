@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./features/playback/audioEngine', () => ({
   playPitchPreview: vi.fn(() => Promise.resolve()),
-  playTimelineAudio: vi.fn(() => Promise.resolve({ stop: vi.fn() })),
+  playTimelineAudio: vi.fn(() =>
+    Promise.resolve({ startedAtMs: performance.now(), stop: vi.fn() }),
+  ),
 }));
 
 import App from './App';
@@ -506,8 +508,8 @@ describe('App editor state', () => {
     ).toBeInTheDocument();
   });
 
-  it('keeps same-staff note entry on the advanced cursor even when the click x drifts', async () => {
-    const { container } = render(<App />);
+  it('places same-staff clicks on the pointed rhythm slot instead of the advanced cursor', () => {
+    render(<App />);
     startWriting('Eighth');
 
     const overlay = screen.getByTestId('staff-renderer');
@@ -517,20 +519,13 @@ describe('App editor state', () => {
       clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
     });
     fireEvent.click(overlay, {
-      clientX: getBeatX(0, 2, 4),
-      clientY: getPitchY({ step: 'A', octave: 4 }, 'treble', 0),
-    });
-    fireEvent.click(overlay, {
       clientX: getBeatX(0, 3.5, 4),
-      clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
+      clientY: getPitchY({ step: 'A', octave: 4 }, 'treble', 0),
     });
 
     expect(screen.getByLabelText('Note G4 measure 1 beat 1')).toBeInTheDocument();
-    expect(screen.getByLabelText('Note A4 measure 1 beat 1.5')).toBeInTheDocument();
-    expect(screen.getByLabelText('Note G4 measure 1 beat 2')).toBeInTheDocument();
-    await waitFor(() => {
-      expect(container.querySelectorAll('.vexflow-output .vf-beam').length).toBeGreaterThan(0);
-    });
+    expect(screen.getByLabelText('Note A4 measure 1 beat 3.5')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Note A4 measure 1 beat 1.5')).not.toBeInTheDocument();
   });
 
   it('snaps an empty measure to its first rhythm slot instead of free-clicking the middle', () => {
@@ -582,7 +577,7 @@ describe('App editor state', () => {
     ).toBeInTheDocument();
   });
 
-  it('keeps hover on the advanced slot while preserving chord entry on occupied slots', () => {
+  it('shows the hovered occupied slot and clicks that same slot', () => {
     render(<App />);
     startWriting('Eighth');
 
@@ -605,11 +600,13 @@ describe('App editor state', () => {
 
     expect(screen.getByTestId('active-input-cursor')).toHaveAttribute(
       'data-beat',
-      '0.5',
+      '0',
     );
+    expect(screen.getAllByTestId('rhythm-slot')).toHaveLength(1);
+    expect(screen.queryByTestId('staff-hover-guide')).not.toBeInTheDocument();
     expect(
       within(screen.getByLabelText('Current editor state')).getAllByText(
-        'treble M1 B1.5 G4',
+        'treble M1 B1 G4',
       ).length,
     ).toBeGreaterThan(0);
 
