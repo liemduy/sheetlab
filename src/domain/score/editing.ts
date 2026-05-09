@@ -19,6 +19,7 @@ import {
   isGeneratedRestEvent,
   isPitchedScoreEvent,
 } from './events';
+import { findScoreEventContext } from './eventLookup';
 import { clampPitchToClefRange } from './pitchRange';
 import {
   eventsOverlapByTick,
@@ -825,26 +826,16 @@ export function deleteScoreEventPitch(
 }
 
 export function findScoreEvent(score: Score, eventId: string) {
-  for (const part of score.parts) {
-    for (const staff of part.staves) {
-      for (const measure of staff.measures) {
-        for (const [voiceIndex, voice] of measure.voices.entries()) {
-          const event = voice.events.find((candidate) => candidate.id === eventId);
+  const found = findScoreEventContext(score, eventId);
 
-          if (event) {
-            return {
-              event,
-              measureIndex: measure.index,
-              staffId: staff.id,
-              voiceIndex,
-            };
-          }
-        }
+  return found
+    ? {
+        event: found.event,
+        measureIndex: found.measureIndex,
+        staffId: found.staffId,
+        voiceIndex: found.voiceIndex,
       }
-    }
-  }
-
-  return null;
+    : null;
 }
 
 export function tryUpdateScoreEvent(

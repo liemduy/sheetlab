@@ -4,12 +4,15 @@ import type { Score } from '../../domain/score/types';
 import type {
   AnnotationKind,
   DurationValue,
-  ScoreEvent,
   StaffId,
 } from '../../domain/score/types';
 import { getMeasureBeats } from '../../domain/score/timeSignatures';
 import { getKeySignatureSymbolMoveIssue } from '../../domain/score/keySignatures';
 import { getEventDots, isGeneratedRestEvent } from '../../domain/score/events';
+import {
+  getLyricMapEventIds,
+  getLyricMapTargetEventIds,
+} from '../../domain/score/lyricMapping';
 import type { EntryMode, PlacementMode } from '../editor/editorState';
 import type { InputCursor } from '../editor/inputCursor';
 import { createInputCursorFromPosition } from '../editor/inputCursor';
@@ -355,39 +358,6 @@ function AnnotationHitTargets({
   );
 }
 
-interface ScoreEventContext {
-  event: ScoreEvent;
-  measureIndex: number;
-  staffId: StaffId;
-  voiceIndex: number;
-}
-
-function findScoreEventContextById(
-  score: Score,
-  eventId: string,
-): ScoreEventContext | null {
-  for (const part of score.parts) {
-    for (const staff of part.staves) {
-      for (const measure of staff.measures) {
-        for (const [voiceIndex, voice] of measure.voices.entries()) {
-          const event = voice.events.find((candidate) => candidate.id === eventId);
-
-          if (event) {
-            return {
-              event,
-              measureIndex: measure.index,
-              staffId: staff.id,
-              voiceIndex,
-            };
-          }
-        }
-      }
-    }
-  }
-
-  return null;
-}
-
 function getClosestPitchedEventId(
   point: { x: number; y: number },
   eventLayouts: Record<string, RenderedEventLayout>,
@@ -411,65 +381,6 @@ function getClosestPitchedEventId(
   });
 
   return closestDistance <= 36 ? closestEventId : null;
-}
-
-function getLyricMapTargetEventIds(
-  score: Score,
-  sourceEventId: string,
-  targetEventId: string,
-) {
-  const sourceContext = findScoreEventContextById(score, sourceEventId);
-  const targetContext = findScoreEventContextById(score, targetEventId);
-
-  if (!sourceContext || !targetContext) {
-    return [sourceEventId];
-  }
-
-  if (
-    sourceContext.staffId !== targetContext.staffId ||
-    sourceContext.voiceIndex !== targetContext.voiceIndex
-  ) {
-    return [targetEventId];
-  }
-
-  const staff = score.parts
-    .flatMap((part) => part.staves)
-    .find((candidate) => candidate.id === sourceContext.staffId);
-  const orderedEvents =
-    staff?.measures
-      .flatMap((measure) =>
-        (measure.voices[sourceContext.voiceIndex]?.events ?? []).map((event) => ({
-          event,
-          measureIndex: measure.index,
-        })),
-      )
-      .filter(
-        ({ event }) =>
-          !isGeneratedRestEvent(event) && event.kind !== 'rest',
-      )
-      .sort(
-        (first, second) =>
-          first.measureIndex - second.measureIndex ||
-          first.event.beat - second.event.beat ||
-          first.event.id.localeCompare(second.event.id),
-      ) ?? [];
-  const sourceIndex = orderedEvents.findIndex(
-    ({ event }) => event.id === sourceEventId,
-  );
-  const targetIndex = orderedEvents.findIndex(
-    ({ event }) => event.id === targetEventId,
-  );
-
-  if (sourceIndex < 0 || targetIndex < 0) {
-    return [sourceEventId];
-  }
-
-  const startIndex = Math.min(sourceIndex, targetIndex);
-  const endIndex = Math.max(sourceIndex, targetIndex);
-
-  return orderedEvents
-    .slice(startIndex, endIndex + 1)
-    .map(({ event }) => event.id);
 }
 
 function getLyricMapAnchor(layout: RenderedEventLayout) {
@@ -512,12 +423,7 @@ function LyricMapConnectors({
       {annotationLayouts
         .filter((layout) => layout.kind === 'lyric')
         .map((layout) => {
-          const eventContext = findScoreEventContextById(score, layout.eventId);
-          const targetEventIds =
-            eventContext?.event.lyricMap?.eventIds &&
-            eventContext.event.lyricMap.eventIds.length > 0
-              ? [...new Set(eventContext.event.lyricMap.eventIds)]
-              : [layout.eventId];
+          const targetEventIds = getLyricMapEventIds(score, layout.eventId);
           const targets = targetEventIds
             .map((targetEventId) => eventLayouts[targetEventId])
             .filter((targetLayout): targetLayout is RenderedEventLayout =>
