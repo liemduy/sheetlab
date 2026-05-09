@@ -55,6 +55,8 @@ export type DurationValue =
   | 'sixteenth'
   | 'thirtySecond';
 
+export type PedalMark = 'start' | 'release' | 'start-release';
+
 export interface TimeSignature {
   beats: number;
   beatUnit: number;
@@ -78,7 +80,11 @@ export interface BaseScoreEvent {
   beat: number;
   dots?: number;
   chordSymbol?: string;
+  dynamic?: string;
+  fermata?: boolean;
+  glissando?: boolean;
   lyric?: string;
+  pedal?: PedalMark;
 }
 
 export interface NoteEvent extends BaseScoreEvent {

@@ -1,6 +1,7 @@
 import { countScoreEvents, findScoreEvent } from '../../domain/score/editing';
 import type {
   PageSize,
+  PedalMark,
   Score,
   ScoreType,
   StaffId,
@@ -41,8 +42,12 @@ interface ScoreSettingsPanelProps {
   selectedPitchIndex: number | null;
   toolState: EditorToolState;
   onChordSymbolChange: (chordSymbol: string | null) => void;
+  onDynamicChange: (dynamic: string | null) => void;
+  onFermataChange: (fermata: boolean) => void;
+  onGlissandoChange: (glissando: boolean) => void;
   onLyricChange: (lyric: string | null) => void;
   onPageSizeChange: (pageSize: PageSize) => void;
+  onPedalChange: (pedal: PedalMark | null) => void;
   onSectionMarkerChange: (sectionMarker: string | null) => void;
   onScoreTypeChange: (scoreType: ScoreType) => void;
   onTempoChange: (value: string) => void;
@@ -63,8 +68,12 @@ export function ScoreSettingsPanel({
   selectedPitchIndex,
   toolState,
   onChordSymbolChange,
+  onDynamicChange,
+  onFermataChange,
+  onGlissandoChange,
   onLyricChange,
   onPageSizeChange,
+  onPedalChange,
   onSectionMarkerChange,
   onScoreTypeChange,
   onTempoChange,
@@ -178,6 +187,72 @@ export function ScoreSettingsPanel({
               }
             }}
           />
+        </label>
+        <label>
+          Dynamic
+          <input
+            key={`dynamic-${selectedEventId ?? 'none'}-${
+              selectedEvent?.event.dynamic ?? ''
+            }`}
+            type="text"
+            defaultValue={selectedEvent?.event.dynamic ?? ''}
+            disabled={!selectedEvent}
+            placeholder="pp, p, mf..."
+            onBlur={(event) =>
+              onDynamicChange(normalizeNullableInput(event.target.value))
+            }
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.currentTarget.blur();
+              }
+            }}
+          />
+        </label>
+        <label>
+          Pedal
+          <select
+            key={`pedal-${selectedEventId ?? 'none'}-${
+              selectedEvent?.event.pedal ?? 'none'
+            }`}
+            defaultValue={selectedEvent?.event.pedal ?? 'none'}
+            disabled={!selectedEvent}
+            onChange={(event) =>
+              onPedalChange(
+                event.target.value === 'none'
+                  ? null
+                  : (event.target.value as PedalMark),
+              )
+            }
+          >
+            <option value="none">None</option>
+            <option value="start">Ped.</option>
+            <option value="release">*</option>
+            <option value="start-release">Ped. *</option>
+          </select>
+        </label>
+        <label className="checkbox-row">
+          <input
+            key={`fermata-${selectedEventId ?? 'none'}-${
+              selectedEvent?.event.fermata ? 'on' : 'off'
+            }`}
+            type="checkbox"
+            defaultChecked={Boolean(selectedEvent?.event.fermata)}
+            disabled={!selectedEvent}
+            onChange={(event) => onFermataChange(event.target.checked)}
+          />
+          Fermata
+        </label>
+        <label className="checkbox-row">
+          <input
+            key={`glissando-${selectedEventId ?? 'none'}-${
+              selectedEvent?.event.glissando ? 'on' : 'off'
+            }`}
+            type="checkbox"
+            defaultChecked={Boolean(selectedEvent?.event.glissando)}
+            disabled={!selectedEvent}
+            onChange={(event) => onGlissandoChange(event.target.checked)}
+          />
+          Glissando to next note
         </label>
         <label>
           Section marker

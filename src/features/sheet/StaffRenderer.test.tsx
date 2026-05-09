@@ -1672,6 +1672,42 @@ describe('StaffRenderer', () => {
     });
   });
 
+  it('renders dynamic, fermata, pedal, and glissando event markings', async () => {
+    const firstNoteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'marked-note-1',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const secondNoteScore = placeScoreEvent(firstNoteScore, {
+      eventId: 'marked-note-2',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 1,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'G', octave: 4 },
+    });
+    const score = tryUpdateScoreEvent(secondNoteScore, 'marked-note-1', {
+      dynamic: 'mf',
+      fermata: true,
+      glissando: true,
+      pedal: 'start',
+    }).score;
+
+    render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-dynamic')).toHaveTextContent('mf');
+      expect(screen.getByTestId('rendered-fermata')).toBeInTheDocument();
+      expect(screen.getByTestId('rendered-pedal')).toHaveTextContent('Ped.');
+      expect(screen.getByTestId('rendered-glissando')).toBeInTheDocument();
+    });
+  });
+
   it('beams consecutive short notes independently per voice', () => {
     const eventRequests = [
       ['voice-one-eighth-1', 0, 0, 'B', 4],

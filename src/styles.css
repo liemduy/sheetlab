@@ -380,6 +380,16 @@ button {
   opacity: 0.55;
 }
 
+.left-panel .checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.left-panel .checkbox-row input {
+  width: auto;
+}
+
 .state-summary {
   display: grid;
   gap: 0.55rem;
@@ -750,6 +760,41 @@ button {
   font-size: 15px;
   pointer-events: none;
   text-anchor: middle;
+}
+
+.vexflow-output .sheetlab-dynamic {
+  fill: #111111;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 17px;
+  font-style: italic;
+  font-weight: 700;
+  pointer-events: none;
+  text-anchor: middle;
+}
+
+.vexflow-output .sheetlab-fermata {
+  fill: #111111;
+  font-family: Bravura, "Noto Music", "Segoe UI Symbol", "Apple Symbols", serif;
+  font-size: 24px;
+  pointer-events: none;
+  text-anchor: middle;
+}
+
+.vexflow-output .sheetlab-pedal {
+  fill: #111111;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 16px;
+  font-style: italic;
+  pointer-events: none;
+  text-anchor: middle;
+}
+
+.vexflow-output .sheetlab-glissando {
+  stroke: #111111;
+  stroke-dasharray: 3 3;
+  stroke-width: 1.1;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
 }
 
 .vexflow-output .sheetlab-section-marker {

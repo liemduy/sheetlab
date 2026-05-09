@@ -726,6 +726,44 @@ describe('score editing', () => {
     ).toBeUndefined();
   });
 
+  it('updates performance markings on a selected event', () => {
+    const score = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'event-performance-me',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const marked = tryUpdateScoreEvent(score, 'event-performance-me', {
+      dynamic: ' mf ',
+      fermata: true,
+      glissando: true,
+      pedal: 'start',
+    });
+    const cleared = tryUpdateScoreEvent(marked.score, 'event-performance-me', {
+      dynamic: null,
+      fermata: false,
+      glissando: false,
+      pedal: null,
+    });
+
+    expect(marked.updated).toBe(true);
+    expect(findScoreEvent(marked.score, 'event-performance-me')?.event).toMatchObject({
+      dynamic: 'mf',
+      fermata: true,
+      glissando: true,
+      pedal: 'start',
+    });
+    expect(findScoreEvent(cleared.score, 'event-performance-me')?.event).not.toMatchObject({
+      dynamic: expect.any(String),
+      fermata: true,
+      glissando: true,
+      pedal: expect.any(String),
+    });
+  });
+
   it('sets and clears a section marker across the measure column', () => {
     const score = createEmptyScore('grand', { measureCount: 2 });
     const markedScore = setMeasureSectionMarker(score, 1, ' Intro ');

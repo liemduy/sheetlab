@@ -397,7 +397,7 @@ function SheetLabApp() {
   }
 
   function handleSelectedEventAnnotationChange(
-    update: { chordSymbol?: string | null; lyric?: string | null },
+    update: Parameters<typeof tryUpdateScoreEvent>[2],
     message: string,
   ) {
     if (!selectedEventId) {
@@ -608,11 +608,35 @@ function SheetLabApp() {
               chordSymbol ? 'Chord symbol updated' : 'Chord symbol cleared',
             )
           }
+          onDynamicChange={(dynamic) =>
+            handleSelectedEventAnnotationChange(
+              { dynamic },
+              dynamic ? 'Dynamic updated' : 'Dynamic cleared',
+            )
+          }
+          onFermataChange={(fermata) =>
+            handleSelectedEventAnnotationChange(
+              { fermata },
+              fermata ? 'Fermata enabled' : 'Fermata disabled',
+            )
+          }
+          onGlissandoChange={(glissando) =>
+            handleSelectedEventAnnotationChange(
+              { glissando },
+              glissando ? 'Glissando enabled' : 'Glissando disabled',
+            )
+          }
           onPageSizeChange={handlePageSizeChange}
           onLyricChange={(lyric) =>
             handleSelectedEventAnnotationChange(
               { lyric },
               lyric ? 'Lyric updated' : 'Lyric cleared',
+            )
+          }
+          onPedalChange={(pedal) =>
+            handleSelectedEventAnnotationChange(
+              { pedal },
+              pedal ? 'Pedal mark updated' : 'Pedal mark cleared',
             )
           }
           onScoreTypeChange={handleScoreTypeChange}

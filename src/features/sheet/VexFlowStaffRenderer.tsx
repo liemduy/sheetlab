@@ -62,6 +62,12 @@ const KEY_SIGNATURE_SYMBOL_TEXT = {
   flat: '♭',
   sharp: '♯',
 } as const;
+const FERMATA_SYMBOL = String.fromCodePoint(0x1d110);
+const PEDAL_MARK_TEXT = {
+  release: '*',
+  start: 'Ped.',
+  'start-release': 'Ped. *',
+} as const;
 const REPETITION_TYPE_BY_REPEAT_JUMP = {
   coda: Repetition.type.CODA_LEFT,
   dc: Repetition.type.DC,
@@ -515,7 +521,15 @@ function drawTextAnnotations(
 
   svg
     .querySelectorAll(
-      '.sheetlab-chord-symbol, .sheetlab-lyric, .sheetlab-section-marker',
+      [
+        '.sheetlab-chord-symbol',
+        '.sheetlab-lyric',
+        '.sheetlab-section-marker',
+        '.sheetlab-dynamic',
+        '.sheetlab-fermata',
+        '.sheetlab-pedal',
+        '.sheetlab-glissando',
+      ].join(', '),
     )
     .forEach((element) => element.remove());
 
@@ -562,7 +576,9 @@ function drawTextAnnotations(
       }
 
       measure.voices.forEach((voice) => {
-        voice.events.forEach((event) => {
+        const sortedEvents = [...voice.events].sort((a, b) => a.beat - b.beat);
+
+        sortedEvents.forEach((event, eventIndex) => {
           const layout = eventLayouts[event.id];
 
           if (!layout || isGeneratedRestEvent(event)) {
@@ -595,6 +611,71 @@ function drawTextAnnotations(
               x: layout.x,
               y: staffTop + STAFF_LINE_SPACING * 4 + 30,
             });
+          }
+
+          if (event.dynamic) {
+            appendSvgText({
+              className: 'sheetlab-dynamic',
+              dataset: {
+                'data-event-id': event.id,
+                'data-testid': 'rendered-dynamic',
+              },
+              svg,
+              text: event.dynamic,
+              x: layout.x,
+              y: staffTop + STAFF_LINE_SPACING * 4 + 50,
+            });
+          }
+
+          if (event.fermata) {
+            appendSvgText({
+              className: 'sheetlab-fermata',
+              dataset: {
+                'data-event-id': event.id,
+                'data-testid': 'rendered-fermata',
+              },
+              svg,
+              text: FERMATA_SYMBOL,
+              x: layout.x,
+              y: Math.min(staffTop - 30, layout.minY - 18),
+            });
+          }
+
+          if (event.pedal) {
+            appendSvgText({
+              className: 'sheetlab-pedal',
+              dataset: {
+                'data-event-id': event.id,
+                'data-testid': 'rendered-pedal',
+              },
+              svg,
+              text: PEDAL_MARK_TEXT[event.pedal],
+              x: layout.x,
+              y: staffTop + STAFF_LINE_SPACING * 4 + 70,
+            });
+          }
+
+          if (event.glissando) {
+            const nextEvent = sortedEvents
+              .slice(eventIndex + 1)
+              .find((candidate) => !isGeneratedRestEvent(candidate));
+            const nextLayout = nextEvent ? eventLayouts[nextEvent.id] : null;
+
+            if (nextLayout) {
+              const glissando = document.createElementNS(
+                'http://www.w3.org/2000/svg',
+                'line',
+              );
+
+              glissando.classList.add('sheetlab-glissando');
+              glissando.setAttribute('data-event-id', event.id);
+              glissando.setAttribute('data-testid', 'rendered-glissando');
+              glissando.setAttribute('x1', (layout.x + 12).toFixed(2));
+              glissando.setAttribute('y1', layout.y.toFixed(2));
+              glissando.setAttribute('x2', (nextLayout.x - 12).toFixed(2));
+              glissando.setAttribute('y2', nextLayout.y.toFixed(2));
+              svg.appendChild(glissando);
+            }
           }
         });
       });

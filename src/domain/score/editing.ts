@@ -1,6 +1,7 @@
 import type {
   Accidental,
   DurationValue,
+  PedalMark,
   Pitch,
   Score,
   ScoreEvent,
@@ -70,7 +71,11 @@ export interface UpdateScoreEventRequest {
   dots?: number;
   voiceIndex?: number;
   chordSymbol?: string | null;
+  dynamic?: string | null;
+  fermata?: boolean;
+  glissando?: boolean;
   lyric?: string | null;
+  pedal?: PedalMark | null;
 }
 
 export interface UpdateScoreEventResult {
@@ -189,9 +194,13 @@ function mergePitchedEventWithNote(
     kind: 'chord',
     beat: noteEvent.beat,
     chordSymbol: existingEvent.chordSymbol,
+    dynamic: existingEvent.dynamic,
     duration: noteEvent.duration,
     dots: noteEvent.dots,
+    fermata: existingEvent.fermata,
+    glissando: existingEvent.glissando,
     lyric: existingEvent.lyric,
+    pedal: existingEvent.pedal,
     pitches,
   };
 }
@@ -232,6 +241,7 @@ function createUpdatedEventBase(
   update: UpdateScoreEventRequest,
 ) {
   const chordSymbol = normalizeAnnotationText(update.chordSymbol);
+  const dynamic = normalizeAnnotationText(update.dynamic);
   const lyric = normalizeAnnotationText(update.lyric);
 
   return {
@@ -241,7 +251,15 @@ function createUpdatedEventBase(
     dots: update.dots ?? event.dots,
     chordSymbol:
       chordSymbol === undefined ? event.chordSymbol : chordSymbol ?? undefined,
+    dynamic: dynamic === undefined ? event.dynamic : dynamic ?? undefined,
+    fermata:
+      update.fermata === undefined ? event.fermata : update.fermata || undefined,
+    glissando:
+      update.glissando === undefined
+        ? event.glissando
+        : update.glissando || undefined,
     lyric: lyric === undefined ? event.lyric : lyric ?? undefined,
+    pedal: update.pedal === undefined ? event.pedal : update.pedal ?? undefined,
   };
 }
 

@@ -6,6 +6,7 @@ import type {
   KeySignatureAccidental,
   NoteStep,
   PageSize,
+  PedalMark,
   RepeatJumpKind,
   Score,
   ScoreEvent,
@@ -31,6 +32,11 @@ const DURATIONS = new Set<DurationValue>([
   'eighth',
   'sixteenth',
   'thirtySecond',
+]);
+const PEDAL_MARKS = new Set<PedalMark>([
+  'start',
+  'release',
+  'start-release',
 ]);
 const KEY_SIGNATURES = new Set<KeySignature>([
   'C',
@@ -93,7 +99,11 @@ function isScoreEvent(value: unknown): value is ScoreEvent {
     DURATIONS.has(value.duration as DurationValue) &&
     isNumber(value.beat) &&
     (value.chordSymbol === undefined || isString(value.chordSymbol)) &&
+    (value.dynamic === undefined || isString(value.dynamic)) &&
+    (value.fermata === undefined || typeof value.fermata === 'boolean') &&
+    (value.glissando === undefined || typeof value.glissando === 'boolean') &&
     (value.lyric === undefined || isString(value.lyric)) &&
+    (value.pedal === undefined || PEDAL_MARKS.has(value.pedal as PedalMark)) &&
     (value.dots === undefined ||
       (isNumber(value.dots) && value.dots >= 0 && value.dots <= 1));
 
