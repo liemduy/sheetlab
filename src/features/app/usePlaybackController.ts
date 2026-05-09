@@ -4,7 +4,7 @@ import { playTimelineAudio } from '../playback/audioEngine';
 import {
   buildPlaybackTimeline,
   getActiveTimelineEvent,
-  getPlaybackBeatAtSeconds,
+  getPlaybackScoreBeatAtSeconds,
   getTimelineDurationSeconds,
 } from '../playback/timeline';
 
@@ -82,7 +82,11 @@ export function usePlaybackController({
     ? getActiveTimelineEvent(playbackTimeline, playbackElapsedSeconds)
     : null;
   const playbackBeat = isPlaying
-    ? getPlaybackBeatAtSeconds(score.tempo, playbackElapsedSeconds)
+    ? getPlaybackScoreBeatAtSeconds(
+        playbackTimeline,
+        score.tempo,
+        playbackElapsedSeconds,
+      )
     : null;
 
   return {
