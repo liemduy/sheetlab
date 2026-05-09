@@ -1600,6 +1600,78 @@ describe('StaffRenderer', () => {
     expect(container.querySelectorAll('.vexflow-output .vf-flag')).toHaveLength(0);
   });
 
+  it('renders same-beat notes in separate voices as independent targets', () => {
+    const voiceOneScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'voice-one-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+      voiceIndex: 0,
+    });
+    const score = placeScoreEvent(voiceOneScore, {
+      eventId: 'voice-two-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+      voiceIndex: 1,
+    });
+    const { container } = render(<StaffRenderer score={score} />);
+
+    expect(
+      container.querySelector(
+        '.vexflow-output .vf-user-event[data-event-id="voice-one-note"][data-voice-index="0"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(
+        '.vexflow-output .vf-user-event[data-event-id="voice-two-note"][data-voice-index="1"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(
+        '[data-testid="score-event"][data-event-id="voice-one-note"][data-voice-index="0"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(
+        '[data-testid="score-event"][data-event-id="voice-two-note"][data-voice-index="1"]',
+      ),
+    ).not.toBeNull();
+  });
+
+  it('beams consecutive short notes independently per voice', () => {
+    const eventRequests = [
+      ['voice-one-eighth-1', 0, 0, 'B', 4],
+      ['voice-one-eighth-2', 0, 0.5, 'C', 5],
+      ['voice-two-eighth-1', 1, 0, 'E', 4],
+      ['voice-two-eighth-2', 1, 0.5, 'F', 4],
+    ] as const;
+    const score = eventRequests.reduce(
+      (currentScore, [eventId, voiceIndex, beat, step, octave]) =>
+        placeScoreEvent(currentScore, {
+          eventId,
+          staffId: 'treble',
+          measureIndex: 0,
+          beat,
+          duration: 'eighth',
+          entryMode: 'note',
+          pitch: { step, octave },
+          voiceIndex,
+        }),
+      createEmptyScore('treble'),
+    );
+    const { container } = render(<StaffRenderer score={score} />);
+
+    expect(container.querySelectorAll('.vexflow-output .vf-beam').length).toBeGreaterThanOrEqual(2);
+    expect(container.querySelectorAll('.vexflow-output .vf-flag')).toHaveLength(0);
+  });
+
   it('keeps VexFlow staff lines aligned with overlay pitch geometry', () => {
     const { container } = render(
       <StaffRenderer score={createEmptyScore('treble', { measureCount: 4 })} />,

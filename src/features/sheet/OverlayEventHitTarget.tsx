@@ -39,6 +39,7 @@ interface EventHitTargetProps {
   staffGap: number;
   staffIndex: number;
   systemGap: number;
+  voiceIndex?: number;
 }
 
 export function EventHitTarget({
@@ -60,6 +61,7 @@ export function EventHitTarget({
   staffGap,
   staffIndex,
   systemGap,
+  voiceIndex,
 }: EventHitTargetProps) {
   const eventPitches = getEventPitches(event).map((pitch) =>
     clampPitchToClefRange(pitch, staff.clef),
@@ -213,6 +215,7 @@ export function EventHitTarget({
         data-layout-x={x.toFixed(2)}
         data-layout-y={y.toFixed(2)}
         data-testid="score-event"
+        data-voice-index={voiceIndex}
         pointerEvents={isInputArmed ? 'none' : undefined}
         role="button"
         tabIndex={0}

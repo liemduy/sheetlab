@@ -708,7 +708,7 @@ export function NotationOverlay({
             ));
           })}
           {staff.measures.flatMap((measure) =>
-            measure.voices.flatMap((voice) =>
+            measure.voices.flatMap((voice, voiceIndexForTarget) =>
               voice.events.map((event) => (
               <EventHitTarget
                 key={event.id}
@@ -744,6 +744,7 @@ export function NotationOverlay({
                 staffGap={staffGap}
                 staffIndex={staffIndex}
                 systemGap={systemGap}
+                voiceIndex={voiceIndexForTarget}
               />
               )),
             ),

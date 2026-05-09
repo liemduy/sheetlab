@@ -21,6 +21,7 @@ import {
   PAGE_SIZE_LABEL,
   PLACEMENT_MODE_LABEL,
   SCORE_TYPE_LABEL,
+  VOICE_LABEL,
 } from './editorState';
 
 interface ScoreSettingsPanelProps {
@@ -139,6 +140,10 @@ export function ScoreSettingsPanel({
         <div>
           <dt>Placement</dt>
           <dd>{PLACEMENT_MODE_LABEL[toolState.placementMode]}</dd>
+        </div>
+        <div>
+          <dt>Voice</dt>
+          <dd>{VOICE_LABEL[toolState.voiceIndex]}</dd>
         </div>
         <div>
           <dt>Accidental</dt>
