@@ -30,9 +30,11 @@ describe('ABC notation conversion', () => {
                         events: [
                           {
                             beat: 0,
+                            chordSymbol: 'D',
                             duration: 'quarter',
                             id: 'n1',
                             kind: 'note',
+                            lyric: 'Du',
                             pitch: {
                               octave: 4,
                               step: 'C',
@@ -94,7 +96,8 @@ describe('ABC notation conversion', () => {
     expect(abc).toContain('Q:1/4=96');
     expect(abc).toContain('K:D');
     expect(abc).toContain('V:T clef=treble');
-    expect(abc).toContain('[V:T] C8 [EG]8 |');
+    expect(abc).toContain('[V:T] \"D\"C8 [EG]8 |');
+    expect(abc).toContain('w: Du * |');
     expect(abc).toContain('[V:B] z16 |');
   });
 
@@ -107,7 +110,7 @@ M:3/4
 L:1/32
 Q:1/4=112
 K:D
-C8 D8 z4 | [EGB]8 |
+\"D\"C8 D8 z4 | [EGB]8 |
 `);
 
     const trebleMeasures = score.parts[0]?.staves[0]?.measures ?? [];
@@ -120,6 +123,9 @@ C8 D8 z4 | [EGB]8 |
     expect(score.type).toBe('treble');
     expect(trebleMeasures[0]?.keySignature).toBe('D');
     expect(trebleMeasures[0]?.voices[0]?.events).toHaveLength(3);
+    expect(trebleMeasures[0]?.voices[0]?.events[0]).toMatchObject({
+      chordSymbol: 'D',
+    });
     expect(trebleMeasures[1]?.voices[0]?.events[0]).toMatchObject({
       duration: 'quarter',
       kind: 'chord',

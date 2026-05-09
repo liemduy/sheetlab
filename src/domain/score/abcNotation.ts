@@ -98,6 +98,16 @@ function getAbcDurationSuffix(event: ScoreEvent) {
   return units === 1 ? '' : String(units);
 }
 
+function escapeAbcAnnotation(value: string) {
+  return value.replace(/["\\]/g, '').trim();
+}
+
+function encodeEventPrefix(event: ScoreEvent) {
+  return event.chordSymbol
+    ? `"${escapeAbcAnnotation(event.chordSymbol)}"`
+    : '';
+}
+
 function encodePitch(pitch: Pitch) {
   const accidental =
     pitch.accidental === 'sharp'
@@ -118,18 +128,19 @@ function encodePitch(pitch: Pitch) {
 
 function encodeEvent(event: ScoreEvent) {
   const suffix = getAbcDurationSuffix(event);
+  const prefix = encodeEventPrefix(event);
 
   if (event.kind === 'rest') {
-    return `z${suffix}`;
+    return `${prefix}z${suffix}`;
   }
 
   const pitches = getEventPitches(event).map(encodePitch);
 
   if (pitches.length > 1) {
-    return `[${pitches.join('')}]${suffix}`;
+    return `${prefix}[${pitches.join('')}]${suffix}`;
   }
 
-  return `${pitches[0] ?? 'z'}${suffix}`;
+  return `${prefix}${pitches[0] ?? 'z'}${suffix}`;
 }
 
 function encodeMeasure(measure: Measure) {
@@ -138,6 +149,24 @@ function encodeMeasure(measure: Measure) {
   );
 
   return events.length > 0 ? events.map(encodeEvent).join(' ') : 'z32';
+}
+
+function encodeLyricSyllable(value: string) {
+  return value
+    .trim()
+    .replace(/\s+/g, '~')
+    .replace(/[|]/g, '')
+    || '*';
+}
+
+function encodeMeasureLyrics(measure: Measure) {
+  const events = [...(measure.voices[0]?.events ?? [])].sort(
+    (first, second) => first.beat - second.beat,
+  );
+
+  return events.length > 0
+    ? events.map((event) => event.lyric ? encodeLyricSyllable(event.lyric) : '*').join(' ')
+    : '*';
 }
 
 function encodeStaffVoice(score: Score, staffId: StaffId) {
@@ -152,7 +181,14 @@ function encodeStaffVoice(score: Score, staffId: StaffId) {
   const lines: string[] = [];
 
   for (let index = 0; index < measures.length; index += 4) {
+    const measureChunk = staff.measures.slice(index, index + 4);
+    const lyricMeasures = measureChunk.map(encodeMeasureLyrics);
+
     lines.push(`[V:${voiceId}] ${measures.slice(index, index + 4).join(' | ')} |`);
+
+    if (lyricMeasures.some((measureLyrics) => /(^|\s)[^*\s]/.test(measureLyrics))) {
+      lines.push(`w: ${lyricMeasures.join(' | ')} |`);
+    }
   }
 
   return lines.join('\n');
@@ -486,6 +522,7 @@ function parseAbcBody(
   const statesByStaff = new Map<StaffId, ParseVoiceState>();
   let activeVoiceId = headers.voiceStaffById.keys().next().value ?? 'T';
   let eventCounter = 1;
+  let pendingChordSymbol: string | null = null;
 
   function getActiveStaffId() {
     return headers.voiceStaffById.get(activeVoiceId) ?? 'treble';
@@ -499,12 +536,15 @@ function parseAbcBody(
     pitches: Pitch[] = [],
   ): ScoreEvent {
     const id = `abc-${eventCounter}`;
+    const chordSymbol = pendingChordSymbol ?? undefined;
     eventCounter += 1;
+    pendingChordSymbol = null;
 
     if (kind === 'rest') {
       return {
         id,
         beat,
+        chordSymbol,
         duration,
         dots: dots || undefined,
         kind: 'rest',
@@ -515,6 +555,7 @@ function parseAbcBody(
       return {
         id,
         beat,
+        chordSymbol,
         duration,
         dots: dots || undefined,
         kind: 'chord',
@@ -525,6 +566,7 @@ function parseAbcBody(
     return {
       id,
       beat,
+      chordSymbol,
       duration,
       dots: dots || undefined,
       kind: 'note',
@@ -543,6 +585,19 @@ function parseAbcBody(
 
     if (/\s/.test(char)) {
       index += 1;
+      continue;
+    }
+
+    if (char === '"') {
+      const endIndex = body.indexOf('"', index + 1);
+
+      if (endIndex === -1) {
+        warnings.push('Unclosed ABC chord symbol ignored');
+        break;
+      }
+
+      pendingChordSymbol = body.slice(index + 1, endIndex).trim() || null;
+      index = endIndex + 1;
       continue;
     }
 
