@@ -3,13 +3,11 @@ import { getMeasureBeats } from '../../domain/score/timeSignatures';
 import type { Score, ScoreEvent } from '../../domain/score/types';
 import type { InputCursor } from '../editor/inputCursor';
 import {
-  getScoreStaffGap,
-  getScoreSystemGap,
-  getStaffTop,
+  getScoreStaffTop,
   STAFF_LINE_SPACING,
 } from './layout';
-import { getBeatX, getPitchY } from './notationGeometry';
-import { getLedgerLineYs } from './notationGlyph';
+import { getBeatX, getPitchYForScore } from './notationGeometry';
+import { getLedgerLineYsForScore } from './notationGlyph';
 import { getRhythmSlotsForMeasure } from './rhythmSlots';
 
 export const DEFAULT_INPUT_SLOT_WIDTH = 32;
@@ -47,14 +45,7 @@ function getStaffSlotYRange(
   includePitchPreview: boolean,
 ) {
   const { measureIndex, staffIndex } = cursor;
-  const staffGap = getScoreStaffGap(score);
-  const systemGap = getScoreSystemGap(score);
-  const staffTop = getStaffTop(
-    staffIndex,
-    staffGap,
-    measureIndex,
-    systemGap,
-  );
+  const staffTop = getScoreStaffTop(score, staffIndex, measureIndex);
   const baseRange = {
     y1: staffTop - STAFF_SLOT_PADDING_Y,
     y2: staffTop + STAFF_LINE_SPACING * 4 + STAFF_SLOT_PADDING_Y,
@@ -70,20 +61,18 @@ function getStaffSlotYRange(
     return baseRange;
   }
 
-  const pitchY = getPitchY(
+  const pitchY = getPitchYForScore(
     cursor.pitchPreview,
     staff.clef,
     staffIndex,
-    staffGap,
+    score,
     measureIndex,
-    systemGap,
   );
-  const ledgerYs = getLedgerLineYs(
+  const ledgerYs = getLedgerLineYsForScore(
     pitchY,
+    score,
     staffIndex,
-    staffGap,
     measureIndex,
-    systemGap,
   );
   const ledgerTop = ledgerYs.length
     ? Math.min(...ledgerYs) - LEDGER_LINE_PADDING_Y

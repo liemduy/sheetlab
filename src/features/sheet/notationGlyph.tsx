@@ -1,5 +1,10 @@
-import type { DurationValue, Pitch } from '../../domain/score/types';
-import { STAFF_GAP, STAFF_LINE_SPACING, getStaffTop } from './layout';
+import type { DurationValue, Pitch, Score } from '../../domain/score/types';
+import {
+  STAFF_GAP,
+  STAFF_LINE_SPACING,
+  getScoreStaffTop,
+  getStaffTop,
+} from './layout';
 
 type NotationGlyphVariant = 'ghost' | 'placed';
 
@@ -65,6 +70,35 @@ export function getLedgerLineYs(
   systemGap = staffGap + 152,
 ) {
   const staffTop = getStaffTop(staffIndex, staffGap, measureIndex, systemGap);
+  const staffBottom = staffTop + STAFF_LINE_SPACING * 4;
+  const ledgerLineYs: number[] = [];
+
+  for (
+    let lineY = staffTop - STAFF_LINE_SPACING;
+    lineY >= y - LEDGER_EPSILON;
+    lineY -= STAFF_LINE_SPACING
+  ) {
+    ledgerLineYs.push(lineY);
+  }
+
+  for (
+    let lineY = staffBottom + STAFF_LINE_SPACING;
+    lineY <= y + LEDGER_EPSILON;
+    lineY += STAFF_LINE_SPACING
+  ) {
+    ledgerLineYs.push(lineY);
+  }
+
+  return ledgerLineYs;
+}
+
+export function getLedgerLineYsForScore(
+  y: number,
+  score: Score,
+  staffIndex: number,
+  measureIndex = 0,
+) {
+  const staffTop = getScoreStaffTop(score, staffIndex, measureIndex);
   const staffBottom = staffTop + STAFF_LINE_SPACING * 4;
   const ledgerLineYs: number[] = [];
 

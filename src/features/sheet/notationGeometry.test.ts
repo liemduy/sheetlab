@@ -67,6 +67,32 @@ describe('notation geometry', () => {
     expect(getBeatX(0, 0.5, 4, score)).toBeGreaterThan(getBeatX(0, 0.5, 4));
   });
 
+  it('keeps sparse measures readable when a neighboring measure is dense', () => {
+    const score = Array.from({ length: 16 }, (_, index) => index).reduce(
+      (currentScore, index) =>
+        placeScoreEvent(currentScore, {
+          eventId: `dense-sixteenth-${index}`,
+          staffId: 'treble',
+          measureIndex: 0,
+          beat: index / 4,
+          duration: 'sixteenth',
+          entryMode: 'note',
+          pitch: {
+            step: index % 2 === 0 ? 'E' : 'G',
+            octave: 4,
+          },
+        }),
+      createEmptyScore('treble', { measureCount: 4 }),
+    );
+    const denseMeasureWidth = getMeasureWidth(0, score);
+    const sparseMeasureWidth = getMeasureWidth(1, score);
+
+    expect(denseMeasureWidth).toBeGreaterThan(sparseMeasureWidth);
+    expect(sparseMeasureWidth).toBeGreaterThan(150);
+    expect(denseMeasureWidth / sparseMeasureWidth).toBeLessThan(2);
+    expect(getMeasureRight(3, score)).toBeCloseTo(STAFF_RIGHT, 2);
+  });
+
   it('wraps measure x positions and moves later systems down the page', () => {
     const score = createEmptyScore('treble');
     const systemGap = getScoreSystemGap(score);

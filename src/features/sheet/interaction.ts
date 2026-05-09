@@ -21,8 +21,7 @@ import {
   getMeasureContentWidth,
   getMeasureCountForSystem,
   getMeasureRight,
-  getScoreStaffGap,
-  getScoreSystemGap,
+  getScoreStaffTop,
   getStaffRight,
   getStaffTop,
 } from './layout';
@@ -73,6 +72,25 @@ export function mapStaffYToPitch(
   return clampPitchToClefRange(pitch, clef);
 }
 
+export function mapScoreStaffYToPitch(
+  y: number,
+  clef: Staff['clef'],
+  staffIndex: number,
+  score: Score,
+  measureIndex = 0,
+) {
+  const staffTop = getScoreStaffTop(score, staffIndex, measureIndex);
+  const diatonicOffset = Math.round(
+    (staffTop - y) / (STAFF_LINE_SPACING / 2),
+  );
+
+  const pitch = diatonicValueToPitch(
+    pitchToDiatonicValue(TOP_LINE_BY_CLEF[clef]) + diatonicOffset,
+  );
+
+  return clampPitchToClefRange(pitch, clef);
+}
+
 export function formatPitch(pitch: Pitch) {
   const accidental = pitch.accidental
     ? { flat: 'b', natural: '', sharp: '#' }[pitch.accidental]
@@ -82,11 +100,10 @@ export function formatPitch(pitch: Pitch) {
 }
 
 function findStaffAtY(
-  staves: Staff[],
+  score: Score,
   y: number,
-  staffGap: number,
-  systemGap: number,
 ) {
+  const staves = score.parts[0]?.staves ?? [];
   const measureCount = staves[0]?.measures.length ?? 0;
   const systemCount = Math.max(1, Math.ceil(measureCount / MEASURES_PER_SYSTEM));
   const isInsideGrandStaffDeadZone = (systemIndex: number) => {
@@ -97,13 +114,11 @@ function findStaffAtY(
     for (let staffIndex = 0; staffIndex < staves.length - 1; staffIndex += 1) {
       const measureIndex = systemIndex * MEASURES_PER_SYSTEM;
       const upperStaffBottom =
-        getStaffTop(staffIndex, staffGap, measureIndex, systemGap) +
-        STAFF_LINE_SPACING * 4;
-      const lowerStaffTop = getStaffTop(
+        getScoreStaffTop(score, staffIndex, measureIndex) + STAFF_LINE_SPACING * 4;
+      const lowerStaffTop = getScoreStaffTop(
+        score,
         staffIndex + 1,
-        staffGap,
         measureIndex,
-        systemGap,
       );
       const deadZoneTop = upperStaffBottom + GRAND_STAFF_DEAD_ZONE_PADDING;
       const deadZoneBottom = lowerStaffTop - GRAND_STAFF_DEAD_ZONE_PADDING;
@@ -119,7 +134,7 @@ function findStaffAtY(
     .flatMap((staff, staffIndex) =>
       Array.from({ length: systemCount }, (_, systemIndex) => {
         const measureIndex = systemIndex * MEASURES_PER_SYSTEM;
-        const staffTop = getStaffTop(staffIndex, staffGap, measureIndex, systemGap);
+        const staffTop = getScoreStaffTop(score, staffIndex, measureIndex);
         const staffBottom = staffTop + STAFF_LINE_SPACING * 4;
         const staffCenter = staffTop + STAFF_LINE_SPACING * 2;
         const isInDeadZone = isInsideGrandStaffDeadZone(systemIndex);
@@ -167,9 +182,7 @@ export function mapPointToMusicPosition(
   options: MusicPositionOptions = {},
 ): MusicPosition | null {
   const staves = score.parts[0]?.staves ?? [];
-  const staffGap = getScoreStaffGap(score);
-  const systemGap = getScoreSystemGap(score);
-  const staffMatch = findStaffAtY(staves, point.y, staffGap, systemGap);
+  const staffMatch = findStaffAtY(score, point.y);
   const staff = staffMatch?.staff;
   const measureCount = staff?.measures.length ?? 0;
   const systemIndex = staffMatch?.systemIndex ?? 0;
@@ -205,13 +218,12 @@ export function mapPointToMusicPosition(
     beatsPerMeasure,
     options.dots ?? 0,
   );
-  const pitch = mapStaffYToPitch(
+  const pitch = mapScoreStaffYToPitch(
     point.y,
     staff.clef,
     staffIndex,
-    staffGap,
+    score,
     measureIndex,
-    systemGap,
   );
 
   return {

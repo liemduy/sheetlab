@@ -29,6 +29,7 @@ import {
   getMeasureX,
   getMeasureWidth,
   getScoreStaffGap,
+  getScoreStaffTop,
   getScoreSystemGap,
   getScoreSvgHeight,
   getStaffTop,
@@ -1376,7 +1377,6 @@ describe('StaffRenderer', () => {
     });
     const hitTarget = scoreEvent.querySelector('.score-event-target');
     const eventLayoutX = Number(scoreEvent.getAttribute('data-layout-x'));
-    const eventLayoutY = Number(scoreEvent.getAttribute('data-layout-y'));
     const expectedY = getPitchY({ step: 'C', octave: 4 }, 'treble', 0);
     const hitTargetCenterX =
       Number(hitTarget?.getAttribute('x')) +
@@ -1388,7 +1388,8 @@ describe('StaffRenderer', () => {
     expect(Number.isFinite(Number(ghostNoteHead?.getAttribute('cx')))).toBe(true);
     expect(Number(ghostNoteHead?.getAttribute('cy'))).toBeCloseTo(expectedY, 2);
     expect(hitTargetCenterX).toBeCloseTo(eventLayoutX, 2);
-    expect(hitTargetCenterY).toBeCloseTo(eventLayoutY, 2);
+    expect(hitTargetCenterY).toBeCloseTo(expectedY, 2);
+    expect(Number(hitTarget?.getAttribute('height'))).toBeLessThanOrEqual(40);
   });
 
   it('keeps far-interval chord entry on the same rendered column', async () => {
@@ -1547,6 +1548,54 @@ describe('StaffRenderer', () => {
       2,
     );
     expect(screen.getAllByTestId('score-event')).toHaveLength(2);
+  });
+
+  it('keeps pitched hit targets on noteheads instead of full stem bounds across grand staves', () => {
+    const trebleScore = placeScoreEvent(createEmptyScore('grand'), {
+      eventId: 'upper-click-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'G', octave: 4 },
+    });
+    const score = placeScoreEvent(trebleScore, {
+      eventId: 'lower-stem-note',
+      staffId: 'bass',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 3 },
+    });
+    const { container } = render(<StaffRenderer score={score} />);
+    const lowerTarget = container.querySelector(
+      '[data-testid="score-event"][data-event-id="lower-stem-note"] .score-event-target',
+    );
+    const lowerTargetY = Number(lowerTarget?.getAttribute('y'));
+    const lowerTargetHeight = Number(lowerTarget?.getAttribute('height'));
+    const lowerTargetCenterY = lowerTargetY + lowerTargetHeight / 2;
+    const bassNoteY = getPitchY(
+      { step: 'C', octave: 3 },
+      'bass',
+      1,
+      getScoreStaffGap(score),
+      0,
+      getScoreSystemGap(score),
+    );
+    const trebleNoteY = getPitchY(
+      { step: 'G', octave: 4 },
+      'treble',
+      0,
+      getScoreStaffGap(score),
+      0,
+      getScoreSystemGap(score),
+    );
+
+    expect(lowerTargetHeight).toBeLessThanOrEqual(40);
+    expect(lowerTargetCenterY).toBeCloseTo(bassNoteY, 2);
+    expect(lowerTargetY).toBeGreaterThan(trebleNoteY + 20);
   });
 
   it('keeps legacy pitches inside a practical staff gap without capping valid ledger lines', () => {
@@ -1871,7 +1920,7 @@ describe('StaffRenderer', () => {
     });
   });
 
-  it('stacks lyric, dynamic, and pedal markings into separate below-staff rows', async () => {
+  it('keeps two compact below-staff annotation rows before moving the next marking above', async () => {
     const noteScore = placeScoreEvent(createEmptyScore('treble'), {
       eventId: 'dense-annotation-note',
       staffId: 'treble',
@@ -1909,10 +1958,14 @@ describe('StaffRenderer', () => {
     );
     expect(screen.getByTestId('rendered-pedal')).toHaveAttribute(
       'data-annotation-row',
-      '2',
+      '0',
+    );
+    expect(screen.getByTestId('rendered-pedal')).toHaveAttribute(
+      'data-annotation-side',
+      'above',
     );
     expect(dynamicY - lyricY).toBeGreaterThanOrEqual(24);
-    expect(pedalY - dynamicY).toBeGreaterThanOrEqual(24);
+    expect(pedalY).toBeLessThan(lyricY);
   });
 
   it('places below-staff annotations under low note ink instead of the fixed staff bottom', async () => {
@@ -1947,7 +2000,134 @@ describe('StaffRenderer', () => {
 
     expect(lyricY).toBeGreaterThan(lowPitchY + 24);
     expect(dynamicY - lyricY).toBeGreaterThanOrEqual(24);
-    expect(pedalY - dynamicY).toBeGreaterThanOrEqual(24);
+    expect(screen.getByTestId('rendered-pedal')).toHaveAttribute(
+      'data-annotation-side',
+      'above',
+    );
+    expect(pedalY).toBeLessThan(lyricY);
+  });
+
+  it('bases below-staff annotation rows on the annotated voice instead of lower parallel voices', async () => {
+    const annotatedVoiceScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'annotated-upper-voice',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+      voiceIndex: 0,
+    });
+    const lowParallelVoiceScore = placeScoreEvent(annotatedVoiceScore, {
+      eventId: 'low-parallel-voice',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 3 },
+      voiceIndex: 1,
+    });
+    const score = tryUpdateScoreEvent(
+      lowParallelVoiceScore,
+      'annotated-upper-voice',
+      {
+        lyric: 'km',
+      },
+    ).score;
+
+    render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-lyric')).toHaveTextContent('km');
+    });
+
+    const lyricY = Number(screen.getByTestId('rendered-lyric').getAttribute('y'));
+    const lowerVoiceY = getPitchY({ step: 'C', octave: 3 }, 'treble', 0);
+
+    expect(lyricY).toBeLessThan(lowerVoiceY + 20);
+  });
+
+  it('keeps manual above annotation overrides close to the owning staff', async () => {
+    const noteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'manual-above-annotation-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'A', octave: 5 },
+    });
+    const annotatedScore = tryUpdateScoreEvent(
+      noteScore,
+      'manual-above-annotation-note',
+      {
+        lyric: 'km',
+      },
+    ).score;
+    const score = tryUpdateScoreEvent(
+      annotatedScore,
+      'manual-above-annotation-note',
+      {
+        annotationPlacement: {
+          kind: 'lyric',
+          side: 'above',
+        },
+      },
+    ).score;
+
+    render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-lyric')).toHaveTextContent('km');
+    });
+
+    const lyricY = Number(screen.getByTestId('rendered-lyric').getAttribute('y'));
+
+    expect(screen.getByTestId('rendered-lyric')).toHaveAttribute(
+      'data-annotation-side',
+      'above',
+    );
+    expect(lyricY).toBeGreaterThanOrEqual(getStaffTop(0) - 42);
+    expect(lyricY).toBeLessThan(getStaffTop(0));
+  });
+
+  it('honors a manual annotation placement override', async () => {
+    const noteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'manual-annotation-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const annotatedScore = tryUpdateScoreEvent(noteScore, 'manual-annotation-note', {
+      dynamic: 'mf',
+      lyric: 'sing',
+      pedal: 'start',
+    }).score;
+    const score = tryUpdateScoreEvent(annotatedScore, 'manual-annotation-note', {
+      annotationPlacement: {
+        kind: 'pedal',
+        side: 'below',
+      },
+    }).score;
+
+    render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-pedal')).toHaveTextContent('Ped.');
+    });
+
+    expect(screen.getByTestId('rendered-pedal')).toHaveAttribute(
+      'data-annotation-side',
+      'below',
+    );
+    expect(screen.getByTestId('rendered-pedal')).toHaveAttribute(
+      'data-annotation-row',
+      '2',
+    );
   });
 
   it('widens the grand staff gap so treble annotations do not overlap the bass staff', async () => {
@@ -1980,6 +2160,39 @@ describe('StaffRenderer', () => {
 
     expect(staffGap).toBeGreaterThan(STAFF_GAP);
     expect(pedalBaselineY + 6).toBeLessThan(bassTop - 8);
+  });
+
+  it('widens only the grand-staff system that needs annotation space', async () => {
+    const noteScore = placeScoreEvent(createEmptyScore('grand', { measureCount: 8 }), {
+      eventId: 'first-system-low-annotation',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'A', octave: 3 },
+    });
+    const score = tryUpdateScoreEvent(noteScore, 'first-system-low-annotation', {
+      dynamic: 'mf',
+      lyric: 'cc',
+      pedal: 'start',
+    }).score;
+
+    render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-pedal')).toHaveTextContent('Ped.');
+    });
+
+    const firstSystemGap = getScoreStaffGap(score, 0);
+    const secondSystemGap = getScoreStaffGap(score, MEASURES_PER_SYSTEM);
+    const secondSystemTrebleTop = getScoreStaffTop(score, 0, MEASURES_PER_SYSTEM);
+
+    expect(firstSystemGap).toBeGreaterThan(secondSystemGap);
+    expect(secondSystemGap).toBe(STAFF_GAP);
+    expect(secondSystemTrebleTop).toBe(
+      getScoreSystemGap(score, 0) + getStaffTop(0),
+    );
   });
 
   it('moves nearby long lyrics to another row when they would overlap', async () => {

@@ -1,5 +1,7 @@
 import type {
   Accidental,
+  AnnotationKind,
+  AnnotationPlacementSide,
   DurationValue,
   PedalMark,
   Pitch,
@@ -74,6 +76,10 @@ export interface UpdateScoreEventRequest {
   dynamic?: string | null;
   fermata?: boolean;
   glissando?: boolean;
+  annotationPlacement?: {
+    kind: AnnotationKind;
+    side: AnnotationPlacementSide;
+  };
   lyric?: string | null;
   pedal?: PedalMark | null;
 }
@@ -138,8 +144,15 @@ function clampScoreEventToStaffRange(event: ScoreEvent, staff: Staff): ScoreEven
         id: event.id,
         kind: 'note',
         beat: event.beat,
+        annotationPlacements: event.annotationPlacements,
+        chordSymbol: event.chordSymbol,
+        dynamic: event.dynamic,
         duration: event.duration,
         dots: event.dots,
+        fermata: event.fermata,
+        glissando: event.glissando,
+        lyric: event.lyric,
+        pedal: event.pedal,
         pitch,
       };
     }
@@ -199,6 +212,7 @@ function mergePitchedEventWithNote(
     dots: noteEvent.dots,
     fermata: existingEvent.fermata,
     glissando: existingEvent.glissando,
+    annotationPlacements: existingEvent.annotationPlacements,
     lyric: existingEvent.lyric,
     pedal: existingEvent.pedal,
     pitches,
@@ -243,6 +257,24 @@ function createUpdatedEventBase(
   const chordSymbol = normalizeAnnotationText(update.chordSymbol);
   const dynamic = normalizeAnnotationText(update.dynamic);
   const lyric = normalizeAnnotationText(update.lyric);
+  let annotationPlacements = event.annotationPlacements;
+
+  if (update.annotationPlacement) {
+    annotationPlacements = { ...(event.annotationPlacements ?? {}) };
+
+    if (update.annotationPlacement.side === 'auto') {
+      delete annotationPlacements[update.annotationPlacement.kind];
+    } else {
+      annotationPlacements[update.annotationPlacement.kind] =
+        update.annotationPlacement.side;
+    }
+  }
+
+  const normalizedAnnotationPlacements =
+    annotationPlacements &&
+    Object.values(annotationPlacements).some((side) => side !== undefined)
+      ? annotationPlacements
+      : undefined;
 
   return {
     id: eventId,
@@ -258,6 +290,7 @@ function createUpdatedEventBase(
       update.glissando === undefined
         ? event.glissando
         : update.glissando || undefined,
+    annotationPlacements: normalizedAnnotationPlacements,
     lyric: lyric === undefined ? event.lyric : lyric ?? undefined,
     pedal: update.pedal === undefined ? event.pedal : update.pedal ?? undefined,
   };

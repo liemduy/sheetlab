@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 import type { Score } from '../../domain/score/types';
-import type { DurationValue, StaffId } from '../../domain/score/types';
+import type { AnnotationKind, DurationValue, StaffId } from '../../domain/score/types';
 import { getMeasureBeats } from '../../domain/score/timeSignatures';
 import { getKeySignatureSymbolMoveIssue } from '../../domain/score/keySignatures';
 import { getEventDots, isGeneratedRestEvent } from '../../domain/score/events';
@@ -11,7 +11,7 @@ import { createInputCursorFromPosition } from '../editor/inputCursor';
 import {
   formatPitch,
   mapPointToMusicPosition,
-  mapStaffYToPitch,
+  mapScoreStaffYToPitch,
 } from './interaction';
 import type { MusicPosition } from './interaction';
 import {
@@ -20,14 +20,12 @@ import {
   MEASURES_PER_SYSTEM,
   SVG_WIDTH,
   getLocalMeasureIndex,
-  getScoreStaffGap,
-  getScoreSystemGap,
+  getScoreStaffTop,
   getMeasureX,
   getMeasureRight,
-  getStaffTop,
 } from './layout';
 import { snapInsertPositionToEventBoundary } from './insertPosition';
-import { getBeatX, getPitchY } from './notationGeometry';
+import { getBeatX, getPitchYForScore } from './notationGeometry';
 import { getMeasureKey } from './measureKey';
 import {
   getRhythmSlotsForMeasure,
@@ -50,7 +48,10 @@ import {
   MeasureHitTarget,
 } from './OverlayMeasureLayer';
 import { getNestedSvgPoint, getSvgPoint } from './overlaySvgPoint';
-import type { RenderedEventLayout } from './renderedEventLayout';
+import type {
+  RenderedAnnotationLayout,
+  RenderedEventLayout,
+} from './renderedEventLayout';
 
 const BEAT_MATCH_EPSILON = 0.0001;
 
@@ -65,6 +66,7 @@ interface NotationOverlayProps {
   dots: number;
   duration: DurationValue;
   entryMode: EntryMode;
+  annotationLayouts?: RenderedAnnotationLayout[];
   eventLayouts?: Record<string, RenderedEventLayout>;
   hoverPosition?: MusicPosition | null;
   inputCursor?: InputCursor | null;
@@ -78,6 +80,12 @@ interface NotationOverlayProps {
   onMeasureContextMenu?: (
     staffId: StaffId,
     measureIndex: number,
+    clientX: number,
+    clientY: number,
+  ) => void;
+  onAnnotationContextMenu?: (
+    eventId: string,
+    kind: AnnotationKind,
     clientX: number,
     clientY: number,
   ) => void;
@@ -105,7 +113,6 @@ interface NotationOverlayProps {
 function inputCursorToMusicPosition(
   cursor: InputCursor | null | undefined,
   score: Score,
-  staffGap: number,
 ): MusicPosition | null {
   if (!cursor) {
     return null;
@@ -123,18 +130,16 @@ function inputCursorToMusicPosition(
     getMeasureBeats(score.timeSignature),
     score,
   );
-  const systemGap = getScoreSystemGap(score);
   const y =
     cursor.mode === 'note-input'
-      ? getPitchY(
+      ? getPitchYForScore(
           cursor.pitchPreview,
           staff.clef,
           cursor.staffIndex,
-          staffGap,
+          score,
           cursor.measureIndex,
-          systemGap,
         )
-      : getStaffTop(cursor.staffIndex, staffGap, cursor.measureIndex, systemGap) +
+      : getScoreStaffTop(score, cursor.staffIndex, cursor.measureIndex) +
         STAFF_LINE_SPACING * 2;
 
   return {
@@ -155,7 +160,6 @@ function snapPositionToInputGrid(
   duration: DurationValue,
   dots: number,
   score: Score,
-  staffGap: number,
   eventLayouts: Record<string, RenderedEventLayout> = {},
   voiceIndex = 0,
 ) {
@@ -170,7 +174,6 @@ function snapPositionToInputGrid(
         dots,
       ),
       score,
-      staffGap,
     ) ?? rhythmSlotPosition;
   const activeSlot = getRhythmSlotsForMeasure(
     score,
@@ -296,6 +299,55 @@ function getRenderedPlaybackX({
   return getBeatX(measureIndex, beat, beatsPerMeasure, score);
 }
 
+function AnnotationHitTargets({
+  layouts,
+  onAnnotationContextMenu,
+}: {
+  layouts: RenderedAnnotationLayout[];
+  onAnnotationContextMenu?: (
+    eventId: string,
+    kind: AnnotationKind,
+    clientX: number,
+    clientY: number,
+  ) => void;
+}) {
+  if (!onAnnotationContextMenu) {
+    return null;
+  }
+
+  return (
+    <>
+      {layouts.map((layout) => (
+        <rect
+          key={layout.id}
+          aria-label={`${layout.kind} annotation ${layout.text}`}
+          className="annotation-hit-target"
+          data-annotation-kind={layout.kind}
+          data-annotation-side={layout.side}
+          data-event-id={layout.eventId}
+          data-testid="annotation-hit-target"
+          height={layout.maxY - layout.minY + 8}
+          role="button"
+          tabIndex={0}
+          width={layout.maxX - layout.minX + 8}
+          x={layout.minX - 4}
+          y={layout.minY - 4}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onAnnotationContextMenu(
+              layout.eventId,
+              layout.kind,
+              event.clientX,
+              event.clientY,
+            );
+          }}
+        />
+      ))}
+    </>
+  );
+}
+
 const KEY_SIGNATURE_SYMBOL_TEXT = {
   flat: '♭',
   sharp: '♯',
@@ -304,6 +356,7 @@ const KEY_SIGNATURE_SYMBOL_TEXT = {
 export function NotationOverlay({
   activeEventId,
   activeEventIds = [],
+  annotationLayouts = [],
   dots,
   duration,
   entryMode,
@@ -316,6 +369,7 @@ export function NotationOverlay({
   onHoverPositionChange,
   onMoveEvent,
   onMoveKeySignatureSymbol,
+  onAnnotationContextMenu,
   onPlaceAtPosition,
   onDeleteEvent,
   onMeasureContextMenu,
@@ -355,8 +409,6 @@ export function NotationOverlay({
   );
   const suppressNextPlaceRef = useRef(false);
   const staves = score.parts[0]?.staves ?? [];
-  const staffGap = getScoreStaffGap(score);
-  const systemGap = getScoreSystemGap(score);
   const beatsPerMeasure = getMeasureBeats(score.timeSignature);
   const keySignatureSymbolLayouts = getKeySignatureSymbolLayouts(score);
   const invalidMeasureKeySet = new Set(invalidMeasureKeys);
@@ -376,7 +428,7 @@ export function NotationOverlay({
           .find((event) => event.id === dragState.eventId) ?? null;
   const inputCursorPosition =
     inputCursor && hoverPosition
-      ? inputCursorToMusicPosition(inputCursor, score, staffGap)
+      ? inputCursorToMusicPosition(inputCursor, score)
       : null;
   const hoverSourcePosition = inputCursorPosition ?? hoverPosition;
   const snappedHoverPosition = hoverSourcePosition
@@ -385,7 +437,6 @@ export function NotationOverlay({
         duration,
         dots,
         score,
-        staffGap,
         eventLayouts,
         voiceIndex,
       )
@@ -478,21 +529,19 @@ export function NotationOverlay({
     }
 
     const targetMeasureIndex = mappedPosition?.measureIndex ?? origin.measureIndex;
-    const pitch = mapStaffYToPitch(
+    const pitch = mapScoreStaffYToPitch(
       point.y,
       staff.clef,
       targetStaffIndex,
-      staffGap,
+      score,
       targetMeasureIndex,
-      systemGap,
     );
-    const y = getPitchY(
+    const y = getPitchYForScore(
       pitch,
       staff.clef,
       targetStaffIndex,
-      staffGap,
+      score,
       targetMeasureIndex,
-      systemGap,
     );
 
     return {
@@ -520,21 +569,19 @@ export function NotationOverlay({
     }
 
     const point = getSvgPoint(event, svgHeight);
-    const pitch = mapStaffYToPitch(
+    const pitch = mapScoreStaffYToPitch(
       point.y,
       staff.clef,
       layout.staffIndex,
-      staffGap,
+      score,
       layout.measureIndex,
-      systemGap,
     );
-    const y = getPitchY(
+    const y = getPitchYForScore(
       pitch,
       staff.clef,
       layout.staffIndex,
-      staffGap,
+      score,
       layout.measureIndex,
-      systemGap,
     );
 
     return {
@@ -637,7 +684,6 @@ export function NotationOverlay({
                 duration,
                 dots,
                 score,
-                staffGap,
                 eventLayouts,
                 voiceIndex,
               )
@@ -697,7 +743,6 @@ export function NotationOverlay({
               duration,
               dots,
               score,
-              staffGap,
               eventLayouts,
               voiceIndex,
             )
@@ -740,7 +785,6 @@ export function NotationOverlay({
         <StaffHoverGuide
           position={displayHoverPosition}
           score={score}
-          staffGap={staffGap}
         />
       ) : null}
       {score.type === 'grand' && staves.length > 1
@@ -753,9 +797,9 @@ export function NotationOverlay({
                 data-testid="grand-staff-connector"
                 x1={STAFF_LEFT}
                 x2={STAFF_LEFT}
-                y1={getStaffTop(0, staffGap, measure.index, systemGap)}
+                y1={getScoreStaffTop(score, 0, measure.index)}
                 y2={
-                  getStaffTop(staves.length - 1, staffGap, measure.index, systemGap) +
+                  getScoreStaffTop(score, staves.length - 1, measure.index) +
                   STAFF_LINE_SPACING * 4
                 }
               />
@@ -767,7 +811,6 @@ export function NotationOverlay({
             <InsertionCursor
               position={displayHoverPosition}
               score={score}
-              staffGap={staffGap}
             />
           ) : null}
           <GhostEvent
@@ -776,7 +819,6 @@ export function NotationOverlay({
             entryMode={entryMode}
             position={displayHoverPosition}
             score={score}
-            staffGap={staffGap}
           />
         </>
       ) : null}
@@ -795,9 +837,7 @@ export function NotationOverlay({
               onSelectMeasure={onSelectMeasure}
               score={score}
               staff={staff}
-              staffGap={staffGap}
               staffIndex={staffIndex}
-              systemGap={systemGap}
             />
           ))}
           {staff.measures.map((measure) =>
@@ -806,20 +846,13 @@ export function NotationOverlay({
                 key={`invalid-${staff.id}-${measure.index}`}
                 measureIndex={measure.index}
                 score={score}
-                staffGap={staffGap}
                 staffId={staff.id}
                 staffIndex={staffIndex}
-                systemGap={systemGap}
               />
             ) : null,
           )}
           {staff.measures.flatMap((measure, measureOffset) => {
-            const staffTop = getStaffTop(
-              staffIndex,
-              staffGap,
-              measure.index,
-              systemGap,
-            );
+            const staffTop = getScoreStaffTop(score, staffIndex, measure.index);
             const lines = [
               {
                 key: `start-${measure.index}`,
@@ -884,9 +917,7 @@ export function NotationOverlay({
                 selectedPitchIndex={selectedPitchIndex}
                 score={score}
                 staff={staff}
-                staffGap={staffGap}
                 staffIndex={staffIndex}
-                systemGap={systemGap}
                 voiceIndex={voiceIndexForTarget}
               />
               )),
@@ -894,6 +925,10 @@ export function NotationOverlay({
           )}
         </g>
       ))}
+      <AnnotationHitTargets
+        layouts={annotationLayouts}
+        onAnnotationContextMenu={onAnnotationContextMenu}
+      />
       {keySignatureSymbolLayouts.map((layout) => (
         <KeySignatureSymbolTarget
           key={layout.id}
@@ -923,20 +958,10 @@ export function NotationOverlay({
           x1={playheadX}
           x2={playheadX}
           y1={
-            getStaffTop(
-              0,
-              staffGap,
-              playheadMeasureIndex,
-              systemGap,
-            ) - 24
+            getScoreStaffTop(score, 0, playheadMeasureIndex) - 24
           }
           y2={
-            getStaffTop(
-              staves.length - 1,
-              staffGap,
-              playheadMeasureIndex,
-              systemGap,
-            ) +
+            getScoreStaffTop(score, staves.length - 1, playheadMeasureIndex) +
             STAFF_LINE_SPACING * 4 +
             24
           }
@@ -949,7 +974,6 @@ export function NotationOverlay({
           entryMode={draggedEvent.kind === 'rest' ? 'rest' : 'note'}
           position={dragState.previewPosition}
           score={score}
-          staffGap={staffGap}
         />
       ) : null}
       {keySignatureDragState?.previewPosition ? (

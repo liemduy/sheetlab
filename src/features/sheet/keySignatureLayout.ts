@@ -10,12 +10,10 @@ import { getActiveKeySignatureSymbolState } from '../../domain/score/keySignatur
 import {
   getLocalMeasureIndex,
   getMeasureX,
-  getScoreStaffGap,
-  getScoreSystemGap,
-  getStaffTop,
+  getScoreStaffTop,
   STAFF_LINE_SPACING,
 } from './layout';
-import { getPitchY } from './notationGeometry';
+import { getPitchYForScore } from './notationGeometry';
 
 const SYMBOL_SPACING = 12;
 const SYSTEM_START_X_OFFSET = 55;
@@ -90,8 +88,6 @@ export function getKeySignatureDisplayPitch(
 export function getKeySignatureSymbolLayouts(score: Score) {
   const staves = score.parts[0]?.staves ?? [];
   const measureCount = staves[0]?.measures.length ?? 0;
-  const staffGap = getScoreStaffGap(score);
-  const systemGap = getScoreSystemGap(score);
   const layouts: KeySignatureSymbolLayout[] = [];
 
   staves.forEach((staff, staffIndex) => {
@@ -114,12 +110,7 @@ export function getKeySignatureSymbolLayouts(score: Score) {
         (getLocalMeasureIndex(measure.index) === 0
           ? SYSTEM_START_X_OFFSET
           : MID_MEASURE_X_OFFSET);
-      const staffTop = getStaffTop(
-        staffIndex,
-        staffGap,
-        measure.index,
-        systemGap,
-      );
+      const staffTop = getScoreStaffTop(score, staffIndex, measure.index);
 
       symbols.forEach((symbol, symbolIndex) => {
         const pitch = getKeySignatureDisplayPitch(symbol, staff.clef);
@@ -135,13 +126,12 @@ export function getKeySignatureSymbolLayouts(score: Score) {
           symbolIndex,
           x: xStart + symbolIndex * SYMBOL_SPACING,
           y:
-            getPitchY(
+            getPitchYForScore(
               pitch,
               staff.clef,
               staffIndex,
-              staffGap,
+              score,
               measure.index,
-              systemGap,
             ) || staffTop + STAFF_LINE_SPACING * 2,
         });
       });

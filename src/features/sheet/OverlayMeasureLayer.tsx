@@ -5,7 +5,7 @@ import {
   getMeasureRight,
   getMeasureWidth,
   getMeasureX,
-  getStaffTop,
+  getScoreStaffTop,
 } from './layout';
 
 export function InvalidMeasureWarning({
@@ -13,19 +13,15 @@ export function InvalidMeasureWarning({
   score,
   staffId,
   staffIndex,
-  staffGap,
-  systemGap,
 }: {
   measureIndex: number;
   score: Score;
   staffId: Staff['id'];
   staffIndex: number;
-  staffGap: number;
-  systemGap: number;
 }) {
   const x1 = getMeasureX(measureIndex, score);
   const x2 = getMeasureRight(measureIndex, score);
-  const staffTop = getStaffTop(staffIndex, staffGap, measureIndex, systemGap);
+  const staffTop = getScoreStaffTop(score, staffIndex, measureIndex);
 
   return (
     <g
@@ -76,9 +72,7 @@ export function MeasureHitTarget({
   onSelectMeasure,
   score,
   staff,
-  staffGap,
   staffIndex,
-  systemGap,
 }: {
   isInputArmed?: boolean;
   isSelected: boolean;
@@ -92,12 +86,10 @@ export function MeasureHitTarget({
   onSelectMeasure?: (staffId: StaffId, measureIndex: number) => void;
   score: Score;
   staff: Staff;
-  staffGap: number;
   staffIndex: number;
-  systemGap: number;
 }) {
   const x = getMeasureX(measureIndex, score);
-  const y = getStaffTop(staffIndex, staffGap, measureIndex, systemGap) - 7;
+  const y = getScoreStaffTop(score, staffIndex, measureIndex) - 7;
   const height = STAFF_LINE_SPACING * 4 + 14;
   const width = getMeasureWidth(measureIndex, score);
   const label = `Measure ${measureIndex + 1} ${staff.id}`;

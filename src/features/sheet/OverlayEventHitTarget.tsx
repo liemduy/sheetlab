@@ -10,10 +10,15 @@ import {
 import type { PlacementMode } from '../editor/editorState';
 import { formatPitch } from './interaction';
 import type { MusicPosition } from './interaction';
-import { STAFF_LINE_SPACING, getStaffTop } from './layout';
-import { getBeatX, getPitchY } from './notationGeometry';
+import { STAFF_LINE_SPACING, getScoreStaffTop } from './layout';
+import { getBeatX, getPitchYForScore } from './notationGeometry';
 import { getNestedSvgPoint } from './overlaySvgPoint';
-import type { RenderedEventLayout } from './renderedEventLayout';
+import type { RenderedEventLayout, RenderedPitchLayout } from './renderedEventLayout';
+
+const NOTEHEAD_TARGET_HORIZONTAL_PADDING = 12;
+const NOTEHEAD_TARGET_VERTICAL_PADDING = 12;
+const MIN_NOTEHEAD_TARGET_WIDTH = 34;
+const MIN_NOTEHEAD_TARGET_HEIGHT = 34;
 
 interface EventHitTargetProps {
   activeEventId?: string | null;
@@ -37,10 +42,70 @@ interface EventHitTargetProps {
   selectedPitchIndex?: number | null;
   score: Score;
   staff: Staff;
-  staffGap: number;
   staffIndex: number;
-  systemGap: number;
   voiceIndex?: number;
+}
+
+function findPitchLayout(
+  eventLayout: RenderedEventLayout | undefined,
+  pitchIndex: number | null | undefined,
+) {
+  if (pitchIndex === null || pitchIndex === undefined) {
+    return null;
+  }
+
+  return (
+    eventLayout?.pitchLayouts.find(
+      (pitchLayout) => pitchLayout.pitchIndex === pitchIndex,
+    ) ?? null
+  );
+}
+
+function getPitchLayoutY(
+  eventLayout: RenderedEventLayout | undefined,
+  pitchIndex: number,
+) {
+  return findPitchLayout(eventLayout, pitchIndex)?.y ?? null;
+}
+
+function getNoteheadTargetBounds(
+  pitchLayouts: RenderedPitchLayout[],
+  fallbackX: number,
+  fallbackY: number,
+) {
+  if (pitchLayouts.length === 0) {
+    return null;
+  }
+
+  const minX = Math.min(...pitchLayouts.map((pitchLayout) => pitchLayout.minX));
+  const maxX = Math.max(...pitchLayouts.map((pitchLayout) => pitchLayout.maxX));
+  const minY =
+    Math.min(...pitchLayouts.map((pitchLayout) => pitchLayout.y)) -
+    NOTEHEAD_TARGET_VERTICAL_PADDING;
+  const maxY =
+    Math.max(...pitchLayouts.map((pitchLayout) => pitchLayout.y)) +
+    NOTEHEAD_TARGET_VERTICAL_PADDING;
+  const width = Math.max(
+    MIN_NOTEHEAD_TARGET_WIDTH,
+    maxX - minX + NOTEHEAD_TARGET_HORIZONTAL_PADDING * 2,
+  );
+  const height = Math.max(
+    MIN_NOTEHEAD_TARGET_HEIGHT,
+    maxY - minY + NOTEHEAD_TARGET_VERTICAL_PADDING,
+  );
+  const centerX = Number.isFinite((minX + maxX) / 2)
+    ? (minX + maxX) / 2
+    : fallbackX;
+  const centerY = Number.isFinite((minY + maxY) / 2)
+    ? (minY + maxY) / 2
+    : fallbackY;
+
+  return {
+    centerX,
+    centerY,
+    height,
+    width,
+  };
 }
 
 export function EventHitTarget({
@@ -60,9 +125,7 @@ export function EventHitTarget({
   selectedPitchIndex,
   score,
   staff,
-  staffGap,
   staffIndex,
-  systemGap,
   voiceIndex,
 }: EventHitTargetProps) {
   const eventPitches = getEventPitches(event).map((pitch) =>
@@ -74,20 +137,23 @@ export function EventHitTarget({
     : null;
   const fallbackY =
     displayPrimaryPitch
-      ? getPitchY(
+      ? getPitchYForScore(
           displayPrimaryPitch,
           staff.clef,
           staffIndex,
-          staffGap,
+          score,
           measureIndex,
-          systemGap,
         )
-      : getStaffTop(staffIndex, staffGap, measureIndex, systemGap) +
+      : getScoreStaffTop(score, staffIndex, measureIndex) +
         STAFF_LINE_SPACING * 2;
   const x =
     eventLayout?.x ??
     getBeatX(measureIndex, event.beat, beatsPerMeasure, score);
   const y = eventLayout?.y ?? fallbackY;
+  const noteheadTargetBounds =
+    event.kind === 'rest'
+      ? null
+      : getNoteheadTargetBounds(eventLayout?.pitchLayouts ?? [], x, y);
   const label =
     event.kind === 'rest'
       ? `Rest measure ${measureIndex + 1} beat ${event.beat + 1}`
@@ -98,25 +164,41 @@ export function EventHitTarget({
   const targetWidth =
     placementMode === 'insert'
       ? 16
-      : Math.max(34, (eventLayout?.maxX ?? x + 10) - (eventLayout?.minX ?? x - 10) + 28);
+      : noteheadTargetBounds?.width ??
+        Math.max(
+          34,
+          (eventLayout?.maxX ?? x + 10) - (eventLayout?.minX ?? x - 10) + 28,
+        );
   const targetHeight =
     placementMode === 'insert'
       ? 30
-      : Math.max(42, (eventLayout?.maxY ?? y + 10) - (eventLayout?.minY ?? y - 10) + 30);
+      : noteheadTargetBounds?.height ??
+        Math.max(
+          42,
+          (eventLayout?.maxY ?? y + 10) - (eventLayout?.minY ?? y - 10) + 30,
+        );
+  const targetCenterX = noteheadTargetBounds?.centerX ?? x;
+  const targetCenterY = noteheadTargetBounds?.centerY ?? y;
   const selectedPitch =
     selectedEventId === event.id && selectedPitchIndex !== null && selectedPitchIndex !== undefined
       ? eventPitches[selectedPitchIndex]
       : selectedEventId === event.id
         ? eventPitches[0]
         : null;
+  const selectedPitchLayoutIndex =
+    selectedEventId === event.id ? selectedPitchIndex ?? 0 : null;
+  const selectedPitchLayoutY = findPitchLayout(
+    eventLayout,
+    selectedPitchLayoutIndex,
+  )?.y;
   const selectedPitchY = selectedPitch
-    ? getPitchY(
+    ? selectedPitchLayoutY ??
+      getPitchYForScore(
         selectedPitch,
         staff.clef,
         staffIndex,
-        staffGap,
+        score,
         measureIndex,
-        systemGap,
       )
     : null;
   const deleteX = (eventLayout?.maxX ?? x) + 22;
@@ -136,14 +218,15 @@ export function EventHitTarget({
 
     return eventPitches.reduce(
       (closest, pitch, pitchIndex) => {
-        const pitchY = getPitchY(
-          pitch,
-          staff.clef,
-          staffIndex,
-          staffGap,
-          measureIndex,
-          systemGap,
-        );
+        const pitchY =
+          getPitchLayoutY(eventLayout, pitchIndex) ??
+          getPitchYForScore(
+            pitch,
+            staff.clef,
+            staffIndex,
+            score,
+            measureIndex,
+          );
         const distance = Math.abs(point.y - pitchY);
 
         return distance < closest.distance
@@ -186,7 +269,9 @@ export function EventHitTarget({
       staffId: staff.id,
       staffIndex,
       x,
-      y: getPitchY(pitch, staff.clef, staffIndex, staffGap, measureIndex, systemGap),
+      y:
+        getPitchLayoutY(eventLayout, pitchIndex) ??
+        getPitchYForScore(pitch, staff.clef, staffIndex, score, measureIndex),
     };
   }
 
@@ -251,8 +336,8 @@ export function EventHitTarget({
           height={targetHeight}
           rx={4}
           width={targetWidth}
-          x={x - targetWidth / 2}
-          y={y - targetHeight / 2}
+          x={targetCenterX - targetWidth / 2}
+          y={targetCenterY - targetHeight / 2}
         />
       </g>
       {selectedEventId === event.id ? (

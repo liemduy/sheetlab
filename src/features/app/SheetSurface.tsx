@@ -7,13 +7,23 @@ import type { EditorToolState } from '../editor/editorState';
 import type { InputCursor } from '../editor/inputCursor';
 import { StaffRenderer } from '../sheet/StaffRenderer';
 import type { MusicPosition } from '../sheet/interaction';
-import type { Score, StaffId } from '../../domain/score/types';
-import type { MeasureContextMenuState, MeasureTarget } from './selectionTypes';
+import type {
+  AnnotationKind,
+  AnnotationPlacementSide,
+  Score,
+  StaffId,
+} from '../../domain/score/types';
+import type {
+  AnnotationContextMenuState,
+  MeasureContextMenuState,
+  MeasureTarget,
+} from './selectionTypes';
 
 interface SheetSurfaceProps {
   activeEventId: string | null;
   activeEventIds: readonly string[];
   activeInvalidMeasureKeys: string[];
+  annotationContextMenu: AnnotationContextMenuState | null;
   canvasZoom: number;
   inputCursor: InputCursor | null;
   isPdfExportMode: boolean;
@@ -33,6 +43,13 @@ interface SheetSurfaceProps {
   onClearMeasureContent: () => void;
   onConfirmClearMeasureContent: () => void;
   onConfirmDeleteMeasure: () => void;
+  onAnnotationContextMenu: (
+    eventId: string,
+    kind: AnnotationKind,
+    clientX: number,
+    clientY: number,
+  ) => void;
+  onAnnotationPlacementChange: (side: AnnotationPlacementSide) => void;
   onDeleteEvent: (eventId: string, pitchIndex?: number | null) => void;
   onHoverPositionChange: (position: MusicPosition | null) => void;
   onInsertMeasureAfter: () => void;
@@ -57,6 +74,7 @@ interface SheetSurfaceProps {
   onRequestDeleteMeasure: () => void;
   onSelectEvent: (eventId: string, pitchIndex?: number | null) => void;
   onSelectMeasure: (staffId: StaffId, measureIndex: number) => void;
+  onSetAnnotationContextMenu: (target: AnnotationContextMenuState | null) => void;
   onSetPendingMeasureClear: (target: MeasureTarget | null) => void;
   onSetPendingMeasureDelete: (target: MeasureTarget | null) => void;
   onSheetStageClick: (event: ReactMouseEvent<HTMLElement>) => void;
@@ -69,6 +87,7 @@ export function SheetSurface({
   activeEventId,
   activeEventIds,
   activeInvalidMeasureKeys,
+  annotationContextMenu,
   canvasZoom,
   getMeasureCount,
   hoverPosition,
@@ -88,6 +107,8 @@ export function SheetSurface({
   onClearMeasureContent,
   onConfirmClearMeasureContent,
   onConfirmDeleteMeasure,
+  onAnnotationContextMenu,
+  onAnnotationPlacementChange,
   onDeleteEvent,
   onHoverPositionChange,
   onInsertMeasureAfter,
@@ -99,6 +120,7 @@ export function SheetSurface({
   onRequestDeleteMeasure,
   onSelectEvent,
   onSelectMeasure,
+  onSetAnnotationContextMenu,
   onSetPendingMeasureClear,
   onSetPendingMeasureDelete,
   onSheetStageClick,
@@ -166,6 +188,7 @@ export function SheetSurface({
             score={score}
             voiceIndex={toolState.voiceIndex}
             onClearInteraction={onClearInteraction}
+            onAnnotationContextMenu={onAnnotationContextMenu}
             onHoverPositionChange={onHoverPositionChange}
             onPlaceAtPosition={onPlaceAtPosition}
             onDeleteEvent={onDeleteEvent}
@@ -208,6 +231,47 @@ export function SheetSurface({
             onClick={onRequestDeleteMeasure}
           >
             Delete measure
+          </button>
+        </div>
+      ) : null}
+      {annotationContextMenu ? (
+        <div
+          className="measure-context-menu annotation-context-menu"
+          data-testid="annotation-context-menu"
+          role="menu"
+          style={{
+            left: annotationContextMenu.clientX,
+            top: annotationContextMenu.clientY,
+          }}
+        >
+          <p>{annotationContextMenu.kind}</p>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => onAnnotationPlacementChange('auto')}
+          >
+            Auto
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => onAnnotationPlacementChange('above')}
+          >
+            Move above
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => onAnnotationPlacementChange('below')}
+          >
+            Move below
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => onSetAnnotationContextMenu(null)}
+          >
+            Close
           </button>
         </div>
       ) : null}

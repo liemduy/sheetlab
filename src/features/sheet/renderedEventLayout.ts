@@ -1,4 +1,8 @@
-import type { ScoreEvent } from '../../domain/score/types';
+import type {
+  AnnotationKind,
+  AnnotationPlacementSide,
+  ScoreEvent,
+} from '../../domain/score/types';
 
 export interface RenderedPitchLayout {
   isDisplaced: boolean;
@@ -20,6 +24,24 @@ export interface RenderedEventLayout {
   minY: number;
   pitchLayouts: RenderedPitchLayout[];
   staffId: string;
+  voiceIndex: number;
+  x: number;
+  y: number;
+}
+
+export interface RenderedAnnotationLayout {
+  eventId: string;
+  id: string;
+  kind: AnnotationKind;
+  maxX: number;
+  maxY: number;
+  measureIndex: number;
+  minX: number;
+  minY: number;
+  row: number;
+  side: Exclude<AnnotationPlacementSide, 'auto'>;
+  staffId: string;
+  text: string;
   x: number;
   y: number;
 }

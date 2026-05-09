@@ -31,6 +31,8 @@ import {
 import { ScoreSettingsPanel } from '../editor/ScoreSettingsPanel';
 import type {
   KeySignature,
+  AnnotationKind,
+  AnnotationPlacementSide,
   PageSize,
   RepeatJumpKind,
   Score,
@@ -135,6 +137,12 @@ function SheetLabApp() {
     selectMeasure,
   });
   const [openPalette, setOpenPalette] = useState<ToolbarPalette>(null);
+  const [annotationContextMenu, setAnnotationContextMenu] = useState<{
+    clientX: number;
+    clientY: number;
+    eventId: string;
+    kind: AnnotationKind;
+  } | null>(null);
   const notationViewportRef = useRef<HTMLDivElement | null>(null);
   const { canvasZoom, handleCanvasZoomChange } =
     useCanvasZoom(notationViewportRef);
@@ -142,6 +150,7 @@ function SheetLabApp() {
   function clearTransientInteraction() {
     clearPointerState();
     clearMeasureUiState();
+    setAnnotationContextMenu(null);
     clearSelection();
   }
 
@@ -411,6 +420,48 @@ function SheetLabApp() {
     }
   }
 
+  function handleAnnotationContextMenu(
+    eventId: string,
+    kind: AnnotationKind,
+    clientX: number,
+    clientY: number,
+  ) {
+    updateToolState({ isInputArmed: false });
+    clearPointerState();
+    clearMeasureUiState();
+    selectEvent(eventId, null);
+    setAnnotationContextMenu({ clientX, clientY, eventId, kind });
+    setEditorMessage('Annotation selected');
+  }
+
+  function handleAnnotationPlacementChange(
+    side: AnnotationPlacementSide,
+  ) {
+    if (!annotationContextMenu) {
+      return;
+    }
+
+    const result = tryUpdateScoreEvent(score, annotationContextMenu.eventId, {
+      annotationPlacement: {
+        kind: annotationContextMenu.kind,
+        side,
+      },
+    });
+
+    if (result.updated) {
+      commitScoreChange(
+        result.score,
+        side === 'auto'
+          ? 'Annotation placement reset'
+          : `Annotation moved ${side}`,
+      );
+    } else {
+      setEditorMessage(`Cannot update annotation placement: ${result.reason}`);
+    }
+
+    setAnnotationContextMenu(null);
+  }
+
   function handleSectionMarkerChange(sectionMarker: string | null) {
     const measureIndex = getScoreEditTargetMeasureIndex();
 
@@ -649,6 +700,7 @@ function SheetLabApp() {
           activeEventId={activePlaybackEvent?.id ?? null}
           activeEventIds={activePlaybackEventIds}
           activeInvalidMeasureKeys={activeInvalidMeasureKeys}
+          annotationContextMenu={annotationContextMenu}
           canvasZoom={canvasZoom}
           getMeasureCount={getMeasureCount}
           hoverPosition={hoverPosition}
@@ -668,6 +720,8 @@ function SheetLabApp() {
           onClearMeasureContent={handleClearMeasureContent}
           onConfirmClearMeasureContent={handleConfirmClearMeasureContent}
           onConfirmDeleteMeasure={handleConfirmDeleteMeasure}
+          onAnnotationContextMenu={handleAnnotationContextMenu}
+          onAnnotationPlacementChange={handleAnnotationPlacementChange}
           onDeleteEvent={handleDeleteEvent}
           onHoverPositionChange={handleHoverPositionChange}
           onInsertMeasureAfter={handleInsertMeasureAfter}
@@ -681,6 +735,7 @@ function SheetLabApp() {
           onSelectMeasure={handleSelectMeasure}
           onSetPendingMeasureClear={setPendingMeasureClear}
           onSetPendingMeasureDelete={setPendingMeasureDelete}
+          onSetAnnotationContextMenu={setAnnotationContextMenu}
           onSheetStageClick={handleSheetStageClick}
           onUpdateScoreMetadata={updateScoreMetadata}
         />

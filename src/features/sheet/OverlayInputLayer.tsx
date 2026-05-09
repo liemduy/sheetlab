@@ -11,11 +11,12 @@ import {
 import {
   STAFF_LEFT,
   STAFF_LINE_SPACING,
+  getScoreStaffGap,
+  getScoreStaffTop,
   getScoreSystemGap,
   getStaffRight,
-  getStaffTop,
 } from './layout';
-import { getBeatX, getPitchY } from './notationGeometry';
+import { getBeatX, getPitchYForScore } from './notationGeometry';
 import { NoteGlyph, RestGlyph } from './notationGlyph';
 import type { RenderedEventLayout } from './renderedEventLayout';
 
@@ -25,14 +26,12 @@ export function GhostEvent({
   entryMode,
   position,
   score,
-  staffGap,
 }: {
   dots: number;
   duration: DurationValue;
   entryMode: EntryMode;
   position: MusicPosition;
   score: Score;
-  staffGap: number;
 }) {
   const staff = score.parts[0]?.staves[position.staffIndex];
 
@@ -40,18 +39,18 @@ export function GhostEvent({
     return null;
   }
 
-  const systemGap = getScoreSystemGap(score);
+  const currentStaffGap = getScoreStaffGap(score, position.measureIndex);
+  const systemGap = getScoreSystemGap(score, position.measureIndex);
   const x = position.x;
-  const noteY = getPitchY(
+  const noteY = getPitchYForScore(
     position.pitch,
     staff.clef,
     position.staffIndex,
-    staffGap,
+    score,
     position.measureIndex,
-    systemGap,
   );
   const restY =
-    getStaffTop(position.staffIndex, staffGap, position.measureIndex, systemGap) +
+    getScoreStaffTop(score, position.staffIndex, position.measureIndex) +
     STAFF_LINE_SPACING * 2;
 
   return (
@@ -68,7 +67,7 @@ export function GhostEvent({
           dots={dots}
           measureIndex={position.measureIndex}
           pitch={position.pitch}
-          staffGap={staffGap}
+          staffGap={currentStaffGap}
           staffIndex={position.staffIndex}
           systemGap={systemGap}
           variant="ghost"
@@ -80,7 +79,7 @@ export function GhostEvent({
           duration={duration}
           dots={dots}
           measureIndex={position.measureIndex}
-          staffGap={staffGap}
+          staffGap={currentStaffGap}
           staffIndex={position.staffIndex}
           systemGap={systemGap}
           variant="ghost"
@@ -95,11 +94,9 @@ export function GhostEvent({
 export function InsertionCursor({
   position,
   score,
-  staffGap,
 }: {
   position: MusicPosition;
   score: Score;
-  staffGap: number;
 }) {
   const staff = score.parts[0]?.staves[position.staffIndex];
 
@@ -116,7 +113,6 @@ export function InsertionCursor({
   const yRange = getTimelineYRange(
     score,
     position.staffIndex,
-    staffGap,
     position.measureIndex,
   );
 
@@ -135,26 +131,24 @@ export function InsertionCursor({
 function getTimelineYRange(
   score: Score,
   staffIndex: number,
-  staffGap: number,
   measureIndex: number,
 ) {
   const staves = score.parts[0]?.staves ?? [];
-  const systemGap = getScoreSystemGap(score);
 
   if (score.type === 'grand' && staves.length > 1) {
     return {
-      y1: getStaffTop(0, staffGap, measureIndex, systemGap) - 36,
+      y1: getScoreStaffTop(score, 0, measureIndex) - 36,
       y2:
-        getStaffTop(staves.length - 1, staffGap, measureIndex, systemGap) +
+        getScoreStaffTop(score, staves.length - 1, measureIndex) +
         STAFF_LINE_SPACING * 4 +
         36,
     };
   }
 
   return {
-    y1: getStaffTop(staffIndex, staffGap, measureIndex, systemGap) - 36,
+    y1: getScoreStaffTop(score, staffIndex, measureIndex) - 36,
     y2:
-      getStaffTop(staffIndex, staffGap, measureIndex, systemGap) +
+      getScoreStaffTop(score, staffIndex, measureIndex) +
       STAFF_LINE_SPACING * 4 +
       36,
   };
@@ -163,11 +157,9 @@ function getTimelineYRange(
 export function StaffHoverGuide({
   position,
   score,
-  staffGap,
 }: {
   position: MusicPosition;
   score: Score;
-  staffGap: number;
 }) {
   const staff = score.parts[0]?.staves[position.staffIndex];
 
@@ -175,13 +167,7 @@ export function StaffHoverGuide({
     return null;
   }
 
-  const systemGap = getScoreSystemGap(score);
-  const staffTop = getStaffTop(
-    position.staffIndex,
-    staffGap,
-    position.measureIndex,
-    systemGap,
-  );
+  const staffTop = getScoreStaffTop(score, position.staffIndex, position.measureIndex);
   const measureCount = staff.measures.length;
   const staffRight = getStaffRight(measureCount, position.measureIndex, score);
   const guideWidth = DEFAULT_INPUT_SLOT_WIDTH;

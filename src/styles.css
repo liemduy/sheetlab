@@ -900,6 +900,12 @@ button {
   pointer-events: all;
 }
 
+.annotation-hit-target {
+  fill: transparent;
+  cursor: context-menu;
+  pointer-events: all;
+}
+
 .measure-hit.is-input-armed,
 .measure-hit.is-input-armed .measure-hit-target {
   pointer-events: none;

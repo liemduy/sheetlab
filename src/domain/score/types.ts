@@ -57,6 +57,19 @@ export type DurationValue =
 
 export type PedalMark = 'start' | 'release' | 'start-release';
 
+export type AnnotationKind =
+  | 'chordSymbol'
+  | 'dynamic'
+  | 'fermata'
+  | 'lyric'
+  | 'pedal';
+
+export type AnnotationPlacementSide = 'auto' | 'above' | 'below';
+
+export type AnnotationPlacements = Partial<
+  Record<AnnotationKind, AnnotationPlacementSide>
+>;
+
 export interface TimeSignature {
   beats: number;
   beatUnit: number;
@@ -83,6 +96,7 @@ export interface BaseScoreEvent {
   dynamic?: string;
   fermata?: boolean;
   glissando?: boolean;
+  annotationPlacements?: AnnotationPlacements;
   lyric?: string;
   pedal?: PedalMark;
 }

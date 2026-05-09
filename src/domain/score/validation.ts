@@ -1,5 +1,7 @@
 import type {
   Accidental,
+  AnnotationKind,
+  AnnotationPlacementSide,
   Clef,
   DurationValue,
   KeySignature,
@@ -37,6 +39,18 @@ const PEDAL_MARKS = new Set<PedalMark>([
   'start',
   'release',
   'start-release',
+]);
+const ANNOTATION_KINDS = new Set<AnnotationKind>([
+  'chordSymbol',
+  'dynamic',
+  'fermata',
+  'lyric',
+  'pedal',
+]);
+const ANNOTATION_PLACEMENT_SIDES = new Set<AnnotationPlacementSide>([
+  'auto',
+  'above',
+  'below',
 ]);
 const KEY_SIGNATURES = new Set<KeySignature>([
   'C',
@@ -89,6 +103,17 @@ function isKeySignatureSymbol(value: unknown) {
   );
 }
 
+function isAnnotationPlacements(value: unknown) {
+  return (
+    isRecord(value) &&
+    Object.entries(value).every(
+      ([key, side]) =>
+        ANNOTATION_KINDS.has(key as AnnotationKind) &&
+        ANNOTATION_PLACEMENT_SIDES.has(side as AnnotationPlacementSide),
+    )
+  );
+}
+
 function isScoreEvent(value: unknown): value is ScoreEvent {
   if (!isRecord(value)) {
     return false;
@@ -102,6 +127,8 @@ function isScoreEvent(value: unknown): value is ScoreEvent {
     (value.dynamic === undefined || isString(value.dynamic)) &&
     (value.fermata === undefined || typeof value.fermata === 'boolean') &&
     (value.glissando === undefined || typeof value.glissando === 'boolean') &&
+    (value.annotationPlacements === undefined ||
+      isAnnotationPlacements(value.annotationPlacements)) &&
     (value.lyric === undefined || isString(value.lyric)) &&
     (value.pedal === undefined || PEDAL_MARKS.has(value.pedal as PedalMark)) &&
     (value.dots === undefined ||

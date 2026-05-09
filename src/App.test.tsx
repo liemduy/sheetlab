@@ -704,7 +704,7 @@ describe('App editor state', () => {
     const hitTarget = screen.getByTestId('score-event-target');
     const scoreEvent = screen.getByTestId('score-event');
     const eventLayoutX = Number(scoreEvent.getAttribute('data-layout-x'));
-    const eventLayoutY = Number(scoreEvent.getAttribute('data-layout-y'));
+    const noteheadY = getPitchY({ step: 'B', octave: 4 }, 'treble', 0);
     const hitTargetCenterX =
       Number(hitTarget.getAttribute('x')) +
       Number(hitTarget.getAttribute('width')) / 2;
@@ -715,7 +715,7 @@ describe('App editor state', () => {
     expect(Number.isFinite(ghostX)).toBe(true);
     expect(Number.isFinite(ghostY)).toBe(true);
     expect(hitTargetCenterX).toBeCloseTo(eventLayoutX, 2);
-    expect(hitTargetCenterY).toBeCloseTo(eventLayoutY, 2);
+    expect(hitTargetCenterY).toBeCloseTo(noteheadY, 2);
   });
 
   it('adds a measure from the toolbar', () => {
@@ -757,6 +757,67 @@ describe('App editor state', () => {
         'Measure content cleared',
       ),
     ).toBeInTheDocument();
+  });
+
+  it('opens a right-click annotation menu and overrides its placement', async () => {
+    const { container } = render(<App />);
+    startWriting();
+
+    const overlay = screen.getByTestId('staff-renderer');
+    const bounds = setVisibleSheetBounds(overlay);
+    const notePoint = svgToClientPoint(
+      bounds,
+      getBeatX(0, 0, 4),
+      getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+      getOverlaySvgHeight(overlay),
+    );
+
+    fireEvent.mouseMove(overlay, notePoint);
+    fireEvent.click(overlay, notePoint);
+    await waitFor(() => {
+      expect(screen.getByTestId('score-event')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select tool' }));
+    fireEvent.click(screen.getByTestId('score-event'));
+    fireEvent.change(screen.getByLabelText('Lyric'), {
+      target: { value: 'sing' },
+    });
+    fireEvent.blur(screen.getByLabelText('Lyric'));
+    fireEvent.change(screen.getByLabelText('Dynamic'), {
+      target: { value: 'mf' },
+    });
+    fireEvent.blur(screen.getByLabelText('Dynamic'));
+    fireEvent.change(screen.getByLabelText('Pedal'), {
+      target: { value: 'start' },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-pedal')).toHaveAttribute(
+        'data-annotation-side',
+        'above',
+      );
+    });
+
+    const pedalTarget = container.querySelector(
+      '[data-testid="annotation-hit-target"][data-annotation-kind="pedal"]',
+    );
+
+    expect(pedalTarget).not.toBeNull();
+    fireEvent.contextMenu(pedalTarget as Element, {
+      clientX: 420,
+      clientY: 220,
+    });
+
+    expect(screen.getByTestId('annotation-context-menu')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move below' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-pedal')).toHaveAttribute(
+        'data-annotation-side',
+        'below',
+      );
+    });
   });
 
   it('adds and deletes measure columns from the right-click measure menu with a warning', () => {

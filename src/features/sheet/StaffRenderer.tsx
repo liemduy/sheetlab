@@ -1,4 +1,4 @@
-import type { Score, StaffId } from '../../domain/score/types';
+import type { AnnotationKind, Score, StaffId } from '../../domain/score/types';
 import type { DurationValue } from '../../domain/score/types';
 import type { InputCursor } from '../editor/inputCursor';
 import type { EntryMode, PlacementMode } from '../editor/editorState';
@@ -20,6 +20,12 @@ export interface StaffRendererProps {
   onMeasureContextMenu?: (
     staffId: StaffId,
     measureIndex: number,
+    clientX: number,
+    clientY: number,
+  ) => void;
+  onAnnotationContextMenu?: (
+    eventId: string,
+    kind: AnnotationKind,
     clientX: number,
     clientY: number,
   ) => void;
