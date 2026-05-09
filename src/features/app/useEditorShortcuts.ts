@@ -6,6 +6,7 @@ interface UseEditorShortcutsOptions {
   onDeleteEvent: (eventId: string, pitchIndex?: number | null) => void;
   onRedo: () => void;
   onRequestClearMeasureContent: () => void;
+  onTransposeSelectedPitch: (delta: number) => void;
   onUndo: () => void;
   pastScores: Score[];
   score: Score;
@@ -30,6 +31,7 @@ export function useEditorShortcuts({
   onDeleteEvent,
   onRedo,
   onRequestClearMeasureContent,
+  onTransposeSelectedPitch,
   onUndo,
   pastScores,
   score,
@@ -74,6 +76,15 @@ export function useEditorShortcuts({
           onRequestClearMeasureContent();
         }
       }
+
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        if (!selectedEventId) {
+          return;
+        }
+
+        event.preventDefault();
+        onTransposeSelectedPitch(event.key === 'ArrowUp' ? 1 : -1);
+      }
     }
 
     window.addEventListener('keydown', handleWindowKeyDown);
@@ -84,6 +95,7 @@ export function useEditorShortcuts({
     onDeleteEvent,
     onRedo,
     onRequestClearMeasureContent,
+    onTransposeSelectedPitch,
     onUndo,
     pastScores,
     score,

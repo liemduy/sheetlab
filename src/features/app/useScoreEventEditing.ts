@@ -10,6 +10,10 @@ import type {
   EditorToolState,
 } from '../editor/editorState';
 import type { DurationValue, Score } from '../../domain/score/types';
+import {
+  diatonicValueToPitch,
+  pitchToDiatonicValue,
+} from '../../domain/score/pitchRange';
 import type { MusicPosition } from '../sheet/interaction';
 import { pitchesMatch } from './inputCursorFlow';
 import type { MeasureTarget, SelectionSource } from './selectionTypes';
@@ -205,6 +209,45 @@ export function useScoreEventEditing({
     }
   }
 
+  function handleTransposeSelectedPitch(delta: number) {
+    if (!selectedEventId || selectedEventSource !== 'manual') {
+      return;
+    }
+
+    const foundEvent = findScoreEvent(score, selectedEventId);
+
+    if (!foundEvent || !isPitchedScoreEvent(foundEvent.event)) {
+      return;
+    }
+
+    const sourcePitch =
+      foundEvent.event.kind === 'chord'
+        ? foundEvent.event.pitches[selectedPitchIndex ?? 0]
+        : foundEvent.event.pitch;
+
+    if (!sourcePitch) {
+      return;
+    }
+
+    const result = tryUpdateScoreEvent(score, selectedEventId, {
+      pitch: diatonicValueToPitch(pitchToDiatonicValue(sourcePitch) + delta),
+      pitchIndex: selectedPitchIndex ?? undefined,
+    });
+
+    if (result.updated) {
+      commitScoreChange(
+        result.score,
+        delta > 0 ? 'Pitch moved up' : 'Pitch moved down',
+      );
+    } else {
+      markInvalidMeasure(
+        foundEvent.staffId,
+        foundEvent.measureIndex,
+        `Cannot transpose: ${result.reason}`,
+      );
+    }
+  }
+
   return {
     handleAccidentalChange,
     handleDeleteEvent,
@@ -212,5 +255,6 @@ export function useScoreEventEditing({
     handleDottedChange,
     handleDurationChange,
     handleMoveEvent,
+    handleTransposeSelectedPitch,
   };
 }

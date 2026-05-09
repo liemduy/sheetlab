@@ -894,6 +894,32 @@ describe('App editor state', () => {
     expect(screen.queryByTestId('score-event')).not.toBeInTheDocument();
   });
 
+  it('transposes a selected note with ArrowUp and ArrowDown', () => {
+    render(<App />);
+    startWriting();
+
+    fireEvent.click(screen.getByTestId('staff-renderer'), {
+      clientX: STAFF_LEFT,
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Note E4 measure 1 beat 1' }));
+
+    fireEvent.keyDown(window, { key: 'ArrowUp' });
+
+    expect(screen.getByRole('button', { name: 'Note F4 measure 1 beat 1' }))
+      .toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'Pitch moved up',
+      ),
+    ).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'ArrowDown' });
+
+    expect(screen.getByRole('button', { name: 'Note E4 measure 1 beat 1' }))
+      .toBeInTheDocument();
+  });
+
   it('clears a selected measure with Delete only after a warning confirmation', () => {
     render(<App />);
     startWriting();

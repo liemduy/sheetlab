@@ -178,6 +178,7 @@ function SheetLabApp() {
     handleDottedChange,
     handleDurationChange,
     handleMoveEvent,
+    handleTransposeSelectedPitch,
   } = useScoreEventEditing({
     clearMeasureSelection: () => setSelectedMeasure(null),
     clearMeasureUiState,
@@ -523,6 +524,7 @@ function SheetLabApp() {
     onDeleteEvent: handleDeleteEvent,
     onRedo: handleRedo,
     onRequestClearMeasureContent: handleRequestClearMeasureContent,
+    onTransposeSelectedPitch: handleTransposeSelectedPitch,
     onUndo: handleUndo,
     pastScores,
     score,
