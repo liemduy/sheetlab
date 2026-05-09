@@ -29,10 +29,17 @@ Open `http://localhost:5173`.
 ## Verification
 
 ```powershell
+npm.cmd run test:uat
+npm.cmd run test:app
+npm.cmd run test:gate
 npm.cmd run test
 npm.cmd run typecheck
 npm.cmd run build
 ```
+
+Use `test:gate` as the release/refactor checkpoint gate. It runs typecheck,
+the full Vitest suite, and the production build. Use `test:app` for the
+faster app-level regression slice before the full gate.
 
 ## Known V0.1 Limits
 

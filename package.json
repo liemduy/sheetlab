@@ -9,6 +9,9 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:app": "vitest run src/App.test.tsx src/App.uat.test.tsx",
+    "test:gate": "npm run typecheck && npm test && npm run build",
+    "test:uat": "vitest run src/App.uat.test.tsx",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
