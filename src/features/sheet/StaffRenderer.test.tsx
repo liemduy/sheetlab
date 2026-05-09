@@ -8,7 +8,10 @@ import {
   tryUpdateScoreEvent,
 } from '../../domain/score/editing';
 import { createEmptyScore } from '../../domain/score/factories';
-import { trebleStudyFixture } from '../../domain/score/fixtures';
+import {
+  duChoTanTheExcerptFixture,
+  trebleStudyFixture,
+} from '../../domain/score/fixtures';
 import type {
   ChordEvent,
   Clef,
@@ -1704,6 +1707,20 @@ describe('StaffRenderer', () => {
       expect(screen.getByTestId('rendered-dynamic')).toHaveTextContent('mf');
       expect(screen.getByTestId('rendered-fermata')).toBeInTheDocument();
       expect(screen.getByTestId('rendered-pedal')).toHaveTextContent('Ped.');
+      expect(screen.getByTestId('rendered-glissando')).toBeInTheDocument();
+    });
+  });
+
+  it('renders the real-world piano excerpt fixture annotations', async () => {
+    render(<StaffRenderer score={duChoTanTheExcerptFixture} />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('rendered-chord-symbol').map((node) => node.textContent))
+        .toEqual(['D', 'E7/D']);
+      expect(screen.getAllByTestId('rendered-lyric').map((node) => node.textContent))
+        .toEqual(['du', 'cho']);
+      expect(screen.getByTestId('rendered-section-marker')).toHaveTextContent('Intro');
+      expect(screen.getByTestId('rendered-dynamic')).toHaveTextContent('mf');
       expect(screen.getByTestId('rendered-glissando')).toBeInTheDocument();
     });
   });

@@ -1,4 +1,10 @@
 import { createEmptyScore } from './factories';
+import {
+  setMeasureKeySignature,
+  setMeasureSectionMarker,
+  setScoreTimeSignature,
+  tryUpdateScoreEvent,
+} from './editing';
 import type { Score, ScoreEvent, StaffId } from './types';
 
 function withMeasureEvents(
@@ -114,3 +120,65 @@ export const grandStaffStudyFixture = withMeasureEvents(
     },
   ],
 );
+
+const realWorldBase = setMeasureSectionMarker(
+  setMeasureKeySignature(
+    setScoreTimeSignature(
+      createEmptyScore('grand', {
+        id: 'fixture-du-cho-tan-the-excerpt',
+        title: 'Du Cho Tan The Excerpt',
+        composer: 'SheetLab',
+        measureCount: 4,
+        tempo: 96,
+      }),
+      { beats: 2, beatUnit: 4 },
+    ),
+    0,
+    'D',
+  ),
+  0,
+  'Intro',
+);
+
+const realWorldTreble = withMeasureEvents(realWorldBase, 'treble', 0, [
+  {
+    id: 'du-excerpt-treble-m1-e1',
+    kind: 'note',
+    beat: 0,
+    duration: 'quarter',
+    chordSymbol: 'D',
+    dynamic: 'mf',
+    glissando: true,
+    lyric: 'du',
+    pedal: 'start',
+    pitch: { step: 'F', octave: 4 },
+  },
+  {
+    id: 'du-excerpt-treble-m1-e2',
+    kind: 'note',
+    beat: 1,
+    duration: 'quarter',
+    chordSymbol: 'E7/D',
+    fermata: true,
+    lyric: 'cho',
+    pitch: { step: 'A', octave: 4 },
+  },
+]);
+
+const realWorldBass = withMeasureEvents(realWorldTreble, 'bass', 0, [
+  {
+    id: 'du-excerpt-bass-m1-e1',
+    kind: 'note',
+    beat: 0,
+    duration: 'half',
+    pitch: { step: 'D', octave: 3 },
+  },
+]);
+
+export const duChoTanTheExcerptFixture = tryUpdateScoreEvent(
+  realWorldBass,
+  'du-excerpt-bass-m1-e1',
+  {
+    pedal: 'release',
+  },
+).score;

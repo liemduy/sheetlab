@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createEmptyScore } from './factories';
 import { setMeasureKeySignature } from './editing';
 import { exportScoreToAbc, importScoreFromAbc } from './abcNotation';
+import { duChoTanTheExcerptFixture } from './fixtures';
 
 describe('ABC notation conversion', () => {
   it('exports a grand staff score with headers, voices, notes, rests, and chords', () => {
@@ -164,5 +165,14 @@ K:C
           step: 'C',
         },
       });
+  });
+
+  it('exports the real-world excerpt fixture with chord symbols and lyrics', () => {
+    const abc = exportScoreToAbc(duChoTanTheExcerptFixture);
+
+    expect(abc).toContain('M:2/4');
+    expect(abc).toContain('K:D');
+    expect(abc).toContain('"D"F8 "E7/D"A8');
+    expect(abc).toContain('w: du cho |');
   });
 });

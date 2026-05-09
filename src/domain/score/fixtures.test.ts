@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { deserializeScore, serializeScore } from './factories';
-import { grandStaffStudyFixture, trebleStudyFixture } from './fixtures';
+import {
+  duChoTanTheExcerptFixture,
+  grandStaffStudyFixture,
+  trebleStudyFixture,
+} from './fixtures';
 
 describe('score fixtures', () => {
   it('provides a treble melody fixture with quarter notes', () => {
@@ -46,5 +50,39 @@ describe('score fixtures', () => {
     expect(deserializeScore(serializeScore(grandStaffStudyFixture))).toEqual(
       grandStaffStudyFixture,
     );
+    expect(deserializeScore(serializeScore(duChoTanTheExcerptFixture))).toEqual(
+      duChoTanTheExcerptFixture,
+    );
+  });
+
+  it('provides a PDF-like piano excerpt fixture with annotations', () => {
+    const staves = duChoTanTheExcerptFixture.parts[0]?.staves;
+    const trebleEvents = staves?.[0]?.measures[0]?.voices[0]?.events;
+    const bassEvents = staves?.[1]?.measures[0]?.voices[0]?.events;
+
+    expect(duChoTanTheExcerptFixture.type).toBe('grand');
+    expect(duChoTanTheExcerptFixture.timeSignature).toEqual({
+      beats: 2,
+      beatUnit: 4,
+    });
+    expect(staves?.[0]?.measures[0]).toMatchObject({
+      keySignature: 'D',
+      sectionMarker: 'Intro',
+    });
+    expect(trebleEvents?.[0]).toMatchObject({
+      chordSymbol: 'D',
+      dynamic: 'mf',
+      glissando: true,
+      lyric: 'du',
+      pedal: 'start',
+    });
+    expect(trebleEvents?.[1]).toMatchObject({
+      chordSymbol: 'E7/D',
+      fermata: true,
+      lyric: 'cho',
+    });
+    expect(bassEvents?.[0]).toMatchObject({
+      pedal: 'release',
+    });
   });
 });
