@@ -188,6 +188,7 @@ export function SheetSurface({
             selectedEventId={selectedEventId}
             selectedPitchIndex={selectedPitchIndex}
             score={score}
+            showLayoutZones={toolState.showLayoutZones}
             showLyricMap={toolState.showLyricMap}
             voiceIndex={toolState.voiceIndex}
             onClearInteraction={onClearInteraction}

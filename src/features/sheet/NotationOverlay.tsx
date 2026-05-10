@@ -59,10 +59,12 @@ import {
   type LyricMapDragAnchor,
 } from './OverlayLyricMapLayer';
 import { PlaybackLayer } from './OverlayPlaybackLayer';
+import { VoiceZoneDebugOverlay } from './OverlayVoiceZoneLayer';
 import { getNestedSvgPoint, getSvgPoint } from './overlaySvgPoint';
 import type {
   RenderedAnnotationLayout,
   RenderedEventLayout,
+  RenderedVoiceZoneLayout,
 } from './renderedEventLayout';
 
 interface NotationOverlayProps {
@@ -77,6 +79,7 @@ interface NotationOverlayProps {
   inputCursor?: InputCursor | null;
   isInputArmed?: boolean;
   invalidMeasureKeys?: readonly string[];
+  showLayoutZones?: boolean;
   showLyricMap?: boolean;
   onClearInteraction?: () => void;
   onHoverPositionChange?: (position: MusicPosition | null) => void;
@@ -114,6 +117,7 @@ interface NotationOverlayProps {
   selectedMeasure?: { staffId: StaffId; measureIndex: number } | null;
   selectedPitchIndex?: number | null;
   svgHeight: number;
+  voiceZoneLayouts?: RenderedVoiceZoneLayout[];
   voiceIndex?: number;
 }
 
@@ -151,8 +155,10 @@ export function NotationOverlay({
   selectedEventId,
   selectedMeasure,
   selectedPitchIndex,
+  showLayoutZones = false,
   showLyricMap = false,
   svgHeight,
+  voiceZoneLayouts = [],
   voiceIndex = 0,
 }: NotationOverlayProps) {
   const [dragState, setDragState] = useState<{
@@ -562,6 +568,10 @@ export function NotationOverlay({
       }}
     >
       <rect className="staff-page-bg" x={0} y={0} width={SVG_WIDTH} height={svgHeight} />
+      <VoiceZoneDebugOverlay
+        show={showLayoutZones}
+        zones={voiceZoneLayouts}
+      />
       <RhythmSlots
         entryMode={entryMode}
         eventLayouts={eventLayouts}

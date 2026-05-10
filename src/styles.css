@@ -848,6 +848,34 @@ button {
   fill: transparent;
 }
 
+.voice-zone-debug-layer {
+  pointer-events: none;
+}
+
+.voice-zone-debug {
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.voice-zone-debug-above {
+  fill: rgb(245 180 42 / 16%);
+  stroke: rgb(185 118 12 / 42%);
+}
+
+.voice-zone-debug-voice {
+  fill: rgb(43 103 255 / 13%);
+  stroke: rgb(43 103 255 / 42%);
+}
+
+.voice-zone-debug-below {
+  fill: rgb(42 150 95 / 15%);
+  stroke: rgb(28 121 76 / 42%);
+}
+
+.voice-zone-debug[data-voice-index="1"] {
+  stroke-dasharray: 4 3;
+}
+
 .staff-hover-guide {
   pointer-events: none;
 }
@@ -913,11 +941,19 @@ button {
 .lyric-map-connector {
   fill: none;
   pointer-events: none;
-  stroke: #16725f;
+  stroke: #7c3aed;
   stroke-dasharray: 4 4;
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.lyric-map-target-dot {
+  fill: #ffffff;
+  pointer-events: none;
+  stroke: #7c3aed;
+  stroke-width: 1.4;
   vector-effect: non-scaling-stroke;
 }
 

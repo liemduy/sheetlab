@@ -420,6 +420,9 @@ function SheetLabApp() {
           onImportAbcFile={handleImportAbcFile}
           onImportProjectFile={handleImportProjectFile}
           onKeySignatureChange={handleKeySignatureChange}
+          onLayoutZoneToggle={(showLayoutZones) =>
+            updateToolState({ showLayoutZones })
+          }
           onLoadProject={handleLoadProject}
           onLyricMapToggle={(showLyricMap) => updateToolState({ showLyricMap })}
           onOpenPaletteChange={setOpenPalette}

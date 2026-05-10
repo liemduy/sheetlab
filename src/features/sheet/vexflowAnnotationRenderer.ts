@@ -4,7 +4,6 @@ import type {
 } from '../../domain/score/types';
 import { isGeneratedRestEvent } from '../../domain/score/events';
 import {
-  STAFF_LINE_SPACING,
   getMeasureContentLeft,
   getScoreStaffTop,
   getScoreSystemMeasureIndexes,
@@ -16,18 +15,20 @@ import type {
 } from './renderedEventLayout';
 import {
   ANNOTATION_METRICS,
+  ABOVE_STAFF_INK_GAP,
   BELOW_STAFF_INK_GAP,
-  NOTEHEAD_ANNOTATION_INK_PADDING,
   type AnnotationBounds,
   type AnnotationPlacement,
   type AnnotationSide,
-  combineAnnotationBounds,
-  getAboveAnnotationBaseline,
   getAnnotationBounds,
   getAutomaticAnnotationSide,
   getEventAnnotationText,
   placeAnnotationInRows,
 } from './annotationLayoutPolicy';
+import {
+  getRenderedSystemVoiceBounds,
+  getRenderedSystemVoiceEventInkBounds,
+} from './renderedVoiceZones';
 
 function appendSvgText({
   className,
@@ -63,112 +64,22 @@ function appendSvgText({
   return textElement;
 }
 
-function getSystemVoiceEventInkBounds(
-  eventLayouts: Record<string, RenderedEventLayout>,
-  score: Score,
-  staffId: string,
-  systemIndex: number,
-  voiceIndex?: number,
-) {
-  return Object.values(eventLayouts)
-    .filter(
-      (layout) =>
-        layout.staffId === staffId &&
-        (voiceIndex === undefined || layout.voiceIndex === voiceIndex) &&
-        getSystemIndex(layout.measureIndex, score) === systemIndex &&
-        !layout.isGeneratedRest,
-    )
-    .map(getEventInkBounds);
-}
-
-function getEventInkBounds(layout: RenderedEventLayout): AnnotationBounds {
-  return {
-    maxX:
-      layout.pitchLayouts.length > 0
-        ? Math.max(
-            layout.maxX,
-            ...layout.pitchLayouts.map((pitchLayout) => pitchLayout.maxX),
-          )
-        : layout.maxX,
-    maxY:
-      layout.pitchLayouts.length > 0
-        ? Math.max(
-            layout.maxY,
-            Math.max(...layout.pitchLayouts.map((pitchLayout) => pitchLayout.y)) +
-              NOTEHEAD_ANNOTATION_INK_PADDING,
-          )
-        : layout.maxY,
-    minX:
-      layout.pitchLayouts.length > 0
-        ? Math.min(
-            layout.minX,
-            ...layout.pitchLayouts.map((pitchLayout) => pitchLayout.minX),
-          )
-        : layout.minX,
-    minY:
-      layout.pitchLayouts.length > 0
-        ? Math.min(
-            layout.minY,
-            Math.min(...layout.pitchLayouts.map((pitchLayout) => pitchLayout.y)) -
-              NOTEHEAD_ANNOTATION_INK_PADDING,
-          )
-        : layout.minY,
-  };
-}
-
-function getSystemVoiceEventLayoutBounds(
-  eventLayouts: Record<string, RenderedEventLayout>,
-  score: Score,
-  staffId: string,
-  systemIndex: number,
-  voiceIndex: number,
-) {
-  return combineAnnotationBounds(
-    getSystemVoiceEventInkBounds(
-      eventLayouts,
-      score,
-      staffId,
-      systemIndex,
-      voiceIndex,
-    ),
-  );
-}
-
 function getAnnotationY({
-  belowStaffBaseline,
   kind,
-  layout,
   side,
-  staffTop,
-  voiceInkTop,
+  voiceBounds,
 }: {
-  belowStaffBaseline: number;
   kind: AnnotationKind;
-  layout: RenderedEventLayout;
   side: AnnotationSide;
-  staffTop: number;
-  voiceInkTop?: number | null;
+  voiceBounds: { maxY: number; minY: number };
 }) {
+  const metrics = ANNOTATION_METRICS[kind];
+
   if (side === 'below') {
-    return belowStaffBaseline;
+    return voiceBounds.maxY + BELOW_STAFF_INK_GAP + metrics.height;
   }
 
-  const aboveBaseline = getAboveAnnotationBaseline({
-    eventInkTop: layout.minY,
-    kind,
-    staffTop,
-    voiceInkTop,
-  });
-
-  if (kind === 'fermata') {
-    return Math.min(
-      staffTop - 30,
-      layout.minY - 18,
-      aboveBaseline,
-    );
-  }
-
-  return aboveBaseline;
+  return voiceBounds.minY - ABOVE_STAFF_INK_GAP - metrics.descent;
 }
 
 function createRenderedAnnotationLayout({
@@ -178,6 +89,7 @@ function createRenderedAnnotationLayout({
   placement,
   staffId,
   text,
+  voiceIndex,
   x,
 }: {
   eventId: string;
@@ -186,6 +98,7 @@ function createRenderedAnnotationLayout({
   placement: AnnotationPlacement;
   staffId: string;
   text: string;
+  voiceIndex: number;
   x: number;
 }): RenderedAnnotationLayout {
   return {
@@ -201,6 +114,7 @@ function createRenderedAnnotationLayout({
     side: placement.side,
     staffId,
     text,
+    voiceIndex,
     x,
     y: placement.maxY - ANNOTATION_METRICS[kind].descent,
   };
@@ -248,15 +162,45 @@ export function drawTextAnnotations(
       const systemFirstMeasureIndex =
         getScoreSystemMeasureIndexes(score, systemIndex)[0] ?? 0;
       const staffTop = getScoreStaffTop(score, staffIndex, systemFirstMeasureIndex);
-      const staffBottom = staffTop + STAFF_LINE_SPACING * 4;
-      const aboveStaffPlacements: AnnotationPlacement[] = [];
-      const belowStaffPlacements: AnnotationPlacement[] = [];
-      const staffInkBlockers = getSystemVoiceEventInkBounds(
+      const systemAnnotationPlacements: AnnotationPlacement[] = [];
+      const voiceStates = new Map<
+        number,
+        {
+          abovePlacements: AnnotationPlacement[];
+          belowPlacements: AnnotationPlacement[];
+          voiceBounds: { maxY: number; minY: number };
+        }
+      >();
+      const staffInkBlockers = getRenderedSystemVoiceEventInkBounds(
         eventLayouts,
         score,
         staff.id,
         systemIndex,
       );
+      const getVoiceState = (voiceIndex: number) => {
+        const existingState = voiceStates.get(voiceIndex);
+
+        if (existingState) {
+          return existingState;
+        }
+
+        const nextState = {
+          abovePlacements: [],
+          belowPlacements: [],
+          voiceBounds: getRenderedSystemVoiceBounds({
+            eventLayouts,
+            measureIndex: systemFirstMeasureIndex,
+            score,
+            staffId: staff.id,
+            staffIndex,
+            systemIndex,
+            voiceIndex,
+          }),
+        };
+
+        voiceStates.set(voiceIndex, nextState);
+        return nextState;
+      };
 
       systemMeasures.forEach((measure) => {
         if (staffIndex === 0 && measure.sectionMarker) {
@@ -275,7 +219,7 @@ export function drawTextAnnotations(
           markerGroup.classList.add('sheetlab-section-marker');
           markerGroup.setAttribute('data-testid', 'rendered-section-marker');
           markerGroup.setAttribute('data-measure-index', String(measure.index));
-          aboveStaffPlacements.push({
+          systemAnnotationPlacements.push({
             ...getAnnotationBounds({
               kind: 'sectionMarker',
               text: measure.sectionMarker,
@@ -306,13 +250,7 @@ export function drawTextAnnotations(
 
       systemMeasures.forEach((measure) => {
         measure.voices.forEach((voice, voiceIndex) => {
-          const voiceInkBounds = getSystemVoiceEventLayoutBounds(
-            eventLayouts,
-            score,
-            staff.id,
-            systemIndex,
-            voiceIndex,
-          );
+          const voiceState = getVoiceState(voiceIndex);
           const sortedEvents = [...voice.events].sort((a, b) => a.beat - b.beat);
 
           sortedEvents.forEach((event, eventIndex) => {
@@ -336,36 +274,31 @@ export function drawTextAnnotations(
               const side = getAutomaticAnnotationSide(
                 event,
                 kind,
-                aboveStaffPlacements,
-                belowStaffPlacements,
+                voiceState.abovePlacements,
+                voiceState.belowPlacements,
               );
-              const localInkBottom = Math.max(
-                staffBottom,
-                getEventInkBounds(layout).maxY,
-              );
-              const belowStaffBaseline =
-                localInkBottom +
-                BELOW_STAFF_INK_GAP +
-                ANNOTATION_METRICS.lyric.height;
               const placement = placeAnnotationInRows({
-                blockers: staffInkBlockers,
+                blockers: [
+                  ...staffInkBlockers,
+                  ...systemAnnotationPlacements,
+                ],
                 direction: side,
                 placements:
-                  side === 'below' ? belowStaffPlacements : aboveStaffPlacements,
+                  side === 'below'
+                    ? voiceState.belowPlacements
+                    : voiceState.abovePlacements,
                 preferredBounds: getAnnotationBounds({
                   kind,
                   text,
                   x: layout.x,
                   y: getAnnotationY({
-                    belowStaffBaseline,
                     kind,
-                    layout,
                     side,
-                    staffTop,
-                    voiceInkTop: voiceInkBounds?.minY ?? staffTop,
+                    voiceBounds: voiceState.voiceBounds,
                   }),
                 }),
               });
+              systemAnnotationPlacements.push(placement);
               const renderedAnnotationLayout = createRenderedAnnotationLayout({
                 eventId: event.id,
                 kind,
@@ -373,6 +306,7 @@ export function drawTextAnnotations(
                 placement,
                 staffId: staff.id,
                 text,
+                voiceIndex,
                 x: layout.x,
               });
 
@@ -385,6 +319,7 @@ export function drawTextAnnotations(
                   'data-annotation-side': side,
                   'data-event-id': event.id,
                   'data-testid': testId,
+                  'data-voice-index': String(voiceIndex),
                 },
                 svg,
                 text,

@@ -27,10 +27,10 @@ import {
 } from './layoutConstants';
 import {
   ANNOTATION_METRICS,
+  ABOVE_STAFF_INK_GAP,
   BELOW_STAFF_INK_GAP,
   NOTEHEAD_ANNOTATION_INK_PADDING,
   type AnnotationPlacement,
-  getAboveAnnotationBaseline,
   getAnnotationBounds,
   getAutomaticAnnotationSide,
   getEventAnnotationKinds,
@@ -299,8 +299,15 @@ function getStaffSystemAnnotationExtents(
   pitchBounds: PitchBounds,
   measureIndexes?: number[],
 ) {
-  const abovePlacements: AnnotationPlacement[] = [];
-  const belowPlacements: AnnotationPlacement[] = [];
+  const systemAnnotationPlacements: AnnotationPlacement[] = [];
+  const voiceStates = new Map<
+    number,
+    {
+      abovePlacements: AnnotationPlacement[];
+      belowPlacements: AnnotationPlacement[];
+      voiceBounds: PitchBounds;
+    }
+  >();
   const systemEvents = getSystemMeasures(score, staffIndex, systemIndex, measureIndexes)
     .flatMap((measure) =>
       measure.voices.flatMap((voice, voiceIndex) =>
@@ -336,6 +343,32 @@ function getStaffSystemAnnotationExtents(
       minY: eventPitchBounds.minY - NOTEHEAD_ANNOTATION_INK_PADDING,
     };
   });
+  const getVoiceState = (voiceIndex: number) => {
+    const existingState = voiceStates.get(voiceIndex);
+
+    if (existingState) {
+      return existingState;
+    }
+
+    const voicePitchBounds = getStaffVoicePitchBounds(
+      score,
+      staffIndex,
+      systemIndex,
+      voiceIndex,
+      measureIndexes,
+    );
+    const nextState = {
+      abovePlacements: [],
+      belowPlacements: [],
+      voiceBounds: {
+        maxY: voicePitchBounds.maxY + BELOW_STAFF_NOTE_INK_ESTIMATE,
+        minY: voicePitchBounds.minY - NOTEHEAD_ANNOTATION_INK_PADDING,
+      },
+    };
+
+    voiceStates.set(voiceIndex, nextState);
+    return nextState;
+  };
 
   systemEvents
     .forEach(({ event, measure, voiceIndex }) => {
@@ -345,30 +378,7 @@ function getStaffSystemAnnotationExtents(
         event.beat,
         measureIndexes,
       );
-      const voicePitchBounds = getStaffVoicePitchBounds(
-        score,
-        staffIndex,
-        systemIndex,
-        voiceIndex,
-        measureIndexes,
-      );
-      const estimatedInkTop =
-        voicePitchBounds.minY - NOTEHEAD_ANNOTATION_INK_PADDING;
-      const eventPitchBounds = getEventPitchBounds(
-        score,
-        staffIndex,
-        getEventPitches(event),
-      );
-      const localInkBottom = Math.max(
-        STAFF_LINE_SPACING * 4,
-        eventPitchBounds.maxY + BELOW_STAFF_NOTE_INK_ESTIMATE,
-      );
-      const belowBaseline = Math.max(
-        STAFF_LINE_SPACING * 4,
-        localInkBottom,
-      ) +
-        BELOW_STAFF_INK_GAP +
-        ANNOTATION_METRICS.lyric.height;
+      const voiceState = getVoiceState(voiceIndex);
 
       getEventAnnotationKinds(event).forEach((kind) => {
         const text = getEventAnnotationText(event, kind);
@@ -380,49 +390,47 @@ function getStaffSystemAnnotationExtents(
         const side = getAutomaticAnnotationSide(
           event,
           kind,
-          abovePlacements,
-          belowPlacements,
+          voiceState.abovePlacements,
+          voiceState.belowPlacements,
         );
+        const metrics = ANNOTATION_METRICS[kind];
         const y =
           side === 'below'
-            ? belowBaseline
-            : kind === 'fermata'
-              ? Math.min(
-                  getAboveAnnotationBaseline({
-                    kind,
-                    staffTop: 0,
-                    voiceInkTop: estimatedInkTop,
-                  }),
-                  Math.min(-30, estimatedInkTop - 18),
-                )
-              : getAboveAnnotationBaseline({
-                  kind,
-                  staffTop: 0,
-                  voiceInkTop: estimatedInkTop,
-                });
+            ? voiceState.voiceBounds.maxY + BELOW_STAFF_INK_GAP + metrics.height
+            : voiceState.voiceBounds.minY -
+              ABOVE_STAFF_INK_GAP -
+              metrics.descent;
 
-        placeAnnotationInRows({
-          blockers: staffInkBlockers,
+        const placement = placeAnnotationInRows({
+          blockers: [
+            ...staffInkBlockers,
+            ...systemAnnotationPlacements,
+          ],
           direction: side,
-          placements: side === 'below' ? belowPlacements : abovePlacements,
+          placements:
+            side === 'below'
+              ? voiceState.belowPlacements
+              : voiceState.abovePlacements,
           preferredBounds: getAnnotationBounds({ kind, text, x, y }),
         });
+
+        systemAnnotationPlacements.push(placement);
       });
     });
 
   const belowBottom =
-    belowPlacements.length === 0
+    systemAnnotationPlacements.length === 0
       ? pitchBounds.maxY
       : Math.max(
           pitchBounds.maxY,
-          ...belowPlacements.map((placement) => placement.maxY),
+          ...systemAnnotationPlacements.map((placement) => placement.maxY),
         );
   const aboveTop =
-    abovePlacements.length === 0
+    systemAnnotationPlacements.length === 0
       ? pitchBounds.minY
       : Math.min(
           pitchBounds.minY,
-          ...abovePlacements.map((placement) => placement.minY),
+          ...systemAnnotationPlacements.map((placement) => placement.minY),
         );
 
   return {

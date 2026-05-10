@@ -33,6 +33,7 @@ import { NotationOverlay } from './NotationOverlay';
 import type {
   RenderedAnnotationLayout,
   RenderedEventLayout,
+  RenderedVoiceZoneLayout,
 } from './renderedEventLayout';
 import {
   STAFF_LINE_SPACING,
@@ -57,11 +58,14 @@ import { getBeatX, getPitchYForScore } from './notationGeometry';
 import { getMeasureKey } from './measureKey';
 import { getKeySignatureSymbolLayouts } from './keySignatureLayout';
 import { drawTextAnnotations } from './vexflowAnnotationRenderer';
+import { computeRenderedVoiceZones } from './renderedVoiceZones';
+import { NOTEHEAD_ANNOTATION_INK_PADDING } from './annotationLayoutPolicy';
 
 const REST_KEY_BY_CLEF = {
   treble: 'b/4',
   bass: 'd/3',
 } satisfies Record<Staff['clef'], string>;
+const STEM_RENDERED_INK_ESTIMATE = STAFF_LINE_SPACING * 3;
 const KEY_SIGNATURE_SYMBOL_TEXT = {
   flat: '♭',
   sharp: '♯',
@@ -451,14 +455,20 @@ function drawVexFlowMeasureEvents({
 
         return pitchLayout;
       });
-      const minY = Math.min(
-        ...pitchYs,
-        noteBounds?.minY ?? Number.POSITIVE_INFINITY,
-      );
-      const maxY = Math.max(
-        ...pitchYs,
-        noteBounds?.maxY ?? Number.NEGATIVE_INFINITY,
-      );
+      const minPitchY = Math.min(...pitchYs);
+      const maxPitchY = Math.max(...pitchYs);
+      const stemDirection =
+        eventPitches.length > 0 && event.duration !== 'whole'
+          ? note.getStemDirection()
+          : null;
+      const minY =
+        stemDirection === Stem.UP
+          ? minPitchY - STEM_RENDERED_INK_ESTIMATE
+          : minPitchY - NOTEHEAD_ANNOTATION_INK_PADDING;
+      const maxY =
+        stemDirection === Stem.DOWN
+          ? maxPitchY + STEM_RENDERED_INK_ESTIMATE
+          : maxPitchY + NOTEHEAD_ANNOTATION_INK_PADDING;
 
       eventLayouts[event.id] = {
         beat: event.beat,
@@ -591,10 +601,16 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
 
   drawKeySignatureSymbols(container, score);
   const annotationLayouts = drawTextAnnotations(container, score, eventLayouts);
+  const voiceZoneLayouts = computeRenderedVoiceZones({
+    annotationLayouts,
+    eventLayouts,
+    score,
+  });
 
   return {
     annotationLayouts,
     eventLayouts,
+    voiceZoneLayouts,
   };
 }
 
@@ -697,6 +713,9 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
   const [annotationLayouts, setAnnotationLayouts] = useState<
     RenderedAnnotationLayout[]
   >([]);
+  const [voiceZoneLayouts, setVoiceZoneLayouts] = useState<
+    RenderedVoiceZoneLayout[]
+  >([]);
   const height = getScoreSvgHeight(props.score);
 
   useEffect(() => {
@@ -704,9 +723,11 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
       const {
         annotationLayouts: nextAnnotationLayouts,
         eventLayouts: nextEventLayouts,
+        voiceZoneLayouts: nextVoiceZoneLayouts,
       } = drawVexFlowStaves(containerRef.current, props.score);
       setEventLayouts(nextEventLayouts);
       setAnnotationLayouts(nextAnnotationLayouts);
+      setVoiceZoneLayouts(nextVoiceZoneLayouts);
       syncVexFlowSelection(
         containerRef.current,
         props.selectedEventId,
@@ -758,6 +779,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         entryMode={props.entryMode ?? 'note'}
         annotationLayouts={annotationLayouts}
         eventLayouts={eventLayouts}
+        voiceZoneLayouts={voiceZoneLayouts}
         hoverPosition={props.hoverPosition}
         inputCursor={props.inputCursor}
         isInputArmed={props.isInputArmed ?? true}
@@ -779,6 +801,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         selectedEventId={props.selectedEventId}
         selectedMeasure={props.selectedMeasure}
         selectedPitchIndex={props.selectedPitchIndex}
+        showLayoutZones={props.showLayoutZones ?? false}
         showLyricMap={props.showLyricMap ?? false}
         svgHeight={height}
         voiceIndex={props.voiceIndex}

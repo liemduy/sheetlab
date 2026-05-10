@@ -206,6 +206,7 @@ interface EditorToolbarProps {
   onImportAbcFile: (fileList: FileList | null) => void | Promise<void>;
   onImportProjectFile: (fileList: FileList | null) => void | Promise<void>;
   onKeySignatureChange: (keySignature: KeySignature) => void;
+  onLayoutZoneToggle: (show: boolean) => void;
   onLoadProject: () => void;
   onLyricMapToggle: (show: boolean) => void;
   onOpenPaletteChange: (palette: ToolbarPalette) => void;
@@ -247,6 +248,7 @@ export function EditorToolbar({
   onImportAbcFile,
   onImportProjectFile,
   onKeySignatureChange,
+  onLayoutZoneToggle,
   onLoadProject,
   onLyricMapToggle,
   onOpenPaletteChange,
@@ -528,6 +530,16 @@ export function EditorToolbar({
           onClick={() => onLyricMapToggle(!toolState.showLyricMap)}
         >
           Map
+        </button>
+        <button
+          type="button"
+          aria-label="Show layout zones"
+          aria-pressed={toolState.showLayoutZones}
+          className={`tool-button${toolState.showLayoutZones ? ' is-active' : ''}`}
+          title="Show voice, annotation above, and annotation below zones"
+          onClick={() => onLayoutZoneToggle(!toolState.showLayoutZones)}
+        >
+          Zones
         </button>
       </div>
       <div className="toolbar-group" aria-label="Transport and history">

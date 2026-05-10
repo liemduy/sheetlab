@@ -41,6 +41,7 @@ import { DEFAULT_INPUT_SLOT_WIDTH } from './inputSlotLayout';
 import {
   ANNOTATION_METRICS,
   ABOVE_STAFF_INK_GAP,
+  BELOW_STAFF_INK_GAP,
   NOTEHEAD_ANNOTATION_INK_PADDING,
 } from './annotationLayoutPolicy';
 
@@ -1968,6 +1969,39 @@ describe('StaffRenderer', () => {
         'lyric-map-start lyric-map-follow',
       );
     });
+    expect(screen.getByTestId('lyric-map-connector')).toHaveAttribute(
+      'data-map-cardinality',
+      'range',
+    );
+    expect(screen.getAllByTestId('lyric-map-target-dot')).toHaveLength(2);
+  });
+
+  it('overlays voice, above, and below zones for annotation debugging', async () => {
+    const noteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'zone-debug-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+    const score = tryUpdateScoreEvent(noteScore, 'zone-debug-note', {
+      dynamic: 'mf',
+      lyric: 'zone',
+    }).score;
+
+    render(<StaffRenderer score={score} showLayoutZones />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-lyric')).toHaveTextContent('zone');
+    });
+
+    const zoneKinds = screen
+      .getAllByTestId('voice-zone-debug')
+      .map((node) => node.getAttribute('data-zone-kind'));
+
+    expect(zoneKinds).toEqual(expect.arrayContaining(['above', 'voice', 'below']));
   });
 
   it('keeps lyric map connectors local when a target is on another system', async () => {
@@ -2178,7 +2212,7 @@ describe('StaffRenderer', () => {
     expect(lyricY).toBeGreaterThan(lowerVoiceY + 24);
   });
 
-  it('keeps below-staff lyrics close to their local note instead of a distant low note', async () => {
+  it('aligns below-staff lyrics to the owning voice bottom within the system', async () => {
     const lowNoteScore = placeScoreEvent(createEmptyScore('treble'), {
       eventId: 'distant-low-note',
       staffId: 'treble',
@@ -2208,11 +2242,14 @@ describe('StaffRenderer', () => {
     });
 
     const lyricY = Number(screen.getByTestId('rendered-lyric').getAttribute('y'));
+    const lyric = screen.getByTestId('rendered-lyric');
     const lyricTop = lyricY - ANNOTATION_METRICS.lyric.height;
-    const localStaffBottom =
-      getScoreStaffTop(score, 0, 2) + STAFF_LINE_SPACING * 4;
+    const lowPitchY = getPitchY({ step: 'C', octave: 3 }, 'treble', 0);
+    const expectedVoiceBottom =
+      lowPitchY + NOTEHEAD_ANNOTATION_INK_PADDING + BELOW_STAFF_INK_GAP;
 
-    expect(lyricTop).toBeLessThanOrEqual(localStaffBottom + 42);
+    expect(lyric).toHaveAttribute('data-voice-index', '0');
+    expect(lyricTop).toBeCloseTo(expectedVoiceBottom, 1);
   });
 
   it('keeps manual above annotation overrides close to the owning staff', async () => {

@@ -23,6 +23,7 @@ export interface EditorToolState {
   isInputArmed: boolean;
   tempo: number;
   voiceIndex: EditableVoiceIndex;
+  showLayoutZones: boolean;
   showLyricMap: boolean;
 }
 
@@ -47,6 +48,7 @@ export const DEFAULT_EDITOR_TOOL_STATE: EditorToolState = {
   isInputArmed: false,
   tempo: 96,
   voiceIndex: 0,
+  showLayoutZones: false,
   showLyricMap: false,
 };
 

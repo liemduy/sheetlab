@@ -42,6 +42,30 @@ export interface RenderedAnnotationLayout {
   side: Exclude<AnnotationPlacementSide, 'auto'>;
   staffId: string;
   text: string;
+  voiceIndex: number;
   x: number;
   y: number;
+}
+
+export interface RenderedVoiceZoneLayout {
+  above: {
+    maxY: number;
+    minY: number;
+  };
+  below: {
+    maxY: number;
+    minY: number;
+  };
+  id: string;
+  maxX: number;
+  measureIndexes: number[];
+  minX: number;
+  staffId: string;
+  staffIndex: number;
+  systemIndex: number;
+  voice: {
+    maxY: number;
+    minY: number;
+  };
+  voiceIndex: number;
 }

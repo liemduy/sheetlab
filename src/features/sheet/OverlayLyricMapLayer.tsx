@@ -124,6 +124,7 @@ export function LyricMapConnectors({
                 <g key={`${layout.id}:${keySuffix}`}>
                   <line
                     className="lyric-map-connector"
+                    data-map-cardinality="single"
                     data-event-id={layout.eventId}
                     data-target-event-ids={connectorTargets
                       .map((connectorTarget) => connectorTarget.eventId)
@@ -133,6 +134,13 @@ export function LyricMapConnectors({
                     x2={target.x}
                     y1={lyricAnchorY}
                     y2={target.y}
+                  />
+                  <circle
+                    className="lyric-map-target-dot"
+                    data-testid="lyric-map-target-dot"
+                    cx={target.x}
+                    cy={target.y}
+                    r={3.5}
                   />
                   <line
                     className="lyric-map-hit-target"
@@ -169,12 +177,23 @@ export function LyricMapConnectors({
                 <path
                   className="lyric-map-connector"
                   d={pathData}
+                  data-map-cardinality="range"
                   data-event-id={layout.eventId}
                   data-target-event-ids={connectorTargets
                     .map((connectorTarget) => connectorTarget.eventId)
                     .join(' ')}
                   data-testid="lyric-map-connector"
                 />
+                {sortedTargets.map((target) => (
+                  <circle
+                    key={`${layout.id}:${keySuffix}:${target.eventId}:dot`}
+                    className="lyric-map-target-dot"
+                    data-testid="lyric-map-target-dot"
+                    cx={target.x}
+                    cy={target.y}
+                    r={3.5}
+                  />
+                ))}
                 <path
                   className="lyric-map-hit-target"
                   d={pathData}
@@ -199,6 +218,7 @@ export function LyricMapConnectors({
                 <g key={`${layout.id}:${keySuffix}`}>
                   <line
                     className="lyric-map-connector"
+                    data-map-cardinality="single"
                     data-event-id={layout.eventId}
                     data-target-event-ids={target.eventId}
                     data-testid="lyric-map-connector"
@@ -206,6 +226,13 @@ export function LyricMapConnectors({
                     x2={target.x}
                     y1={markerY}
                     y2={target.y}
+                  />
+                  <circle
+                    className="lyric-map-target-dot"
+                    data-testid="lyric-map-target-dot"
+                    cx={target.x}
+                    cy={target.y}
+                    r={3.5}
                   />
                   <line
                     className="lyric-map-hit-target"
@@ -243,12 +270,23 @@ export function LyricMapConnectors({
                 <path
                   className="lyric-map-connector"
                   d={pathData}
+                  data-map-cardinality="range"
                   data-event-id={layout.eventId}
                   data-target-event-ids={connectorTargets
                     .map((connectorTarget) => connectorTarget.eventId)
                     .join(' ')}
                   data-testid="lyric-map-connector"
                 />
+                {sortedTargets.map((target) => (
+                  <circle
+                    key={`${layout.id}:${keySuffix}:${target.eventId}:dot`}
+                    className="lyric-map-target-dot"
+                    data-testid="lyric-map-target-dot"
+                    cx={target.x}
+                    cy={target.y}
+                    r={3.5}
+                  />
+                ))}
                 <path
                   className="lyric-map-hit-target"
                   d={pathData}

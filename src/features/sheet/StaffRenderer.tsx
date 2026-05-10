@@ -50,6 +50,7 @@ export interface StaffRendererProps {
   placementMode?: PlacementMode;
   inputCursor?: InputCursor | null;
   invalidMeasureKeys?: readonly string[];
+  showLayoutZones?: boolean;
   showLyricMap?: boolean;
   voiceIndex?: number;
 }
