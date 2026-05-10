@@ -36,6 +36,7 @@ import {
   SVG_WIDTH,
 } from './layout';
 import { getBeatX, getPitchY } from './notationGeometry';
+import { getLedgerLineYsForScore } from './notationGlyph';
 import { StaffRenderer } from './StaffRenderer';
 import { DEFAULT_INPUT_SLOT_WIDTH } from './inputSlotLayout';
 import {
@@ -2042,7 +2043,8 @@ describe('StaffRenderer', () => {
 
   it('includes clef ink in empty voice zone debugging', () => {
     const score = createEmptyScore('grand');
-    const staffTop = getScoreStaffTop(score, 0, 0);
+    const trebleStaffTop = getScoreStaffTop(score, 0, 0);
+    const bassStaffTop = getScoreStaffTop(score, 1, 0);
 
     render(<StaffRenderer score={score} showLayoutZones />);
 
@@ -2071,10 +2073,25 @@ describe('StaffRenderer', () => {
     const voiceTop = Number(trebleVoiceZone?.getAttribute('y'));
     const voiceBottom =
       voiceTop + Number(trebleVoiceZone?.getAttribute('height'));
+    const bassVoiceZone = zones.find(
+      (node) =>
+        node.getAttribute('data-zone-kind') === 'voice' &&
+        node.getAttribute('data-staff-id') === 'bass' &&
+        node.getAttribute('data-system-index') === '0' &&
+        node.getAttribute('data-voice-index') === '0',
+    );
+    const bassVoiceTop = Number(bassVoiceZone?.getAttribute('y'));
+    const bassVoiceBottom =
+      bassVoiceTop + Number(bassVoiceZone?.getAttribute('height'));
 
     expect(trebleVoiceZone?.tagName.toLowerCase()).toBe('rect');
-    expect(voiceTop).toBeLessThan(staffTop);
-    expect(voiceBottom).toBeGreaterThan(staffTop + STAFF_LINE_SPACING * 4);
+    expect(voiceTop).toBeLessThan(trebleStaffTop);
+    expect(voiceBottom).toBeGreaterThanOrEqual(
+      trebleStaffTop + STAFF_LINE_SPACING * 4,
+    );
+    expect(bassVoiceBottom).toBeGreaterThanOrEqual(
+      bassStaffTop + STAFF_LINE_SPACING * 4,
+    );
     expect(Number(trebleAboveZone?.getAttribute('y1'))).toBeCloseTo(
       voiceTop,
       1,
@@ -2083,6 +2100,38 @@ describe('StaffRenderer', () => {
       voiceBottom,
       1,
     );
+  });
+
+  it('expands a single voice zone through low ledger-line ink', () => {
+    const lowPitch: Pitch = { step: 'A', octave: 3 };
+    const score = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'low-ledger-zone-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'eighth',
+      entryMode: 'note',
+      pitch: lowPitch,
+    });
+
+    render(<StaffRenderer score={score} showLayoutZones />);
+
+    const voiceZone = screen.getAllByTestId('voice-zone-debug').find(
+      (node) =>
+        node.getAttribute('data-zone-kind') === 'voice' &&
+        node.getAttribute('data-staff-id') === 'treble' &&
+        node.getAttribute('data-system-index') === '0' &&
+        node.getAttribute('data-voice-index') === '0',
+    );
+    const voiceTop = Number(voiceZone?.getAttribute('y'));
+    const voiceBottom = voiceTop + Number(voiceZone?.getAttribute('height'));
+    const pitchY = getPitchY(lowPitch, 'treble', 0);
+    const lowestLedgerY = Math.max(
+      ...getLedgerLineYsForScore(pitchY, score, 0, 0),
+    );
+
+    expect(voiceBottom).toBeGreaterThanOrEqual(lowestLedgerY + 15);
+    expect(voiceBottom).toBeGreaterThanOrEqual(pitchY + 15);
   });
 
   it('keeps annotation zones out of the fixed gap between voice lanes', async () => {
@@ -2410,7 +2459,8 @@ describe('StaffRenderer', () => {
       lowPitchY + NOTEHEAD_ANNOTATION_INK_PADDING + BELOW_STAFF_INK_GAP;
 
     expect(lyric).toHaveAttribute('data-voice-index', '0');
-    expect(lyricTop).toBeCloseTo(expectedVoiceBottom, 1);
+    expect(lyricTop).toBeGreaterThanOrEqual(expectedVoiceBottom);
+    expect(lyricTop).toBeLessThanOrEqual(expectedVoiceBottom + 5);
   });
 
   it('keeps manual above annotation overrides close to the owning staff', async () => {

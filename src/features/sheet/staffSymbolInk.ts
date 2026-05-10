@@ -14,7 +14,7 @@ const CLEF_INK_BOUNDS = {
     maxX: 34,
     maxY: 52,
     minX: 4,
-    minY: -30,
+    minY: -22,
   },
 } satisfies Record<Clef, AnnotationBounds>;
 

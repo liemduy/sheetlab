@@ -478,18 +478,21 @@ function drawVexFlowMeasureEvents({
           Number.isFinite(maxX) ? maxX : renderedX + 10,
           noteBounds?.maxX ?? Number.NEGATIVE_INFINITY,
         ),
-        maxY,
+        maxY: Math.max(maxY, noteBounds?.maxY ?? Number.NEGATIVE_INFINITY),
         measureIndex,
         minX: Math.min(
           Number.isFinite(minX) ? minX : renderedX - 10,
           noteBounds?.minX ?? Number.POSITIVE_INFINITY,
         ),
-        minY,
+        minY: Math.min(minY, noteBounds?.minY ?? Number.POSITIVE_INFINITY),
         pitchLayouts,
         staffId: staff.id,
         voiceIndex,
         x: renderedX,
-        y: (minY + maxY) / 2,
+        y:
+          (Math.min(minY, noteBounds?.minY ?? Number.POSITIVE_INFINITY) +
+            Math.max(maxY, noteBounds?.maxY ?? Number.NEGATIVE_INFINITY)) /
+          2,
       };
     });
   });

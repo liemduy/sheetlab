@@ -13,13 +13,13 @@ import type {
   RenderedVoiceZoneLayout,
 } from './renderedEventLayout';
 import {
-  NOTEHEAD_ANNOTATION_INK_PADDING,
   type AnnotationBounds,
   combineAnnotationBounds,
 } from './annotationLayoutPolicy';
 import { getClefInkBounds } from './staffSymbolInk';
 
 const INTER_VOICE_ZONE_GAP = 18;
+const VOICE_NOTEHEAD_INK_PADDING = 16;
 
 export function getRenderedEventInkBounds(
   layout: RenderedEventLayout,
@@ -37,7 +37,7 @@ export function getRenderedEventInkBounds(
         ? Math.max(
             layout.maxY,
             Math.max(...layout.pitchLayouts.map((pitchLayout) => pitchLayout.y)) +
-              NOTEHEAD_ANNOTATION_INK_PADDING,
+              VOICE_NOTEHEAD_INK_PADDING,
           )
         : layout.maxY,
     minX:
@@ -52,7 +52,7 @@ export function getRenderedEventInkBounds(
         ? Math.min(
             layout.minY,
             Math.min(...layout.pitchLayouts.map((pitchLayout) => pitchLayout.y)) -
-              NOTEHEAD_ANNOTATION_INK_PADDING,
+              VOICE_NOTEHEAD_INK_PADDING,
           )
         : layout.minY,
   };
@@ -102,7 +102,9 @@ function getDefaultVoiceBounds(score: Score, staffIndex: number, measureIndex: n
   const staffTop = getScoreStaffTop(score, staffIndex, measureIndex);
 
   return {
+    maxX: 0,
     maxY: staffTop + STAFF_LINE_SPACING * 4,
+    minX: 0,
     minY: staffTop,
   };
 }
@@ -200,8 +202,10 @@ export function getRenderedSystemVoiceBounds({
   systemIndex,
   voiceIndex,
   includeStaffSymbols = true,
+  includeStaffBounds = false,
 }: {
   eventLayouts: Record<string, RenderedEventLayout>;
+  includeStaffBounds?: boolean;
   includeStaffSymbols?: boolean;
   measureIndex: number;
   score: Score;
@@ -220,8 +224,11 @@ export function getRenderedSystemVoiceBounds({
   const staffSymbolInkBounds = includeStaffSymbols
     ? getRenderedSystemStaffSymbolInkBounds(score, staffIndex, systemIndex)
     : [];
+  const staffBounds = includeStaffBounds
+    ? [getDefaultVoiceBounds(score, staffIndex, measureIndex)]
+    : [];
   const voiceBounds = combineAnnotationBounds(
-    [...eventInkBounds, ...staffSymbolInkBounds],
+    [...staffBounds, ...eventInkBounds, ...staffSymbolInkBounds],
   );
 
   return voiceBounds ?? getDefaultVoiceBounds(score, staffIndex, measureIndex);
@@ -262,6 +269,7 @@ export function computeRenderedVoiceZones({
       const rawZones = Array.from({ length: maxVoiceCount }, (_, voiceIndex) => {
         const voice = getRenderedSystemVoiceBounds({
           eventLayouts,
+          includeStaffBounds: maxVoiceCount === 1,
           includeStaffSymbols: maxVoiceCount === 1,
           measureIndex: firstMeasureIndex,
           score,
