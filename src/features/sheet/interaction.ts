@@ -45,7 +45,9 @@ export interface MusicPosition {
 }
 
 const STAFF_VERTICAL_PADDING = 74;
-const GRAND_STAFF_DEAD_ZONE_PADDING = 34;
+const GRAND_STAFF_DEAD_ZONE_HEIGHT = 4;
+const GRAND_STAFF_TOP_INNER_PADDING = 18;
+const GRAND_STAFF_BOTTOM_INNER_PADDING = 40;
 
 interface MusicPositionOptions {
   dots?: number;
@@ -120,8 +122,14 @@ function findStaffAtY(
         staffIndex + 1,
         measureIndex,
       );
-      const deadZoneTop = upperStaffBottom + GRAND_STAFF_DEAD_ZONE_PADDING;
-      const deadZoneBottom = lowerStaffTop - GRAND_STAFF_DEAD_ZONE_PADDING;
+      const interStaffGap = lowerStaffTop - upperStaffBottom;
+      const deadZoneHeight = Math.min(
+        GRAND_STAFF_DEAD_ZONE_HEIGHT,
+        Math.max(0, interStaffGap),
+      );
+      const deadZoneCenter = (upperStaffBottom + lowerStaffTop) / 2;
+      const deadZoneTop = deadZoneCenter - deadZoneHeight / 2;
+      const deadZoneBottom = deadZoneCenter + deadZoneHeight / 2;
 
       if (deadZoneTop < deadZoneBottom && y > deadZoneTop && y < deadZoneBottom) {
         return true;
@@ -138,13 +146,22 @@ function findStaffAtY(
         const staffBottom = staffTop + STAFF_LINE_SPACING * 4;
         const staffCenter = staffTop + STAFF_LINE_SPACING * 2;
         const isInDeadZone = isInsideGrandStaffDeadZone(systemIndex);
+        const isGrandStaffPair = staves.length === 2;
+        const upperPadding =
+          isGrandStaffPair && staffIndex > 0
+            ? GRAND_STAFF_BOTTOM_INNER_PADDING
+            : STAFF_VERTICAL_PADDING;
+        const lowerPadding =
+          isGrandStaffPair && staffIndex === 0
+            ? GRAND_STAFF_TOP_INNER_PADDING
+            : STAFF_VERTICAL_PADDING;
 
         return {
           distance: Math.abs(y - staffCenter),
           isInsideEditableBand:
             !isInDeadZone &&
-            y >= staffTop - STAFF_VERTICAL_PADDING &&
-            y <= staffBottom + STAFF_VERTICAL_PADDING,
+            y >= staffTop - upperPadding &&
+            y <= staffBottom + lowerPadding,
           staff,
           systemIndex,
         };

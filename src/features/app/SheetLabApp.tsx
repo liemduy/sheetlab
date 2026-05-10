@@ -3,6 +3,7 @@ import type {
   MouseEvent as ReactMouseEvent,
 } from 'react';
 import { findScoreEvent } from '../../domain/score/editing';
+import { findLyricMapSourceEventId } from '../../domain/score/lyricMapping';
 import type {
   EditableVoiceIndex,
   EditorToolState,
@@ -279,7 +280,10 @@ function SheetLabApp() {
   });
 
   function handleSelectEvent(eventId: string, pitchIndex?: number | null) {
-    const foundEvent = findScoreEvent(score, eventId);
+    const selectionEventId = findLyricMapSourceEventId(score, eventId);
+    const foundEvent = findScoreEvent(score, selectionEventId);
+    const selectedPitchIndex =
+      selectionEventId === eventId ? pitchIndex ?? null : null;
 
     updateToolState({
       isInputArmed: false,
@@ -289,11 +293,13 @@ function SheetLabApp() {
           : toolState.voiceIndex,
     });
     clearPointerState();
-    selectEvent(eventId, pitchIndex ?? null);
+    selectEvent(selectionEventId, selectedPitchIndex);
     setEditorMessage(
-      pitchIndex !== null && pitchIndex !== undefined
+      selectedPitchIndex !== null && selectedPitchIndex !== undefined
         ? 'Notehead selected'
-        : 'Event selected',
+        : selectionEventId === eventId
+          ? 'Event selected'
+          : 'Mapped lyric selected',
     );
   }
 

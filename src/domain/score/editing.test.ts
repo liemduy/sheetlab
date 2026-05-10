@@ -988,4 +988,40 @@ describe('score editing', () => {
       reason: 'measure-overflow',
     });
   });
+
+  it('can keep an invalid duration update so the user can repair the measure', () => {
+    const score = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'event-too-late',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 3,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const result = tryUpdateScoreEvent(score, 'event-too-late', {
+      allowInvalidMeasure: true,
+      duration: 'half',
+    });
+
+    expect(result).toMatchObject({
+      updated: true,
+      reason: 'measure-overflow',
+    });
+    expect(findScoreEvent(result.score, 'event-too-late')?.event).toMatchObject({
+      beat: 3,
+      duration: 'half',
+    });
+
+    const repairedScore = deleteScoreEvent(result.score, 'event-too-late');
+
+    expect(getVoiceEvents(repairedScore, 'treble', 0)).toEqual([
+      {
+        id: 'rest-treble-m1-t0-whole',
+        kind: 'rest',
+        beat: 0,
+        duration: 'whole',
+      },
+    ]);
+  });
 });

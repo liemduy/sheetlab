@@ -1973,7 +1973,16 @@ describe('StaffRenderer', () => {
       'data-map-cardinality',
       'range',
     );
-    expect(screen.getAllByTestId('lyric-map-target-dot')).toHaveLength(2);
+    const targetDotXs = screen
+      .getAllByTestId('lyric-map-target-dot')
+      .map((dot) => Number(dot.getAttribute('cx')));
+    const lyricX = Number(screen.getByTestId('rendered-lyric').getAttribute('x'));
+
+    expect(targetDotXs).toHaveLength(2);
+    expect(lyricX).toBeCloseTo(
+      (Math.min(...targetDotXs) + Math.max(...targetDotXs)) / 2,
+      1,
+    );
   });
 
   it('overlays voice, above, and below zones for annotation debugging', async () => {
@@ -2000,8 +2009,29 @@ describe('StaffRenderer', () => {
     const zoneKinds = screen
       .getAllByTestId('voice-zone-debug')
       .map((node) => node.getAttribute('data-zone-kind'));
+    const zones = screen.getAllByTestId('voice-zone-debug');
+    const aboveZone = zones.find(
+      (node) =>
+        node.getAttribute('data-zone-kind') === 'above' &&
+        node.getAttribute('data-staff-id') === 'treble',
+    );
+    const belowZone = zones.find(
+      (node) =>
+        node.getAttribute('data-zone-kind') === 'below' &&
+        node.getAttribute('data-staff-id') === 'treble',
+    );
+    const voiceZone = zones.find(
+      (node) =>
+        node.getAttribute('data-zone-kind') === 'voice' &&
+        node.getAttribute('data-staff-id') === 'treble',
+    );
 
     expect(zoneKinds).toEqual(expect.arrayContaining(['above', 'voice', 'below']));
+    expect(aboveZone?.tagName.toLowerCase()).toBe('line');
+    expect(aboveZone).toHaveAttribute('data-zone-empty', 'true');
+    expect(belowZone?.tagName.toLowerCase()).toBe('rect');
+    expect(belowZone).toHaveAttribute('data-zone-empty', 'false');
+    expect(voiceZone?.tagName.toLowerCase()).toBe('rect');
   });
 
   it('keeps lyric map connectors local when a target is on another system', async () => {

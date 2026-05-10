@@ -49,10 +49,12 @@ export interface RenderedAnnotationLayout {
 
 export interface RenderedVoiceZoneLayout {
   above: {
+    hasContent: boolean;
     maxY: number;
     minY: number;
   };
   below: {
+    hasContent: boolean;
     maxY: number;
     minY: number;
   };

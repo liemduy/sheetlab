@@ -13,7 +13,6 @@ import type {
   RenderedVoiceZoneLayout,
 } from './renderedEventLayout';
 import {
-  ANNOTATION_METRICS,
   ABOVE_STAFF_INK_GAP,
   BELOW_STAFF_INK_GAP,
   NOTEHEAD_ANNOTATION_INK_PADDING,
@@ -169,27 +168,27 @@ export function computeRenderedVoiceZones({
         const belowAnnotations = zoneAnnotations.filter(
           (layout) => layout.side === 'below',
         );
-        const aboveMinY =
-          aboveAnnotations.length > 0
-            ? Math.min(...aboveAnnotations.map((layout) => layout.minY))
-            : voice.minY -
-              ABOVE_STAFF_INK_GAP -
-              ANNOTATION_METRICS.lyric.height;
-        const belowMaxY =
-          belowAnnotations.length > 0
-            ? Math.max(...belowAnnotations.map((layout) => layout.maxY))
-            : voice.maxY +
-              BELOW_STAFF_INK_GAP +
-              ANNOTATION_METRICS.lyric.height;
+        const aboveGuideY = voice.minY - ABOVE_STAFF_INK_GAP;
+        const belowGuideY = voice.maxY + BELOW_STAFF_INK_GAP;
+        const hasAboveContent = aboveAnnotations.length > 0;
+        const hasBelowContent = belowAnnotations.length > 0;
+        const aboveMinY = hasAboveContent
+          ? Math.min(...aboveAnnotations.map((layout) => layout.minY))
+          : aboveGuideY;
+        const belowMaxY = hasBelowContent
+          ? Math.max(...belowAnnotations.map((layout) => layout.maxY))
+          : belowGuideY;
 
         return {
           above: {
-            maxY: voice.minY - ABOVE_STAFF_INK_GAP,
+            hasContent: hasAboveContent,
+            maxY: aboveGuideY,
             minY: aboveMinY,
           },
           below: {
+            hasContent: hasBelowContent,
             maxY: belowMaxY,
-            minY: voice.maxY + BELOW_STAFF_INK_GAP,
+            minY: belowGuideY,
           },
           id: `${staff.id}:${systemIndex}:${voiceIndex}`,
           maxX,

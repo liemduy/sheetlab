@@ -160,3 +160,50 @@ export function materializeMeasureEvents(
 
   return compactRestRuns(materializedEvents, staffId, measureIndex);
 }
+
+export function materializeMeasureEventsAllowingInvalid(
+  events: ScoreEvent[],
+  score: Score,
+  staffId: StaffId,
+  measureIndex: number,
+) {
+  const measureTicks = getMeasureTicks(score.timeSignature);
+  const sortedEvents = [...events]
+    .filter((event) => !isGeneratedRestEvent(event))
+    .sort((a, b) => getEventStartTick(a) - getEventStartTick(b));
+  const materializedEvents: ScoreEvent[] = [];
+  let cursorTick = 0;
+
+  for (const event of sortedEvents) {
+    const eventStartTick = getEventStartTick(event);
+    const eventEndTick = getEventEndTick(event);
+    const safeGapEndTick = Math.min(eventStartTick, measureTicks);
+
+    if (safeGapEndTick > cursorTick) {
+      materializedEvents.push(
+        ...createRestEventsForTickRange(
+          staffId,
+          measureIndex,
+          cursorTick,
+          safeGapEndTick,
+        ),
+      );
+    }
+
+    materializedEvents.push(event);
+    cursorTick = Math.max(cursorTick, eventEndTick);
+  }
+
+  if (cursorTick < measureTicks) {
+    materializedEvents.push(
+      ...createRestEventsForTickRange(
+        staffId,
+        measureIndex,
+        cursorTick,
+        measureTicks,
+      ),
+    );
+  }
+
+  return compactRestRuns(materializedEvents, staffId, measureIndex);
+}

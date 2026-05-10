@@ -3,6 +3,7 @@ import type {
   Score,
 } from '../../domain/score/types';
 import { isGeneratedRestEvent } from '../../domain/score/events';
+import { getLyricMapEventIds } from '../../domain/score/lyricMapping';
 import {
   getMeasureContentLeft,
   getScoreStaffTop,
@@ -80,6 +81,38 @@ function getAnnotationY({
   }
 
   return voiceBounds.minY - ABOVE_STAFF_INK_GAP - metrics.descent;
+}
+
+function getLyricAnnotationX({
+  eventId,
+  eventLayouts,
+  fallbackX,
+  score,
+  systemIndex,
+}: {
+  eventId: string;
+  eventLayouts: Record<string, RenderedEventLayout>;
+  fallbackX: number;
+  score: Score;
+  systemIndex: number;
+}) {
+  const mappedLayouts = getLyricMapEventIds(score, eventId)
+    .map((targetEventId) => eventLayouts[targetEventId])
+    .filter(
+      (targetLayout): targetLayout is RenderedEventLayout =>
+        Boolean(targetLayout) &&
+        getSystemIndex(targetLayout.measureIndex, score) === systemIndex,
+    );
+
+  if (mappedLayouts.length === 0) {
+    return fallbackX;
+  }
+
+  return (
+    (Math.min(...mappedLayouts.map((targetLayout) => targetLayout.x)) +
+      Math.max(...mappedLayouts.map((targetLayout) => targetLayout.x))) /
+    2
+  );
 }
 
 function createRenderedAnnotationLayout({
@@ -271,6 +304,16 @@ export function drawTextAnnotations(
               testId: string;
               text: string;
             }) => {
+              const annotationX =
+                kind === 'lyric'
+                  ? getLyricAnnotationX({
+                      eventId: event.id,
+                      eventLayouts,
+                      fallbackX: layout.x,
+                      score,
+                      systemIndex,
+                    })
+                  : layout.x;
               const side = getAutomaticAnnotationSide(
                 event,
                 kind,
@@ -290,7 +333,7 @@ export function drawTextAnnotations(
                 preferredBounds: getAnnotationBounds({
                   kind,
                   text,
-                  x: layout.x,
+                  x: annotationX,
                   y: getAnnotationY({
                     kind,
                     side,
@@ -307,7 +350,7 @@ export function drawTextAnnotations(
                 staffId: staff.id,
                 text,
                 voiceIndex,
-                x: layout.x,
+                x: annotationX,
               });
 
               annotationLayouts.push(renderedAnnotationLayout);
@@ -323,7 +366,7 @@ export function drawTextAnnotations(
                 },
                 svg,
                 text,
-                x: layout.x,
+                x: annotationX,
                 y: renderedAnnotationLayout.y,
               });
             };

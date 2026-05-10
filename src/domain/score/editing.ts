@@ -26,6 +26,7 @@ import {
   getEventEnd,
   getEventStartTick,
   materializeMeasureEvents,
+  materializeMeasureEventsAllowingInvalid,
 } from './measureEvents';
 import { ensureMeasureCount } from './measureEditing';
 import { getMeasureBeats } from './timeSignatures';
@@ -66,6 +67,7 @@ export interface PlaceScoreEventResult {
 
 export interface UpdateScoreEventRequest {
   accidental?: Accidental | null;
+  allowInvalidMeasure?: boolean;
   beat?: number;
   duration?: DurationValue;
   measureIndex?: number;
@@ -369,7 +371,11 @@ function writeScoreEvent(
   staffId: StaffId,
   measureIndex: number,
   nextEvent: ScoreEvent,
-  options: { allowSameStartPitchedReplacement: boolean; voiceIndex?: number },
+  options: {
+    allowInvalidMeasure?: boolean;
+    allowSameStartPitchedReplacement: boolean;
+    voiceIndex?: number;
+  },
 ): PlaceScoreEventResult {
   const {
     targetMeasure,
@@ -393,8 +399,62 @@ function writeScoreEvent(
   }
 
   const boundedEvent = clampScoreEventToStaffRange(nextEvent, targetStaff);
+  const measureOverflow =
+    getEventEnd(boundedEvent) > getMeasureBeats(score.timeSignature);
+  const overlappingEvents = targetVoice.events.filter((event) =>
+    eventsOverlapByTick(boundedEvent, event),
+  );
+  const hasUserEventOverlap = overlappingEvents.some(
+    (event) => !isGeneratedRestEvent(event),
+  );
 
-  if (getEventEnd(boundedEvent) > getMeasureBeats(score.timeSignature)) {
+  if (options.allowInvalidMeasure && (measureOverflow || hasUserEventOverlap)) {
+    const nextVoiceEvents = materializeMeasureEventsAllowingInvalid(
+      [
+        ...targetVoice.events.filter((event) => !isGeneratedRestEvent(event)),
+        boundedEvent,
+      ],
+      score,
+      staffId,
+      measureIndex,
+    );
+
+    return {
+      score: {
+        ...score,
+        parts: score.parts.map((part) => ({
+          ...part,
+          staves: part.staves.map((staff) =>
+            staff.id === staffId
+              ? {
+                  ...staff,
+                  measures: staff.measures.map((measure) =>
+                    measure.index === measureIndex
+                      ? {
+                          ...measure,
+                          voices: targetMeasureWithVoice.voices.map(
+                            (voice, voiceIndex) =>
+                              voiceIndex === targetVoiceIndex
+                                ? {
+                                    ...voice,
+                                    events: nextVoiceEvents,
+                                  }
+                                : voice,
+                          ),
+                        }
+                      : measure,
+                  ),
+                }
+              : staff,
+          ),
+        })),
+      },
+      placed: true,
+      reason: measureOverflow ? 'measure-overflow' : 'event-overlap',
+    };
+  }
+
+  if (measureOverflow) {
     return {
       score,
       placed: false,
@@ -402,11 +462,9 @@ function writeScoreEvent(
     };
   }
 
-  const overlappingEvents = targetVoice.events.filter((event) =>
-    eventsOverlapByTick(boundedEvent, event),
-  );
   const shouldRejectOverlap = overlappingEvents.some(
     (event) =>
+      !isGeneratedRestEvent(event) &&
       isPitchedScoreEvent(event) &&
       (!options.allowSameStartPitchedReplacement ||
         getEventStartTick(event) !== getEventStartTick(boundedEvent)),
@@ -715,6 +773,23 @@ export function setMeasureSectionMarker(
 }
 
 export function deleteScoreEvent(score: Score, eventId: string): Score {
+  function materializeAfterDelete(
+    events: ScoreEvent[],
+    staffId: StaffId,
+    measureIndex: number,
+  ) {
+    try {
+      return materializeMeasureEvents(events, score, staffId, measureIndex);
+    } catch {
+      return materializeMeasureEventsAllowingInvalid(
+        events,
+        score,
+        staffId,
+        measureIndex,
+      );
+    }
+  }
+
   return {
     ...score,
     parts: score.parts.map((part) => ({
@@ -726,9 +801,8 @@ export function deleteScoreEvent(score: Score, eventId: string): Score {
           voices: measure.voices.map((voice) => ({
             ...voice,
             events: voice.events.some((event) => event.id === eventId)
-              ? materializeMeasureEvents(
+              ? materializeAfterDelete(
                   voice.events.filter((event) => event.id !== eventId),
-                  score,
                   staff.id,
                   measure.index,
                 )
@@ -786,6 +860,23 @@ export function deleteScoreEventPitch(
   eventId: string,
   pitchIndex: number,
 ): Score {
+  function materializeAfterDelete(
+    events: ScoreEvent[],
+    staffId: StaffId,
+    measureIndex: number,
+  ) {
+    try {
+      return materializeMeasureEvents(events, score, staffId, measureIndex);
+    } catch {
+      return materializeMeasureEventsAllowingInvalid(
+        events,
+        score,
+        staffId,
+        measureIndex,
+      );
+    }
+  }
+
   return {
     ...score,
     parts: score.parts.map((part) => ({
@@ -811,9 +902,8 @@ export function deleteScoreEventPitch(
 
             return {
               ...voice,
-              events: materializeMeasureEvents(
+              events: materializeAfterDelete(
                 nextEvents,
-                score,
                 staff.id,
                 measure.index,
               ),
@@ -873,6 +963,7 @@ export function tryUpdateScoreEvent(
     candidateEvent,
     {
       allowSameStartPitchedReplacement: false,
+      allowInvalidMeasure: update.allowInvalidMeasure,
       voiceIndex: targetVoiceIndex,
     },
   );

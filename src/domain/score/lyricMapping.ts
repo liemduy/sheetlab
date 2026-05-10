@@ -2,6 +2,45 @@ import { findScoreEventContext, getVoiceEvents } from './eventLookup';
 import { isGeneratedRestEvent, isPitchedScoreEvent } from './events';
 import type { Score } from './types';
 
+function getLyricSourceCandidates(score: Score, targetEventId: string) {
+  const targetContext = findScoreEventContext(score, targetEventId);
+
+  if (!targetContext) {
+    return [];
+  }
+
+  return score.parts
+    .flatMap((part) =>
+      part.staves.flatMap((staff) =>
+        staff.measures.flatMap((measure) =>
+          measure.voices.flatMap((voice, voiceIndex) =>
+            voice.events.map((event) => ({
+              event,
+              isSameVoice:
+                staff.id === targetContext.staffId &&
+                voiceIndex === targetContext.voiceIndex,
+              measureIndex: measure.index,
+              staffId: staff.id,
+              voiceIndex,
+            })),
+          ),
+        ),
+      ),
+    )
+    .filter(
+      ({ event }) =>
+        Boolean(event.lyric) &&
+        getLyricMapEventIds(score, event.id).includes(targetEventId),
+    )
+    .sort(
+      (first, second) =>
+        Number(second.isSameVoice) - Number(first.isSameVoice) ||
+        first.measureIndex - second.measureIndex ||
+        first.event.beat - second.event.beat ||
+        first.event.id.localeCompare(second.event.id),
+    );
+}
+
 export function getLyricMapEventIds(score: Score, eventId: string) {
   const eventContext = findScoreEventContext(score, eventId);
   const mappedEventIds = eventContext?.event.lyricMap?.eventIds;
@@ -9,6 +48,16 @@ export function getLyricMapEventIds(score: Score, eventId: string) {
   return mappedEventIds && mappedEventIds.length > 0
     ? [...new Set(mappedEventIds)]
     : [eventId];
+}
+
+export function findLyricMapSourceEventId(score: Score, targetEventId: string) {
+  const targetContext = findScoreEventContext(score, targetEventId);
+
+  if (!targetContext || targetContext.event.lyric) {
+    return targetEventId;
+  }
+
+  return getLyricSourceCandidates(score, targetEventId)[0]?.event.id ?? targetEventId;
 }
 
 export function getOrderedPitchedVoiceEventIds(

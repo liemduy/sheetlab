@@ -1,7 +1,7 @@
 export const STAFF_LEFT = 36;
 export const STAFF_RIGHT = 884;
 export const STAFF_LINE_SPACING = 11;
-export const STAFF_GAP = 132;
+export const STAFF_GAP = 96;
 export const MEASURE_WIDTH = 212;
 export const MEASURES_PER_SYSTEM = 4;
 export const MEASURE_LEFT_PADDING = 20;
@@ -12,7 +12,7 @@ export const SVG_WIDTH = 920;
 export const SYSTEM_WIDTH = STAFF_RIGHT - STAFF_LEFT;
 export const VEXFLOW_STAVE_TOP_LINE_OFFSET = 44.5;
 
-export const STAFF_DYNAMIC_PADDING = 28;
+export const STAFF_DYNAMIC_PADDING = 2;
 export const TREBLE_SYSTEM_GAP = 170;
 export const GRAND_SYSTEM_PADDING = 152;
 export const ANNOTATION_ROW_GAP = 26;

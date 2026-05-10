@@ -60,6 +60,7 @@ export function useScoreEventEditing({
   function updateSelectedEvent(
     update: Parameters<typeof tryUpdateScoreEvent>[2],
     successMessage: string,
+    options: { allowInvalidMeasure?: boolean } = {},
   ) {
     if (!selectedEventId || selectedEventSource !== 'manual') {
       return;
@@ -67,11 +68,23 @@ export function useScoreEventEditing({
 
     const result = tryUpdateScoreEvent(score, selectedEventId, {
       ...update,
+      allowInvalidMeasure: options.allowInvalidMeasure,
       pitchIndex: selectedPitchIndex ?? undefined,
     });
 
     if (result.updated) {
       commitScoreChange(result.score, successMessage);
+      if (result.reason) {
+        const updatedEvent = findScoreEvent(result.score, selectedEventId);
+
+        if (updatedEvent) {
+          markInvalidMeasure(
+            updatedEvent.staffId,
+            updatedEvent.measureIndex,
+            `${successMessage}; measure rhythm needs fixing`,
+          );
+        }
+      }
     } else {
       const foundEvent = findScoreEvent(score, selectedEventId);
 
@@ -91,7 +104,11 @@ export function useScoreEventEditing({
     updateToolState({ duration, isInputArmed: true });
     clearPointerState();
     clearMeasureSelection();
-    updateSelectedEvent({ duration }, 'Event duration updated');
+    updateSelectedEvent(
+      { duration },
+      'Event duration updated',
+      { allowInvalidMeasure: true },
+    );
   }
 
   function handleDottedChange(dotted: boolean) {
@@ -103,6 +120,7 @@ export function useScoreEventEditing({
     updateSelectedEvent(
       { dots },
       dotted ? 'Dotted note enabled' : 'Dotted note disabled',
+      { allowInvalidMeasure: true },
     );
   }
 

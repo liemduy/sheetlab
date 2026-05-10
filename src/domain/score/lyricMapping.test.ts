@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { placeScoreEvent, tryUpdateScoreEvent } from './editing';
 import { createEmptyScore } from './factories';
 import {
+  findLyricMapSourceEventId,
   getLyricMapEventIds,
   getLyricMapTargetEventIds,
   getOrderedPitchedVoiceEventIds,
@@ -149,5 +150,17 @@ describe('lyric mapping', () => {
     expect(normalizeLyricMapEventIds(score, 'source', ['missing'])).toEqual([
       'source',
     ]);
+  });
+
+  it('resolves mapped target notes back to the lyric source event', () => {
+    const sourceScore = addTrebleNote(createEmptyScore('treble'), 'source', 0);
+    const targetScore = addTrebleNote(sourceScore, 'target', 1);
+    const score = tryUpdateScoreEvent(targetScore, 'source', {
+      lyric: 'hold',
+      lyricMap: { eventIds: ['source', 'target'] },
+    }).score;
+
+    expect(findLyricMapSourceEventId(score, 'target')).toBe('source');
+    expect(findLyricMapSourceEventId(score, 'source')).toBe('source');
   });
 });

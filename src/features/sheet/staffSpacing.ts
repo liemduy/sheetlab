@@ -7,6 +7,8 @@ import {
   getEventPitches,
   isGeneratedRestEvent,
 } from '../../domain/score/events';
+import { findScoreEventContext } from '../../domain/score/eventLookup';
+import { getLyricMapEventIds } from '../../domain/score/lyricMapping';
 import {
   TOP_LINE_BY_CLEF,
   clampPitchToClefRange,
@@ -269,6 +271,60 @@ function getEstimatedEventX(
   );
 }
 
+function isMeasureInSpacingSystem(
+  measureIndex: number,
+  systemIndex: number,
+  measureIndexes?: number[],
+) {
+  const measureStart = systemIndex * MEASURES_PER_SYSTEM;
+  const measureEnd = measureStart + MEASURES_PER_SYSTEM;
+
+  return measureIndexes
+    ? measureIndexes.includes(measureIndex)
+    : measureIndex >= measureStart && measureIndex < measureEnd;
+}
+
+function getEstimatedLyricAnnotationX({
+  eventId,
+  fallbackX,
+  measureIndexes,
+  score,
+  systemIndex,
+}: {
+  eventId: string;
+  fallbackX: number;
+  measureIndexes?: number[];
+  score: Score;
+  systemIndex: number;
+}) {
+  const targetXs = getLyricMapEventIds(score, eventId)
+    .flatMap((targetEventId) => {
+      const targetContext = findScoreEventContext(score, targetEventId);
+
+      return targetContext &&
+        isMeasureInSpacingSystem(
+          targetContext.measureIndex,
+          systemIndex,
+          measureIndexes,
+        )
+        ? [
+            getEstimatedEventX(
+              score,
+              targetContext.measureIndex,
+              targetContext.event.beat,
+              measureIndexes,
+            ),
+          ]
+        : [];
+    });
+
+  if (targetXs.length === 0) {
+    return fallbackX;
+  }
+
+  return (Math.min(...targetXs) + Math.max(...targetXs)) / 2;
+}
+
 function getEventPitchBounds(score: Score, staffIndex: number, eventPitches: Pitch[]) {
   const staff = score.parts[0]?.staves[staffIndex];
 
@@ -387,6 +443,16 @@ function getStaffSystemAnnotationExtents(
           return;
         }
 
+        const annotationX =
+          kind === 'lyric'
+            ? getEstimatedLyricAnnotationX({
+                eventId: event.id,
+                fallbackX: x,
+                measureIndexes,
+                score,
+                systemIndex,
+              })
+            : x;
         const side = getAutomaticAnnotationSide(
           event,
           kind,
@@ -411,7 +477,12 @@ function getStaffSystemAnnotationExtents(
             side === 'below'
               ? voiceState.belowPlacements
               : voiceState.abovePlacements,
-          preferredBounds: getAnnotationBounds({ kind, text, x, y }),
+          preferredBounds: getAnnotationBounds({
+            kind,
+            text,
+            x: annotationX,
+            y,
+          }),
         });
 
         systemAnnotationPlacements.push(placement);

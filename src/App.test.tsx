@@ -820,6 +820,69 @@ describe('App editor state', () => {
     });
   });
 
+  it('selects the lyric source when clicking a note inside a multi-note lyric map', async () => {
+    const { container } = render(<App />);
+    startWriting();
+
+    const overlay = screen.getByTestId('staff-renderer');
+    const bounds = setVisibleSheetBounds(overlay);
+    const svgHeight = getOverlaySvgHeight(overlay);
+    const firstPoint = svgToClientPoint(
+      bounds,
+      getBeatX(0, 0, 4),
+      getPitchY({ step: 'C', octave: 4 }, 'treble', 0),
+      svgHeight,
+    );
+    const secondPoint = svgToClientPoint(
+      bounds,
+      getBeatX(0, 1, 4),
+      getPitchY({ step: 'D', octave: 4 }, 'treble', 0),
+      svgHeight,
+    );
+
+    fireEvent.click(overlay, firstPoint);
+    fireEvent.click(overlay, secondPoint);
+    fireEvent.click(screen.getByRole('button', { name: 'Select tool' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Note C4 measure 1 beat 1' }));
+    fireEvent.change(screen.getByLabelText('Lyric'), {
+      target: { value: 'hold' },
+    });
+    fireEvent.blur(screen.getByLabelText('Lyric'));
+    fireEvent.click(screen.getByRole('button', { name: 'Show lyric map' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('lyric-map-connector')).toBeInTheDocument();
+    });
+
+    const lyricMapHitTarget = container.querySelector('.lyric-map-hit-target');
+
+    expect(lyricMapHitTarget).not.toBeNull();
+    fireEvent.mouseDown(lyricMapHitTarget as Element, firstPoint);
+    fireEvent.mouseMove(overlay, secondPoint);
+    fireEvent.mouseUp(overlay, secondPoint);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('lyric-map-connector')).toHaveAttribute(
+        'data-target-event-ids',
+        'event-1 event-2',
+      );
+    });
+
+    const mappedTargetNote = container.querySelector(
+      '[data-testid="score-event"][data-event-id="event-2"]',
+    );
+
+    expect(mappedTargetNote).not.toBeNull();
+    fireEvent.click(mappedTargetNote as Element);
+
+    expect(screen.getByLabelText('Lyric')).toHaveValue('hold');
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'Mapped lyric selected',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('adds and deletes measure columns from the right-click measure menu with a warning', () => {
     render(<App />);
 
@@ -899,7 +962,7 @@ describe('App editor state', () => {
 
     expect(
       within(screen.getByLabelText('Current editor state')).getByText(
-        'Cannot update: event-overlap',
+        'Event duration updated; measure rhythm needs fixing',
       ),
     ).toBeInTheDocument();
     expect(screen.getByTestId('invalid-measure-warning')).toHaveAttribute(
@@ -907,7 +970,7 @@ describe('App editor state', () => {
       'treble:0',
     );
     expect(screen.getByRole('button', { name: 'Note C4 measure 1 beat 1' }))
-      .toHaveAttribute('data-duration', 'quarter');
+      .toHaveAttribute('data-duration', 'whole');
     await waitFor(() => {
       expect(
         container.querySelectorAll(

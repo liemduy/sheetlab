@@ -857,6 +857,11 @@ button {
   vector-effect: non-scaling-stroke;
 }
 
+.voice-zone-debug[data-zone-empty="true"] {
+  fill: none;
+  stroke-dasharray: 6 4;
+}
+
 .voice-zone-debug-above {
   fill: rgb(245 180 42 / 16%);
   stroke: rgb(185 118 12 / 42%);
