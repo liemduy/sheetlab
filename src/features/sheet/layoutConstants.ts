@@ -12,7 +12,6 @@ export const SVG_WIDTH = 920;
 export const SYSTEM_WIDTH = STAFF_RIGHT - STAFF_LEFT;
 export const VEXFLOW_STAVE_TOP_LINE_OFFSET = 44.5;
 
-export const STAFF_DYNAMIC_PADDING = 2;
 export const TREBLE_SYSTEM_GAP = 170;
 export const GRAND_SYSTEM_PADDING = 152;
 export const ANNOTATION_ROW_GAP = 26;

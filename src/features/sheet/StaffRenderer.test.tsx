@@ -1567,7 +1567,31 @@ describe('StaffRenderer', () => {
     );
   });
 
-  it('keeps the grand staff gap stable when ledger lines from both staves need room', () => {
+  it('keeps the grand staff gap stable when ledger ink still has clearance', () => {
+    const score = placeScoreEvent(createEmptyScore('grand'), {
+      eventId: 'treble-low-ledger',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'F', octave: 3 },
+    });
+
+    render(<StaffRenderer score={score} />);
+
+    const connector = screen.getAllByTestId('grand-staff-connector')[0];
+    const dynamicGap = getScoreStaffGap(score);
+
+    expect(dynamicGap).toBe(STAFF_GAP);
+    expect(Number(connector.getAttribute('y2')) - Number(connector.getAttribute('y1'))).toBeCloseTo(
+      dynamicGap + STAFF_LINE_SPACING * 4,
+      2,
+    );
+    expect(screen.getAllByTestId('score-event')).toHaveLength(1);
+  });
+
+  it('widens the grand staff gap when ledger ink from both staves would get too close', () => {
     const trebleLowScore = placeScoreEvent(createEmptyScore('grand'), {
       eventId: 'treble-low-ledger',
       staffId: 'treble',
@@ -1590,12 +1614,42 @@ describe('StaffRenderer', () => {
     const connector = screen.getAllByTestId('grand-staff-connector')[0];
     const dynamicGap = getScoreStaffGap(score);
 
-    expect(dynamicGap).toBe(STAFF_GAP);
+    expect(dynamicGap).toBeGreaterThan(STAFF_GAP);
     expect(Number(connector.getAttribute('y2')) - Number(connector.getAttribute('y1'))).toBeCloseTo(
       dynamicGap + STAFF_LINE_SPACING * 4,
       2,
     );
     expect(screen.getAllByTestId('score-event')).toHaveLength(2);
+  });
+
+  it('keeps a low treble ledger stable when it still has enough bass clearance', () => {
+    const pitch: Pitch = { step: 'C', octave: 3 };
+    const score = placeScoreEvent(createEmptyScore('grand'), {
+      eventId: 'treble-colliding-ledger',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch,
+    });
+
+    render(<StaffRenderer score={score} />);
+
+    const dynamicGap = getScoreStaffGap(score);
+    const bassTop = getStaffTop(1, dynamicGap, 0, getScoreSystemGap(score));
+    const noteY = getPitchY(
+      pitch,
+      'treble',
+      0,
+      dynamicGap,
+      0,
+      getScoreSystemGap(score),
+    );
+
+    expect(dynamicGap).toBe(STAFF_GAP);
+    expect(bassTop - noteY).toBeGreaterThan(22);
+    expect(screen.getAllByTestId('score-event')).toHaveLength(1);
   });
 
   it('keeps pitched hit targets on noteheads instead of full stem bounds across grand staves', () => {
@@ -1646,7 +1700,7 @@ describe('StaffRenderer', () => {
     expect(lowerTargetY).toBeGreaterThan(trebleNoteY + 20);
   });
 
-  it('keeps legacy pitches from expanding the grand staff gap', () => {
+  it('keeps legacy pitches within safety rails before spacing the grand staff', () => {
     const score = createEmptyScore('grand');
 
     score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events.push({

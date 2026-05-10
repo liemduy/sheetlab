@@ -22,7 +22,6 @@ import {
   MEASURE_RIGHT_PADDING,
   MEASURE_WIDTH,
   MEASURES_PER_SYSTEM,
-  STAFF_DYNAMIC_PADDING,
   STAFF_GAP,
   STAFF_LEFT,
   STAFF_LINE_SPACING,
@@ -42,6 +41,7 @@ import {
 
 type PitchBounds = { maxY: number; minY: number };
 const STEM_INK_ESTIMATE = STAFF_LINE_SPACING * 2;
+const INTER_STAFF_MIN_CLEARANCE = 22;
 
 function getPitchYRelativeToStaffTop(pitch: Pitch, clef: Clef) {
   const topLineValue = pitchToDiatonicValue(TOP_LINE_BY_CLEF[clef]);
@@ -520,6 +520,8 @@ export function computeSystemStaffGap(
   systemIndex: number,
   measureIndexes?: number[],
 ) {
+  const trebleInkBounds = getStaffInkBounds(score, 0, systemIndex, measureIndexes);
+  const bassInkBounds = getStaffInkBounds(score, 1, systemIndex, measureIndexes);
   const trebleAnnotationExtents = getStaffSystemAnnotationExtents(
     score,
     0,
@@ -532,12 +534,19 @@ export function computeSystemStaffGap(
     systemIndex,
     measureIndexes,
   );
-  const annotationDrivenGap =
-    trebleAnnotationExtents.belowBottom +
-    bassAnnotationExtents.aboveExtent +
-    STAFF_DYNAMIC_PADDING;
+  const trebleBottomExtent = Math.max(
+    trebleInkBounds.maxY,
+    trebleAnnotationExtents.belowBottom,
+  );
+  const bassTopExtent = Math.max(
+    0,
+    -bassInkBounds.minY,
+    bassAnnotationExtents.aboveExtent,
+  );
+  const collisionClearanceGap =
+    trebleBottomExtent + bassTopExtent + INTER_STAFF_MIN_CLEARANCE;
 
-  return Math.max(STAFF_GAP, annotationDrivenGap);
+  return Math.max(STAFF_GAP, collisionClearanceGap);
 }
 
 export function computeSystemAboveStaffExtent(
