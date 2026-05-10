@@ -358,7 +358,6 @@ function getStaffSystemAnnotationExtents(
   score: Score,
   staffIndex: number,
   systemIndex: number,
-  pitchBounds: PitchBounds,
   measureIndexes?: number[],
 ) {
   const systemAnnotationPlacements: AnnotationPlacement[] = [];
@@ -497,16 +496,16 @@ function getStaffSystemAnnotationExtents(
 
   const belowBottom =
     systemAnnotationPlacements.length === 0
-      ? pitchBounds.maxY
+      ? STAFF_LINE_SPACING * 4
       : Math.max(
-          pitchBounds.maxY,
+          STAFF_LINE_SPACING * 4,
           ...systemAnnotationPlacements.map((placement) => placement.maxY),
         );
   const aboveTop =
     systemAnnotationPlacements.length === 0
-      ? pitchBounds.minY
+      ? 0
       : Math.min(
-          pitchBounds.minY,
+          0,
           ...systemAnnotationPlacements.map((placement) => placement.minY),
         );
 
@@ -521,45 +520,24 @@ export function computeSystemStaffGap(
   systemIndex: number,
   measureIndexes?: number[],
 ) {
-  const trebleBounds = getStaffPitchBounds(score, 0, systemIndex, measureIndexes);
-  const bassBounds = getStaffPitchBounds(score, 1, systemIndex, measureIndexes);
-  const trebleInkBounds = getStaffInkBounds(score, 0, systemIndex, measureIndexes);
-  const bassInkBounds = getStaffInkBounds(score, 1, systemIndex, measureIndexes);
-  const trebleBelowStaff = Math.max(
-    0,
-    trebleInkBounds.maxY - STAFF_LINE_SPACING * 4,
-  );
-  const bassAboveStaff = Math.max(0, -bassInkBounds.minY);
-  const extraGap = trebleBelowStaff + bassAboveStaff;
-  const pitchDrivenGap =
-    extraGap === 0 ? STAFF_GAP : STAFF_GAP + extraGap + STAFF_DYNAMIC_PADDING;
   const trebleAnnotationExtents = getStaffSystemAnnotationExtents(
     score,
     0,
     systemIndex,
-    trebleBounds,
     measureIndexes,
   );
   const bassAnnotationExtents = getStaffSystemAnnotationExtents(
     score,
     1,
     systemIndex,
-    bassBounds,
     measureIndexes,
   );
-  const trebleBottomExtent = Math.max(
-    STAFF_LINE_SPACING * 4,
-    trebleInkBounds.maxY,
-    trebleAnnotationExtents.belowBottom,
-  );
-  const bassAboveExtent = Math.max(
-    bassAboveStaff,
-    bassAnnotationExtents.aboveExtent,
-  );
   const annotationDrivenGap =
-    trebleBottomExtent + bassAboveExtent + STAFF_DYNAMIC_PADDING;
+    trebleAnnotationExtents.belowBottom +
+    bassAnnotationExtents.aboveExtent +
+    STAFF_DYNAMIC_PADDING;
 
-  return Math.max(STAFF_GAP, pitchDrivenGap, annotationDrivenGap);
+  return Math.max(STAFF_GAP, annotationDrivenGap);
 }
 
 export function computeSystemAboveStaffExtent(
@@ -568,18 +546,10 @@ export function computeSystemAboveStaffExtent(
   systemIndex: number,
   measureIndexes?: number[],
 ) {
-  const pitchBounds = getStaffPitchBounds(
-    score,
-    staffIndex,
-    systemIndex,
-    measureIndexes,
-  );
-
   return getStaffSystemAnnotationExtents(
     score,
     staffIndex,
     systemIndex,
-    pitchBounds,
     measureIndexes,
   ).aboveExtent;
 }
@@ -604,7 +574,6 @@ export function computeSystemBelowStaffExtent(
       score,
       staffIndex,
       systemIndex,
-      pitchBounds,
       measureIndexes,
     ).belowBottom,
   );

@@ -1567,7 +1567,7 @@ describe('StaffRenderer', () => {
     );
   });
 
-  it('expands the grand staff gap when ledger lines from both staves need more room', () => {
+  it('keeps the grand staff gap stable when ledger lines from both staves need room', () => {
     const trebleLowScore = placeScoreEvent(createEmptyScore('grand'), {
       eventId: 'treble-low-ledger',
       staffId: 'treble',
@@ -1590,7 +1590,7 @@ describe('StaffRenderer', () => {
     const connector = screen.getAllByTestId('grand-staff-connector')[0];
     const dynamicGap = getScoreStaffGap(score);
 
-    expect(dynamicGap).toBeGreaterThan(STAFF_GAP);
+    expect(dynamicGap).toBe(STAFF_GAP);
     expect(Number(connector.getAttribute('y2')) - Number(connector.getAttribute('y1'))).toBeCloseTo(
       dynamicGap + STAFF_LINE_SPACING * 4,
       2,
@@ -1646,7 +1646,7 @@ describe('StaffRenderer', () => {
     expect(lowerTargetY).toBeGreaterThan(trebleNoteY + 20);
   });
 
-  it('keeps legacy pitches inside a practical staff gap without capping valid ledger lines', () => {
+  it('keeps legacy pitches from expanding the grand staff gap', () => {
     const score = createEmptyScore('grand');
 
     score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events.push({
@@ -1661,11 +1661,10 @@ describe('StaffRenderer', () => {
     const connector = screen.getAllByTestId('grand-staff-connector')[0];
     const dynamicGap = getScoreStaffGap(score);
 
-    expect(dynamicGap).toBeGreaterThan(STAFF_GAP);
-    expect(dynamicGap).toBeLessThan(300);
+    expect(dynamicGap).toBe(STAFF_GAP);
     expect(
       Number(connector.getAttribute('y2')) - Number(connector.getAttribute('y1')),
-    ).toBeLessThan(360);
+    ).toBeCloseTo(STAFF_GAP + STAFF_LINE_SPACING * 4, 2);
   });
 
   it.each([
