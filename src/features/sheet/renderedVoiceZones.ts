@@ -13,12 +13,13 @@ import type {
   RenderedVoiceZoneLayout,
 } from './renderedEventLayout';
 import {
-  ABOVE_STAFF_INK_GAP,
-  BELOW_STAFF_INK_GAP,
   NOTEHEAD_ANNOTATION_INK_PADDING,
   type AnnotationBounds,
   combineAnnotationBounds,
 } from './annotationLayoutPolicy';
+import { getClefInkBounds } from './staffSymbolInk';
+
+const INTER_VOICE_ZONE_GAP = 18;
 
 export function getRenderedEventInkBounds(
   layout: RenderedEventLayout,
@@ -75,6 +76,28 @@ export function getRenderedSystemVoiceEventInkBounds(
     .map(getRenderedEventInkBounds);
 }
 
+export function getRenderedSystemStaffSymbolInkBounds(
+  score: Score,
+  staffIndex: number,
+  systemIndex: number,
+) {
+  const staff = score.parts[0]?.staves[staffIndex];
+  const firstMeasureIndex =
+    getScoreSystemMeasureIndexes(score, systemIndex)[0] ?? 0;
+
+  if (!staff) {
+    return [];
+  }
+
+  return [
+    getClefInkBounds({
+      clef: staff.clef,
+      measureX: getMeasureX(firstMeasureIndex, score),
+      staffTop: getScoreStaffTop(score, staffIndex, firstMeasureIndex),
+    }),
+  ];
+}
+
 function getDefaultVoiceBounds(score: Score, staffIndex: number, measureIndex: number) {
   const staffTop = getScoreStaffTop(score, staffIndex, measureIndex);
 
@@ -82,6 +105,90 @@ function getDefaultVoiceBounds(score: Score, staffIndex: number, measureIndex: n
     maxY: staffTop + STAFF_LINE_SPACING * 4,
     minY: staffTop,
   };
+}
+
+function getVoiceCenter(zone: RenderedVoiceZoneLayout) {
+  return (zone.voice.minY + zone.voice.maxY) / 2;
+}
+
+function clampInterVoiceAnnotationZones(
+  zones: RenderedVoiceZoneLayout[],
+): RenderedVoiceZoneLayout[] {
+  if (zones.length < 2) {
+    return zones;
+  }
+
+  const sortedZones = [...zones].sort((first, second) =>
+    getVoiceCenter(first) - getVoiceCenter(second),
+  );
+  const limits = new Map<
+    string,
+    {
+      aboveMinY: number;
+      belowMaxY: number;
+    }
+  >(
+    zones.map((zone) => [
+      zone.id,
+      {
+        aboveMinY: Number.NEGATIVE_INFINITY,
+        belowMaxY: Number.POSITIVE_INFINITY,
+      },
+    ]),
+  );
+
+  sortedZones.slice(0, -1).forEach((upperZone, index) => {
+    const lowerZone = sortedZones[index + 1];
+
+    if (!lowerZone) {
+      return;
+    }
+
+    const upperBottom = upperZone.voice.maxY;
+    const lowerTop = lowerZone.voice.minY;
+    const divider =
+      lowerTop > upperBottom
+        ? (upperBottom + lowerTop) / 2
+        : (getVoiceCenter(upperZone) + getVoiceCenter(lowerZone)) / 2;
+    const upperLimit = divider - INTER_VOICE_ZONE_GAP / 2;
+    const lowerLimit = divider + INTER_VOICE_ZONE_GAP / 2;
+    const upperLimits = limits.get(upperZone.id);
+    const lowerLimits = limits.get(lowerZone.id);
+
+    if (upperLimits) {
+      upperLimits.belowMaxY = Math.min(upperLimits.belowMaxY, upperLimit);
+    }
+
+    if (lowerLimits) {
+      lowerLimits.aboveMinY = Math.max(lowerLimits.aboveMinY, lowerLimit);
+    }
+  });
+
+  return zones.map((zone) => {
+    const zoneLimits = limits.get(zone.id);
+
+    if (!zoneLimits) {
+      return zone;
+    }
+
+    return {
+      ...zone,
+      above: {
+        ...zone.above,
+        minY: Math.min(
+          zone.above.maxY,
+          Math.max(zone.above.minY, zoneLimits.aboveMinY),
+        ),
+      },
+      below: {
+        ...zone.below,
+        maxY: Math.max(
+          zone.below.minY,
+          Math.min(zone.below.maxY, zoneLimits.belowMaxY),
+        ),
+      },
+    };
+  });
 }
 
 export function getRenderedSystemVoiceBounds({
@@ -92,8 +199,10 @@ export function getRenderedSystemVoiceBounds({
   staffIndex,
   systemIndex,
   voiceIndex,
+  includeStaffSymbols = true,
 }: {
   eventLayouts: Record<string, RenderedEventLayout>;
+  includeStaffSymbols?: boolean;
   measureIndex: number;
   score: Score;
   staffId: string;
@@ -101,14 +210,18 @@ export function getRenderedSystemVoiceBounds({
   systemIndex: number;
   voiceIndex: number;
 }) {
+  const eventInkBounds = getRenderedSystemVoiceEventInkBounds(
+    eventLayouts,
+    score,
+    staffId,
+    systemIndex,
+    voiceIndex,
+  );
+  const staffSymbolInkBounds = includeStaffSymbols
+    ? getRenderedSystemStaffSymbolInkBounds(score, staffIndex, systemIndex)
+    : [];
   const voiceBounds = combineAnnotationBounds(
-    getRenderedSystemVoiceEventInkBounds(
-      eventLayouts,
-      score,
-      staffId,
-      systemIndex,
-      voiceIndex,
-    ),
+    [...eventInkBounds, ...staffSymbolInkBounds],
   );
 
   return voiceBounds ?? getDefaultVoiceBounds(score, staffIndex, measureIndex);
@@ -146,9 +259,10 @@ export function computeRenderedVoiceZones({
           .map((measure) => measure.voices.length),
       );
 
-      return Array.from({ length: maxVoiceCount }, (_, voiceIndex) => {
+      const rawZones = Array.from({ length: maxVoiceCount }, (_, voiceIndex) => {
         const voice = getRenderedSystemVoiceBounds({
           eventLayouts,
+          includeStaffSymbols: maxVoiceCount === 1,
           measureIndex: firstMeasureIndex,
           score,
           staffId: staff.id,
@@ -168,8 +282,8 @@ export function computeRenderedVoiceZones({
         const belowAnnotations = zoneAnnotations.filter(
           (layout) => layout.side === 'below',
         );
-        const aboveGuideY = voice.minY - ABOVE_STAFF_INK_GAP;
-        const belowGuideY = voice.maxY + BELOW_STAFF_INK_GAP;
+        const aboveGuideY = voice.minY;
+        const belowGuideY = voice.maxY;
         const hasAboveContent = aboveAnnotations.length > 0;
         const hasBelowContent = belowAnnotations.length > 0;
         const aboveMinY = hasAboveContent
@@ -201,6 +315,8 @@ export function computeRenderedVoiceZones({
           voiceIndex,
         };
       });
+
+      return clampInterVoiceAnnotationZones(rawZones);
     });
   });
 }

@@ -220,8 +220,14 @@ function getStaffInkBounds(
   }
 
   return {
-    maxY: Math.max(STAFF_LINE_SPACING * 4, ...eventBounds.map((bounds) => bounds.maxY)),
-    minY: Math.min(0, ...eventBounds.map((bounds) => bounds.minY)),
+    maxY: Math.max(
+      STAFF_LINE_SPACING * 4,
+      ...eventBounds.map((bounds) => bounds.maxY),
+    ),
+    minY: Math.min(
+      0,
+      ...eventBounds.map((bounds) => bounds.minY),
+    ),
   };
 }
 

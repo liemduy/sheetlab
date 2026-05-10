@@ -222,6 +222,7 @@ export function drawTextAnnotations(
           belowPlacements: [],
           voiceBounds: getRenderedSystemVoiceBounds({
             eventLayouts,
+            includeStaffSymbols: false,
             measureIndex: systemFirstMeasureIndex,
             score,
             staffId: staff.id,

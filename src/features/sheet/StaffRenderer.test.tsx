@@ -2032,6 +2032,137 @@ describe('StaffRenderer', () => {
     expect(belowZone?.tagName.toLowerCase()).toBe('rect');
     expect(belowZone).toHaveAttribute('data-zone-empty', 'false');
     expect(voiceZone?.tagName.toLowerCase()).toBe('rect');
+
+    const voiceTop = Number(voiceZone?.getAttribute('y'));
+    const voiceBottom = voiceTop + Number(voiceZone?.getAttribute('height'));
+
+    expect(Number(aboveZone?.getAttribute('y1'))).toBeCloseTo(voiceTop, 1);
+    expect(Number(belowZone?.getAttribute('y'))).toBeCloseTo(voiceBottom, 1);
+  });
+
+  it('includes clef ink in empty voice zone debugging', () => {
+    const score = createEmptyScore('grand');
+    const staffTop = getScoreStaffTop(score, 0, 0);
+
+    render(<StaffRenderer score={score} showLayoutZones />);
+
+    const zones = screen.getAllByTestId('voice-zone-debug');
+    const trebleVoiceZone = zones.find(
+      (node) =>
+        node.getAttribute('data-zone-kind') === 'voice' &&
+        node.getAttribute('data-staff-id') === 'treble' &&
+        node.getAttribute('data-system-index') === '0' &&
+        node.getAttribute('data-voice-index') === '0',
+    );
+    const trebleAboveZone = zones.find(
+      (node) =>
+        node.getAttribute('data-zone-kind') === 'above' &&
+        node.getAttribute('data-staff-id') === 'treble' &&
+        node.getAttribute('data-system-index') === '0' &&
+        node.getAttribute('data-voice-index') === '0',
+    );
+    const trebleBelowZone = zones.find(
+      (node) =>
+        node.getAttribute('data-zone-kind') === 'below' &&
+        node.getAttribute('data-staff-id') === 'treble' &&
+        node.getAttribute('data-system-index') === '0' &&
+        node.getAttribute('data-voice-index') === '0',
+    );
+    const voiceTop = Number(trebleVoiceZone?.getAttribute('y'));
+    const voiceBottom =
+      voiceTop + Number(trebleVoiceZone?.getAttribute('height'));
+
+    expect(trebleVoiceZone?.tagName.toLowerCase()).toBe('rect');
+    expect(voiceTop).toBeLessThan(staffTop);
+    expect(voiceBottom).toBeGreaterThan(staffTop + STAFF_LINE_SPACING * 4);
+    expect(Number(trebleAboveZone?.getAttribute('y1'))).toBeCloseTo(
+      voiceTop,
+      1,
+    );
+    expect(Number(trebleBelowZone?.getAttribute('y1'))).toBeCloseTo(
+      voiceBottom,
+      1,
+    );
+  });
+
+  it('keeps annotation zones out of the fixed gap between voice lanes', async () => {
+    const upperVoiceScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'upper-lane-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 5 },
+      voiceIndex: 0,
+    });
+    const lowerVoiceScore = placeScoreEvent(upperVoiceScore, {
+      eventId: 'lower-lane-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 1,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+      voiceIndex: 1,
+    });
+    const annotatedUpperScore = tryUpdateScoreEvent(
+      lowerVoiceScore,
+      'upper-lane-note',
+      {
+        lyric: 'up',
+      },
+    ).score;
+    const score = tryUpdateScoreEvent(annotatedUpperScore, 'lower-lane-note', {
+      chordSymbol: 'Lo',
+    }).score;
+
+    render(<StaffRenderer score={score} showLayoutZones />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-lyric')).toHaveTextContent('up');
+      expect(screen.getByTestId('rendered-chord-symbol')).toHaveTextContent('Lo');
+    });
+
+    const getZoneBounds = (zone: Element | undefined) => {
+      if (!zone) {
+        return null;
+      }
+
+      if (zone.tagName.toLowerCase() === 'line') {
+        const y = Number(zone.getAttribute('y1'));
+
+        return { maxY: y, minY: y };
+      }
+
+      const minY = Number(zone.getAttribute('y'));
+
+      return {
+        maxY: minY + Number(zone.getAttribute('height')),
+        minY,
+      };
+    };
+    const zones = screen.getAllByTestId('voice-zone-debug');
+    const upperBelowZone = zones.find(
+      (node) =>
+        node.getAttribute('data-zone-kind') === 'below' &&
+        node.getAttribute('data-staff-id') === 'treble' &&
+        node.getAttribute('data-voice-index') === '0',
+    );
+    const lowerAboveZone = zones.find(
+      (node) =>
+        node.getAttribute('data-zone-kind') === 'above' &&
+        node.getAttribute('data-staff-id') === 'treble' &&
+        node.getAttribute('data-voice-index') === '1',
+    );
+    const upperBelowBounds = getZoneBounds(upperBelowZone);
+    const lowerAboveBounds = getZoneBounds(lowerAboveZone);
+
+    expect(upperBelowBounds).not.toBeNull();
+    expect(lowerAboveBounds).not.toBeNull();
+    expect(
+      (lowerAboveBounds?.minY ?? 0) - (upperBelowBounds?.maxY ?? 0),
+    ).toBeGreaterThanOrEqual(17);
   });
 
   it('keeps lyric map connectors local when a target is on another system', async () => {
