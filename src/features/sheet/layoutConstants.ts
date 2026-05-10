@@ -1,7 +1,7 @@
 export const STAFF_LEFT = 36;
 export const STAFF_RIGHT = 884;
 export const STAFF_LINE_SPACING = 11;
-export const STAFF_GAP = 96;
+export const STAFF_GAP = 122;
 export const MEASURE_WIDTH = 212;
 export const MEASURES_PER_SYSTEM = 4;
 export const MEASURE_LEFT_PADDING = 20;
