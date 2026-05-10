@@ -112,6 +112,46 @@ describe('sheet interaction mapping', () => {
     });
   });
 
+  it('keeps the preferred staff active through the grand-staff ledger overlap', () => {
+    const score = createEmptyScore('grand', { measureCount: 4 });
+    const result = mapPointToMusicPosition(
+      {
+        x: getBeatX(0, 0, score.timeSignature.beats),
+        y: getPitchY({ step: 'A', octave: 3 }, 'treble', 0),
+      },
+      score,
+      {
+        duration: 'eighth',
+        preferredStaffId: 'treble',
+      },
+    );
+
+    expect(result).toMatchObject({
+      pitch: { step: 'A', octave: 3 },
+      staffId: 'treble',
+    });
+  });
+
+  it('switches away from the preferred staff inside another staff core', () => {
+    const score = createEmptyScore('grand', { measureCount: 4 });
+    const result = mapPointToMusicPosition(
+      {
+        x: getBeatX(0, 0, score.timeSignature.beats),
+        y: getPitchY({ step: 'D', octave: 3 }, 'bass', 1),
+      },
+      score,
+      {
+        duration: 'eighth',
+        preferredStaffId: 'treble',
+      },
+    );
+
+    expect(result).toMatchObject({
+      pitch: { step: 'D', octave: 3 },
+      staffId: 'bass',
+    });
+  });
+
   it('clamps pointer positions before the note content area to beat zero', () => {
     const score = createEmptyScore('treble', { measureCount: 4 });
     const result = mapPointToMusicPosition(

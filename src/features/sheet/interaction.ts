@@ -48,10 +48,12 @@ const STAFF_VERTICAL_PADDING = 74;
 const GRAND_STAFF_DEAD_ZONE_HEIGHT = 4;
 const GRAND_STAFF_TOP_INNER_PADDING = 18;
 const GRAND_STAFF_BOTTOM_INNER_PADDING = 40;
+const GRAND_STAFF_CORE_SWITCH_PADDING = 8;
 
 interface MusicPositionOptions {
   dots?: number;
   duration?: DurationValue;
+  preferredStaffId?: StaffId | null;
 }
 
 export function mapStaffYToPitch(
@@ -104,6 +106,7 @@ export function formatPitch(pitch: Pitch) {
 function findStaffAtY(
   score: Score,
   y: number,
+  preferredStaffId?: StaffId | null,
 ) {
   const staves = score.parts[0]?.staves ?? [];
   const measureCount = staves[0]?.measures.length ?? 0;
@@ -147,17 +150,25 @@ function findStaffAtY(
         const staffCenter = staffTop + STAFF_LINE_SPACING * 2;
         const isInDeadZone = isInsideGrandStaffDeadZone(systemIndex);
         const isGrandStaffPair = staves.length === 2;
+        const isPreferredStaff = staff.id === preferredStaffId;
         const upperPadding =
-          isGrandStaffPair && staffIndex > 0
+          isGrandStaffPair && !isPreferredStaff && staffIndex > 0
             ? GRAND_STAFF_BOTTOM_INNER_PADDING
             : STAFF_VERTICAL_PADDING;
         const lowerPadding =
-          isGrandStaffPair && staffIndex === 0
+          isGrandStaffPair && !isPreferredStaff && staffIndex === 0
             ? GRAND_STAFF_TOP_INNER_PADDING
             : STAFF_VERTICAL_PADDING;
+        const corePadding = isGrandStaffPair
+          ? GRAND_STAFF_CORE_SWITCH_PADDING
+          : STAFF_VERTICAL_PADDING;
 
         return {
           distance: Math.abs(y - staffCenter),
+          isInsideCoreBand:
+            !isInDeadZone &&
+            y >= staffTop - corePadding &&
+            y <= staffBottom + corePadding,
           isInsideEditableBand:
             !isInDeadZone &&
             y >= staffTop - upperPadding &&
@@ -169,6 +180,28 @@ function findStaffAtY(
     )
     .filter((candidate) => candidate.isInsideEditableBand)
     .sort((a, b) => a.distance - b.distance);
+
+  if (preferredStaffId) {
+    const preferredCandidate = candidates.find(
+      (candidate) => candidate.staff.id === preferredStaffId,
+    );
+    const coreSwitchCandidate = candidates.find(
+      (candidate) =>
+        candidate.staff.id !== preferredStaffId && candidate.isInsideCoreBand,
+    );
+
+    if (preferredCandidate?.isInsideCoreBand) {
+      return preferredCandidate;
+    }
+
+    if (coreSwitchCandidate) {
+      return coreSwitchCandidate;
+    }
+
+    if (preferredCandidate) {
+      return preferredCandidate;
+    }
+  }
 
   return candidates[0];
 }
@@ -200,7 +233,7 @@ export function mapPointToMusicPosition(
   options: MusicPositionOptions = {},
 ): MusicPosition | null {
   const staves = score.parts[0]?.staves ?? [];
-  const staffMatch = findStaffAtY(score, point.y);
+  const staffMatch = findStaffAtY(score, point.y, options.preferredStaffId);
   const staff = staffMatch?.staff;
   const measureCount = staff?.measures.length ?? 0;
   const systemIndex = staffMatch?.systemIndex ?? 0;
