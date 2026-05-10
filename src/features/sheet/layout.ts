@@ -22,7 +22,10 @@ import {
   getMeasureDistributionWeight,
   getMeasureSlotWeight,
 } from './measureDensity';
-import { computeSystemStaffGap } from './staffSpacing';
+import {
+  computeSystemAboveStaffExtent,
+  computeSystemStaffGap,
+} from './staffSpacing';
 import {
   computeScoreSystems,
   getScoreMeasureCount,
@@ -49,6 +52,7 @@ type ScoreLayoutCache = {
   maxStaffGap: number;
   systems: ScoreSystemLayout[];
   systemGaps: number[];
+  systemTopPaddings: number[];
   systemTops: number[];
 };
 
@@ -60,6 +64,29 @@ export function getScoreSystemCount(score: Score | ScoreType) {
   }
 
   return getScoreLayoutCache(score).systems.length;
+}
+
+function getSystemTopPadding(
+  score: Score,
+  systemIndex: number,
+  measureIndexes: number[],
+) {
+  if (systemIndex === 0) {
+    return 0;
+  }
+
+  const aboveExtent = computeSystemAboveStaffExtent(
+    score,
+    0,
+    systemIndex,
+    measureIndexes,
+  );
+  const baseSystemGap =
+    score.type === 'grand' ? GRAND_SYSTEM_PADDING : TREBLE_SYSTEM_GAP;
+  const availableAboveStaff = baseSystemGap - STAFF_LINE_SPACING * 4;
+  const minimumClearance = 16;
+
+  return Math.max(0, aboveExtent + minimumClearance - availableAboveStaff);
 }
 
 function getScoreLayoutCache(score: Score) {
@@ -75,6 +102,9 @@ function getScoreLayoutCache(score: Score) {
       ? computeSystemStaffGap(score, systemIndex, system.measureIndexes)
       : STAFF_GAP,
   );
+  const systemTopPaddings = systems.map((system, systemIndex) =>
+    getSystemTopPadding(score, systemIndex, system.measureIndexes),
+  );
   const systemTops: number[] = [];
   const measureSystemIndexes = Array.from(
     { length: getScoreMeasureCount(score) },
@@ -83,6 +113,7 @@ function getScoreLayoutCache(score: Score) {
   let y = FIRST_STAFF_Y;
 
   systems.forEach((system, systemIndex) => {
+    y += systemTopPaddings[systemIndex] ?? 0;
     systemTops[systemIndex] = y;
     system.measureIndexes.forEach((measureIndex) => {
       measureSystemIndexes[measureIndex] = systemIndex;
@@ -97,6 +128,7 @@ function getScoreLayoutCache(score: Score) {
     maxStaffGap: Math.max(STAFF_GAP, ...systemGaps),
     systems,
     systemGaps,
+    systemTopPaddings,
     systemTops,
   };
 

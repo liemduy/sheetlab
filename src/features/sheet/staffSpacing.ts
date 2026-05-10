@@ -1,10 +1,7 @@
 import type {
-  AnnotationKind,
-  AnnotationPlacementSide,
   Clef,
   Pitch,
   Score,
-  ScoreEvent,
 } from '../../domain/score/types';
 import {
   getEventPitches,
@@ -17,16 +14,8 @@ import {
 } from '../../domain/score/pitchRange';
 import { getMeasureBeats } from '../../domain/score/timeSignatures';
 import {
-  ABOVE_STAFF_ANNOTATION_DESCENT,
-  ABOVE_STAFF_ANNOTATION_GAP,
-  ABOVE_STAFF_CLOSE_BASELINE_OFFSET,
-  ABOVE_STAFF_FAR_BASELINE_OFFSET,
-  ANNOTATION_ROW_GAP,
-  BELOW_STAFF_ANNOTATION_INK_GAP,
-  BELOW_STAFF_ANNOTATION_TEXT_HEIGHT,
   BELOW_STAFF_NOTE_INK_ESTIMATE,
   FIRST_MEASURE_LEFT_PADDING,
-  MAX_AUTO_BELOW_ANNOTATION_ROWS,
   MEASURE_LEFT_PADDING,
   MEASURE_RIGHT_PADDING,
   MEASURE_WIDTH,
@@ -36,36 +25,20 @@ import {
   STAFF_LEFT,
   STAFF_LINE_SPACING,
 } from './layoutConstants';
+import {
+  ANNOTATION_METRICS,
+  BELOW_STAFF_INK_GAP,
+  NOTEHEAD_ANNOTATION_INK_PADDING,
+  type AnnotationPlacement,
+  getAboveAnnotationBaseline,
+  getAnnotationBounds,
+  getAutomaticAnnotationSide,
+  getEventAnnotationKinds,
+  getEventAnnotationText,
+  placeAnnotationInRows,
+} from './annotationLayoutPolicy';
 
 type PitchBounds = { maxY: number; minY: number };
-type AnnotationSide = Exclude<AnnotationPlacementSide, 'auto'>;
-type AnnotationBounds = {
-  maxX: number;
-  maxY: number;
-  minX: number;
-  minY: number;
-};
-type AnnotationPlacement = AnnotationBounds & {
-  row: number;
-  side: AnnotationSide;
-};
-
-const PEDAL_MARK_TEXT = {
-  release: '*',
-  start: 'Ped.',
-  'start-release': 'Ped. *',
-} as const;
-
-const ANNOTATION_METRICS = {
-  chordSymbol: { charWidth: 9.5, descent: 5, height: 20, minWidth: 22 },
-  dynamic: { charWidth: 9, descent: 5, height: 21, minWidth: 18 },
-  fermata: { charWidth: 14, descent: 5, height: 26, minWidth: 18 },
-  lyric: { charWidth: 8.2, descent: 5, height: 18, minWidth: 18 },
-  pedal: { charWidth: 8.5, descent: 5, height: 19, minWidth: 20 },
-} satisfies Record<
-  AnnotationKind,
-  { charWidth: number; descent: number; height: number; minWidth: number }
->;
 
 function getPitchYRelativeToStaffTop(pitch: Pitch, clef: Clef) {
   const topLineValue = pitchToDiatonicValue(TOP_LINE_BY_CLEF[clef]);
@@ -185,144 +158,6 @@ function getSystemMeasures(
   );
 }
 
-function getAnnotationText(event: ScoreEvent, kind: AnnotationKind) {
-  if (kind === 'chordSymbol') {
-    return event.chordSymbol ?? null;
-  }
-
-  if (kind === 'dynamic') {
-    return event.dynamic ?? null;
-  }
-
-  if (kind === 'fermata') {
-    return event.fermata ? 'fermata' : null;
-  }
-
-  if (kind === 'lyric') {
-    return event.lyric ?? null;
-  }
-
-  return event.pedal ? PEDAL_MARK_TEXT[event.pedal] : null;
-}
-
-function getEventAnnotationKinds(event: ScoreEvent) {
-  return ([
-    event.chordSymbol ? 'chordSymbol' : null,
-    event.lyric ? 'lyric' : null,
-    event.dynamic ? 'dynamic' : null,
-    event.fermata ? 'fermata' : null,
-    event.pedal ? 'pedal' : null,
-  ].filter(Boolean) as AnnotationKind[]);
-}
-
-function getAnnotationBounds({
-  kind,
-  text,
-  x,
-  y,
-}: {
-  kind: AnnotationKind;
-  text: string;
-  x: number;
-  y: number;
-}): AnnotationBounds {
-  const metrics = ANNOTATION_METRICS[kind];
-  const width = Math.max(metrics.minWidth, text.length * metrics.charWidth) + 12;
-
-  return {
-    maxX: x + width / 2,
-    maxY: y + metrics.descent,
-    minX: x - width / 2,
-    minY: y - metrics.height,
-  };
-}
-
-function doAnnotationBoundsOverlap(
-  first: AnnotationBounds,
-  second: AnnotationBounds,
-) {
-  return (
-    first.minX < second.maxX &&
-    first.maxX > second.minX &&
-    first.minY < second.maxY &&
-    first.maxY > second.minY
-  );
-}
-
-function getAnnotationRowCount(placements: AnnotationPlacement[]) {
-  return placements.length === 0
-    ? 0
-    : Math.max(...placements.map((placement) => placement.row)) + 1;
-}
-
-function getAutomaticAnnotationSide(
-  event: ScoreEvent,
-  kind: AnnotationKind,
-  abovePlacements: AnnotationPlacement[],
-  belowPlacements: AnnotationPlacement[],
-): AnnotationSide {
-  const override = event.annotationPlacements?.[kind];
-
-  if (override === 'above' || override === 'below') {
-    return override;
-  }
-
-  if (kind === 'chordSymbol' || kind === 'fermata') {
-    return 'above';
-  }
-
-  if (kind === 'lyric') {
-    return 'below';
-  }
-
-  const belowRows = getAnnotationRowCount(belowPlacements);
-  const aboveRows = getAnnotationRowCount(abovePlacements);
-
-  return belowRows >= MAX_AUTO_BELOW_ANNOTATION_ROWS && belowRows > aboveRows
-    ? 'above'
-    : 'below';
-}
-
-function placeEstimatedAnnotation(
-  side: AnnotationSide,
-  preferredBounds: AnnotationBounds,
-  placements: AnnotationPlacement[],
-) {
-  const rowDirection = side === 'below' ? 1 : -1;
-
-  for (let row = 0; row < 8; row += 1) {
-    const bounds = {
-      maxX: preferredBounds.maxX,
-      maxY: preferredBounds.maxY + rowDirection * row * ANNOTATION_ROW_GAP,
-      minX: preferredBounds.minX,
-      minY: preferredBounds.minY + rowDirection * row * ANNOTATION_ROW_GAP,
-    };
-    const hasCollision = placements.some((placement) =>
-      doAnnotationBoundsOverlap(bounds, placement),
-    );
-
-    if (!hasCollision) {
-      const placement = { ...bounds, row, side };
-
-      placements.push(placement);
-      return placement;
-    }
-  }
-
-  const fallbackRow = 8;
-  const fallbackPlacement = {
-    maxX: preferredBounds.maxX,
-    maxY: preferredBounds.maxY + rowDirection * fallbackRow * ANNOTATION_ROW_GAP,
-    minX: preferredBounds.minX,
-    minY: preferredBounds.minY + rowDirection * fallbackRow * ANNOTATION_ROW_GAP,
-    row: fallbackRow,
-    side,
-  };
-
-  placements.push(fallbackPlacement);
-  return fallbackPlacement;
-}
-
 function getStaticLocalMeasureIndex(measureIndex: number) {
   return Math.max(0, measureIndex) % MEASURES_PER_SYSTEM;
 }
@@ -336,6 +171,15 @@ function getStaffSystemAnnotationExtents(
 ) {
   const abovePlacements: AnnotationPlacement[] = [];
   const belowPlacements: AnnotationPlacement[] = [];
+  const systemMeasureCount = measureIndexes?.length ?? MEASURES_PER_SYSTEM;
+  const staffInkBlockers = [
+    {
+      maxX: STAFF_LEFT + systemMeasureCount * MEASURE_WIDTH,
+      maxY: pitchBounds.maxY + BELOW_STAFF_NOTE_INK_ESTIMATE,
+      minX: STAFF_LEFT,
+      minY: pitchBounds.minY - NOTEHEAD_ANNOTATION_INK_PADDING,
+    },
+  ];
 
   getSystemMeasures(score, staffIndex, systemIndex, measureIndexes)
     .flatMap((measure) =>
@@ -377,24 +221,17 @@ function getStaffSystemAnnotationExtents(
         STAFF_LINE_SPACING * 4,
         voicePitchBounds.maxY + BELOW_STAFF_NOTE_INK_ESTIMATE,
       );
+      const estimatedInkTop =
+        voicePitchBounds.minY - NOTEHEAD_ANNOTATION_INK_PADDING;
       const belowBaseline = Math.max(
         STAFF_LINE_SPACING * 4,
         estimatedInkBottom,
       ) +
-        BELOW_STAFF_ANNOTATION_INK_GAP +
-        BELOW_STAFF_ANNOTATION_TEXT_HEIGHT;
-      const aboveBaseline = Math.max(
-        ABOVE_STAFF_FAR_BASELINE_OFFSET,
-        Math.min(
-          ABOVE_STAFF_CLOSE_BASELINE_OFFSET,
-          voicePitchBounds.minY -
-            ABOVE_STAFF_ANNOTATION_GAP -
-            ABOVE_STAFF_ANNOTATION_DESCENT,
-        ),
-      );
+        BELOW_STAFF_INK_GAP +
+        ANNOTATION_METRICS.lyric.height;
 
       getEventAnnotationKinds(event).forEach((kind) => {
-        const text = getAnnotationText(event, kind);
+        const text = getEventAnnotationText(event, kind);
 
         if (!text) {
           return;
@@ -410,19 +247,26 @@ function getStaffSystemAnnotationExtents(
           side === 'below'
             ? belowBaseline
             : kind === 'fermata'
-              ? Math.max(
-                  ABOVE_STAFF_FAR_BASELINE_OFFSET,
-                  Math.min(-30, voicePitchBounds.minY - 18),
+              ? Math.min(
+                  getAboveAnnotationBaseline({
+                    kind,
+                    staffTop: 0,
+                    voiceInkTop: estimatedInkTop,
+                  }),
+                  Math.min(-30, estimatedInkTop - 18),
                 )
-              : kind === 'dynamic' || kind === 'lyric' || kind === 'pedal'
-                ? ABOVE_STAFF_CLOSE_BASELINE_OFFSET
-                : aboveBaseline;
+              : getAboveAnnotationBaseline({
+                  kind,
+                  staffTop: 0,
+                  voiceInkTop: estimatedInkTop,
+                });
 
-        placeEstimatedAnnotation(
-          side,
-          getAnnotationBounds({ kind, text, x, y }),
-          side === 'below' ? belowPlacements : abovePlacements,
-        );
+        placeAnnotationInRows({
+          blockers: staffInkBlockers,
+          direction: side,
+          placements: side === 'below' ? belowPlacements : abovePlacements,
+          preferredBounds: getAnnotationBounds({ kind, text, x, y }),
+        });
       });
     });
 
@@ -486,4 +330,26 @@ export function computeSystemStaffGap(
     trebleBottomExtent + bassAboveExtent + STAFF_DYNAMIC_PADDING;
 
   return Math.max(STAFF_GAP, pitchDrivenGap, annotationDrivenGap);
+}
+
+export function computeSystemAboveStaffExtent(
+  score: Score,
+  staffIndex: number,
+  systemIndex: number,
+  measureIndexes?: number[],
+) {
+  const pitchBounds = getStaffPitchBounds(
+    score,
+    staffIndex,
+    systemIndex,
+    measureIndexes,
+  );
+
+  return getStaffSystemAnnotationExtents(
+    score,
+    staffIndex,
+    systemIndex,
+    pitchBounds,
+    measureIndexes,
+  ).aboveExtent;
 }

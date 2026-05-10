@@ -38,6 +38,11 @@ import {
 import { getBeatX, getPitchY } from './notationGeometry';
 import { StaffRenderer } from './StaffRenderer';
 import { DEFAULT_INPUT_SLOT_WIDTH } from './inputSlotLayout';
+import {
+  ANNOTATION_METRICS,
+  ABOVE_STAFF_INK_GAP,
+  NOTEHEAD_ANNOTATION_INK_PADDING,
+} from './annotationLayoutPolicy';
 
 const trebleHover: MusicPosition = {
   staffId: 'treble',
@@ -2047,7 +2052,7 @@ describe('StaffRenderer', () => {
     expect(pedalY).toBeLessThan(lyricY);
   });
 
-  it('bases below-staff annotation rows on the annotated voice instead of lower parallel voices', async () => {
+  it('keeps below-staff annotations clear of lower parallel voice ink', async () => {
     const annotatedVoiceScore = placeScoreEvent(createEmptyScore('treble'), {
       eventId: 'annotated-upper-voice',
       staffId: 'treble',
@@ -2085,7 +2090,7 @@ describe('StaffRenderer', () => {
     const lyricY = Number(screen.getByTestId('rendered-lyric').getAttribute('y'));
     const lowerVoiceY = getPitchY({ step: 'C', octave: 3 }, 'treble', 0);
 
-    expect(lyricY).toBeLessThan(lowerVoiceY + 20);
+    expect(lyricY).toBeGreaterThan(lowerVoiceY + 24);
   });
 
   it('keeps manual above annotation overrides close to the owning staff', async () => {
@@ -2130,6 +2135,56 @@ describe('StaffRenderer', () => {
     );
     expect(lyricY).toBeGreaterThanOrEqual(getStaffTop(0) - 42);
     expect(lyricY).toBeLessThan(getStaffTop(0));
+  });
+
+  it('keeps manual above lyrics clear of the owning voice ink', async () => {
+    const lowNoteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'manual-above-low-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'F', octave: 4 },
+    });
+    const highNoteScore = placeScoreEvent(lowNoteScore, {
+      eventId: 'same-voice-high-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 2,
+      duration: 'half',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 6 },
+    });
+    const annotatedScore = tryUpdateScoreEvent(highNoteScore, 'manual-above-low-note', {
+      lyric: 'toi',
+    }).score;
+    const score = tryUpdateScoreEvent(annotatedScore, 'manual-above-low-note', {
+      annotationPlacement: {
+        kind: 'lyric',
+        side: 'above',
+      },
+    }).score;
+
+    render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-lyric')).toHaveTextContent('toi');
+    });
+
+    const lyricY = Number(screen.getByTestId('rendered-lyric').getAttribute('y'));
+    const lyricBottom = lyricY + ANNOTATION_METRICS.lyric.descent;
+    const highNoteInkTop =
+      getPitchY({ step: 'C', octave: 6 }, 'treble', 0) -
+      NOTEHEAD_ANNOTATION_INK_PADDING;
+
+    expect(screen.getByTestId('rendered-lyric')).toHaveAttribute(
+      'data-annotation-side',
+      'above',
+    );
+    expect(lyricBottom).toBeLessThanOrEqual(
+      highNoteInkTop - ABOVE_STAFF_INK_GAP,
+    );
   });
 
   it('honors a manual annotation placement override', async () => {
