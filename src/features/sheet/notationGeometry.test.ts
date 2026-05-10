@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { placeScoreEvent } from '../../domain/score/editing';
+import { placeScoreEvent, tryUpdateScoreEvent } from '../../domain/score/editing';
 import { createEmptyScore } from '../../domain/score/factories';
 import {
   FIRST_MEASURE_LEFT_PADDING,
@@ -113,10 +113,26 @@ describe('notation geometry', () => {
         }),
       createEmptyScore('grand', { measureCount: 4 }),
     );
+    const nextTrebleMeasureScore = Array.from({ length: 4 }, (_, index) => index).reduce(
+      (currentScore, index) =>
+        placeScoreEvent(currentScore, {
+          eventId: `next-treble-quarter-${index}`,
+          staffId: 'treble',
+          measureIndex: 1,
+          beat: index,
+          duration: 'quarter',
+          entryMode: 'note',
+          pitch: {
+            step: index % 2 === 0 ? 'E' : 'G',
+            octave: 4,
+          },
+        }),
+      denseMeasureScore,
+    );
     const score = Array.from({ length: 4 }, (_, index) => index).reduce(
       (currentScore, index) =>
         placeScoreEvent(currentScore, {
-          eventId: `next-measure-quarter-${index}`,
+          eventId: `next-bass-quarter-${index}`,
           staffId: 'bass',
           measureIndex: 1,
           beat: index,
@@ -127,7 +143,7 @@ describe('notation geometry', () => {
             octave: 3,
           },
         }),
-      denseMeasureScore,
+      nextTrebleMeasureScore,
     );
 
     expect(getScoreSystemCount(score)).toBeGreaterThan(1);
@@ -137,6 +153,81 @@ describe('notation geometry', () => {
     expect(getScoreStaffTop(score, 0, 1)).toBeGreaterThan(
       getScoreStaffTop(score, 0, 0),
     );
+  });
+
+  it('wraps by the densest voice lane instead of summed noteheads across staves', () => {
+    const score = [0, 1, 2].reduce((measureScore, measureIndex) => {
+      const trebleScore = Array.from({ length: 4 }, (_, beat) => beat).reduce(
+        (currentScore, beat) =>
+          placeScoreEvent(currentScore, {
+            eventId: `treble-m${measureIndex}-b${beat}`,
+            staffId: 'treble',
+            measureIndex,
+            beat,
+            duration: 'quarter',
+            entryMode: 'note',
+            pitch: { step: beat % 2 === 0 ? 'E' : 'G', octave: 4 },
+          }),
+        measureScore,
+      );
+
+      return measureIndex < 2
+        ? Array.from({ length: 4 }, (_, beat) => beat).reduce(
+            (currentScore, beat) =>
+              placeScoreEvent(currentScore, {
+                eventId: `bass-m${measureIndex}-b${beat}`,
+                staffId: 'bass',
+                measureIndex,
+                beat,
+                duration: 'quarter',
+                entryMode: 'note',
+                pitch: { step: beat % 2 === 0 ? 'C' : 'E', octave: 3 },
+              }),
+            trebleScore,
+          )
+        : trebleScore;
+    }, createEmptyScore('grand', { measureCount: 4 }));
+
+    expect(getSystemIndex(0, score)).toBe(0);
+    expect(getSystemIndex(1, score)).toBe(0);
+    expect(getSystemIndex(2, score)).toBe(0);
+    expect(getScoreSystemCount(score)).toBe(1);
+  });
+
+  it('adds inter-system padding for previous bass annotations', () => {
+    const lowBassNoteScore = placeScoreEvent(
+      createEmptyScore('grand', { measureCount: 8 }),
+      {
+        eventId: 'low-bass-annotated',
+        staffId: 'bass',
+        measureIndex: 0,
+        beat: 0,
+        duration: 'quarter',
+        entryMode: 'note',
+        pitch: { step: 'A', octave: 0 },
+      },
+    );
+    const annotatedScore = tryUpdateScoreEvent(
+      lowBassNoteScore,
+      'low-bass-annotated',
+      {
+        dynamic: 'ff',
+        lyric: 'low',
+        pedal: 'start',
+      },
+    ).score;
+    const plainNextSystemTop = getScoreStaffTop(
+      createEmptyScore('grand', { measureCount: 8 }),
+      0,
+      MEASURES_PER_SYSTEM,
+    );
+    const annotatedNextSystemTop = getScoreStaffTop(
+      annotatedScore,
+      0,
+      MEASURES_PER_SYSTEM,
+    );
+
+    expect(annotatedNextSystemTop).toBeGreaterThan(plainNextSystemTop);
   });
 
   it('wraps measure x positions and moves later systems down the page', () => {

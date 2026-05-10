@@ -78,38 +78,42 @@ function getSystemVoiceEventInkBounds(
         getSystemIndex(layout.measureIndex, score) === systemIndex &&
         !layout.isGeneratedRest,
     )
-    .map((layout) => ({
-      maxX:
-        layout.pitchLayouts.length > 0
-          ? Math.max(
-              layout.maxX,
-              ...layout.pitchLayouts.map((pitchLayout) => pitchLayout.maxX),
-            )
-          : layout.maxX,
-      maxY:
-        layout.pitchLayouts.length > 0
-          ? Math.max(
-              layout.maxY,
-              Math.max(...layout.pitchLayouts.map((pitchLayout) => pitchLayout.y)) +
-                NOTEHEAD_ANNOTATION_INK_PADDING,
-            )
-          : layout.maxY,
-      minX:
-        layout.pitchLayouts.length > 0
-          ? Math.min(
-              layout.minX,
-              ...layout.pitchLayouts.map((pitchLayout) => pitchLayout.minX),
-            )
-          : layout.minX,
-      minY:
-        layout.pitchLayouts.length > 0
-          ? Math.min(
-              layout.minY,
-              Math.min(...layout.pitchLayouts.map((pitchLayout) => pitchLayout.y)) -
-                NOTEHEAD_ANNOTATION_INK_PADDING,
-            )
-          : layout.minY,
-    }));
+    .map(getEventInkBounds);
+}
+
+function getEventInkBounds(layout: RenderedEventLayout): AnnotationBounds {
+  return {
+    maxX:
+      layout.pitchLayouts.length > 0
+        ? Math.max(
+            layout.maxX,
+            ...layout.pitchLayouts.map((pitchLayout) => pitchLayout.maxX),
+          )
+        : layout.maxX,
+    maxY:
+      layout.pitchLayouts.length > 0
+        ? Math.max(
+            layout.maxY,
+            Math.max(...layout.pitchLayouts.map((pitchLayout) => pitchLayout.y)) +
+              NOTEHEAD_ANNOTATION_INK_PADDING,
+          )
+        : layout.maxY,
+    minX:
+      layout.pitchLayouts.length > 0
+        ? Math.min(
+            layout.minX,
+            ...layout.pitchLayouts.map((pitchLayout) => pitchLayout.minX),
+          )
+        : layout.minX,
+    minY:
+      layout.pitchLayouts.length > 0
+        ? Math.min(
+            layout.minY,
+            Math.min(...layout.pitchLayouts.map((pitchLayout) => pitchLayout.y)) -
+              NOTEHEAD_ANNOTATION_INK_PADDING,
+          )
+        : layout.minY,
+  };
 }
 
 function getSystemVoiceEventLayoutBounds(
@@ -309,12 +313,6 @@ export function drawTextAnnotations(
             systemIndex,
             voiceIndex,
           );
-          const belowStaffBaseline = Math.max(
-            staffBottom,
-            voiceInkBounds?.maxY ?? staffBottom,
-          ) +
-            BELOW_STAFF_INK_GAP +
-            ANNOTATION_METRICS.lyric.height;
           const sortedEvents = [...voice.events].sort((a, b) => a.beat - b.beat);
 
           sortedEvents.forEach((event, eventIndex) => {
@@ -341,6 +339,14 @@ export function drawTextAnnotations(
                 aboveStaffPlacements,
                 belowStaffPlacements,
               );
+              const localInkBottom = Math.max(
+                staffBottom,
+                getEventInkBounds(layout).maxY,
+              );
+              const belowStaffBaseline =
+                localInkBottom +
+                BELOW_STAFF_INK_GAP +
+                ANNOTATION_METRICS.lyric.height;
               const placement = placeAnnotationInRows({
                 blockers: staffInkBlockers,
                 direction: side,

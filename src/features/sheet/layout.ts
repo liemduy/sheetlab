@@ -24,6 +24,7 @@ import {
 } from './measureDensity';
 import {
   computeSystemAboveStaffExtent,
+  computeSystemBelowStaffExtent,
   computeSystemStaffGap,
 } from './staffSpacing';
 import {
@@ -70,6 +71,7 @@ function getSystemTopPadding(
   score: Score,
   systemIndex: number,
   measureIndexes: number[],
+  previousMeasureIndexes?: number[],
 ) {
   if (systemIndex === 0) {
     return 0;
@@ -81,12 +83,21 @@ function getSystemTopPadding(
     systemIndex,
     measureIndexes,
   );
+  const previousBelowExtent = computeSystemBelowStaffExtent(
+    score,
+    score.type === 'grand' ? 1 : 0,
+    systemIndex - 1,
+    previousMeasureIndexes,
+  );
   const baseSystemGap =
     score.type === 'grand' ? GRAND_SYSTEM_PADDING : TREBLE_SYSTEM_GAP;
   const availableAboveStaff = baseSystemGap - STAFF_LINE_SPACING * 4;
   const minimumClearance = 16;
 
-  return Math.max(0, aboveExtent + minimumClearance - availableAboveStaff);
+  return Math.max(
+    0,
+    previousBelowExtent + aboveExtent + minimumClearance - availableAboveStaff,
+  );
 }
 
 function getScoreLayoutCache(score: Score) {
@@ -103,7 +114,12 @@ function getScoreLayoutCache(score: Score) {
       : STAFF_GAP,
   );
   const systemTopPaddings = systems.map((system, systemIndex) =>
-    getSystemTopPadding(score, systemIndex, system.measureIndexes),
+    getSystemTopPadding(
+      score,
+      systemIndex,
+      system.measureIndexes,
+      systems[systemIndex - 1]?.measureIndexes,
+    ),
   );
   const systemTops: number[] = [];
   const measureSystemIndexes = Array.from(

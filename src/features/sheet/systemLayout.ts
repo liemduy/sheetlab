@@ -3,7 +3,7 @@ import {
   MAX_SYSTEM_NOTEHEADS,
   MEASURES_PER_SYSTEM,
 } from './layoutConstants';
-import { countMeasureNoteheads } from './measureDensity';
+import { countMeasureLaneDensities } from './measureDensity';
 
 export interface ScoreSystemLayout {
   firstMeasureIndex: number;
@@ -31,15 +31,19 @@ export function computeScoreSystems(score: Score): ScoreSystemLayout[] {
   const measureCount = getScoreMeasureCount(score);
   const systems: ScoreSystemLayout[] = [];
   let currentSystemMeasureIndexes: number[] = [];
-  let currentSystemNoteheads = 0;
+  let currentSystemLaneDensities = new Map<string, number>();
 
   for (let measureIndex = 0; measureIndex < measureCount; measureIndex += 1) {
-    const measureNoteheads = countMeasureNoteheads(score, measureIndex);
+    const measureLaneDensities = countMeasureLaneDensities(score, measureIndex);
     const shouldBreakForCount =
       currentSystemMeasureIndexes.length >= MEASURES_PER_SYSTEM;
     const shouldBreakForDensity =
       currentSystemMeasureIndexes.length > 0 &&
-      currentSystemNoteheads + measureNoteheads > MAX_SYSTEM_NOTEHEADS;
+      [...measureLaneDensities].some(
+        ([laneKey, measureDensity]) =>
+          (currentSystemLaneDensities.get(laneKey) ?? 0) + measureDensity >
+          MAX_SYSTEM_NOTEHEADS,
+      );
 
     if (shouldBreakForCount || shouldBreakForDensity) {
       systems.push({
@@ -47,11 +51,16 @@ export function computeScoreSystems(score: Score): ScoreSystemLayout[] {
         measureIndexes: currentSystemMeasureIndexes,
       });
       currentSystemMeasureIndexes = [];
-      currentSystemNoteheads = 0;
+      currentSystemLaneDensities = new Map<string, number>();
     }
 
     currentSystemMeasureIndexes.push(measureIndex);
-    currentSystemNoteheads += measureNoteheads;
+    measureLaneDensities.forEach((measureDensity, laneKey) => {
+      currentSystemLaneDensities.set(
+        laneKey,
+        (currentSystemLaneDensities.get(laneKey) ?? 0) + measureDensity,
+      );
+    });
   }
 
   if (currentSystemMeasureIndexes.length > 0) {

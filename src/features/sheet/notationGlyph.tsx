@@ -13,6 +13,7 @@ interface NoteGlyphProps {
   duration: DurationValue;
   measureIndex?: number;
   pitch: Pitch;
+  score?: Score;
   staffIndex: number;
   staffGap?: number;
   systemGap?: number;
@@ -29,6 +30,7 @@ interface ChordGlyphProps {
     pitch: Pitch;
     y: number;
   }>;
+  score?: Score;
   staffIndex: number;
   staffGap?: number;
   systemGap?: number;
@@ -40,6 +42,7 @@ interface RestGlyphProps {
   dots?: number;
   duration: DurationValue;
   measureIndex?: number;
+  score?: Score;
   staffGap?: number;
   staffIndex?: number;
   systemGap?: number;
@@ -127,9 +130,12 @@ function getStemDirection(
   staffGap = STAFF_GAP,
   measureIndex = 0,
   systemGap = staffGap + 152,
+  score?: Score,
 ) {
   const middleLineY =
-    getStaffTop(staffIndex, staffGap, measureIndex, systemGap) +
+    (score
+      ? getScoreStaffTop(score, staffIndex, measureIndex)
+      : getStaffTop(staffIndex, staffGap, measureIndex, systemGap)) +
     STAFF_LINE_SPACING * 2;
 
   return y <= middleLineY ? 'down' : 'up';
@@ -141,11 +147,19 @@ function getChordStemDirection(
   staffGap = STAFF_GAP,
   measureIndex = 0,
   systemGap = staffGap + 152,
+  score?: Score,
 ) {
   const averageY =
     notes.reduce((total, note) => total + note.y, 0) / Math.max(1, notes.length);
 
-  return getStemDirection(averageY, staffIndex, staffGap, measureIndex, systemGap);
+  return getStemDirection(
+    averageY,
+    staffIndex,
+    staffGap,
+    measureIndex,
+    systemGap,
+    score,
+  );
 }
 
 function getChordHeadOffsetX(
@@ -209,8 +223,11 @@ function getDotY(
   staffGap = STAFF_GAP,
   measureIndex = 0,
   systemGap = staffGap + 152,
+  score?: Score,
 ) {
-  const staffTop = getStaffTop(staffIndex, staffGap, measureIndex, systemGap);
+  const staffTop = score
+    ? getScoreStaffTop(score, staffIndex, measureIndex)
+    : getStaffTop(staffIndex, staffGap, measureIndex, systemGap);
   const relativeHalfSteps = Math.round(
     ((y - staffTop) / STAFF_LINE_SPACING) * 2,
   );
@@ -224,6 +241,7 @@ function DotMarks({
   staffGap = STAFF_GAP,
   staffIndex,
   measureIndex = 0,
+  score,
   systemGap = staffGap + 152,
   x,
   y,
@@ -232,6 +250,7 @@ function DotMarks({
   staffGap?: number;
   staffIndex: number;
   measureIndex?: number;
+  score?: Score;
   systemGap?: number;
   x: number;
   y: number;
@@ -240,7 +259,7 @@ function DotMarks({
     return null;
   }
 
-  const dotY = getDotY(y, staffIndex, staffGap, measureIndex, systemGap);
+  const dotY = getDotY(y, staffIndex, staffGap, measureIndex, systemGap, score);
 
   return (
     <>
@@ -279,6 +298,7 @@ export function NoteGlyph({
   duration,
   measureIndex = 0,
   pitch,
+  score,
   staffIndex,
   staffGap = STAFF_GAP,
   systemGap = staffGap + 152,
@@ -293,6 +313,7 @@ export function NoteGlyph({
     staffGap,
     measureIndex,
     systemGap,
+    score,
   );
   const stemX = stemDirection === 'up' ? x + NOTEHEAD_RX : x - NOTEHEAD_RX;
   const stemEndY = stemDirection === 'up' ? y - STEM_LENGTH : y + STEM_LENGTH;
@@ -304,7 +325,10 @@ export function NoteGlyph({
       data-visual-x={x.toFixed(2)}
       data-visual-y={y.toFixed(2)}
     >
-      {getLedgerLineYs(y, staffIndex, staffGap, measureIndex, systemGap).map((lineY) => (
+      {(score
+        ? getLedgerLineYsForScore(y, score, staffIndex, measureIndex)
+        : getLedgerLineYs(y, staffIndex, staffGap, measureIndex, systemGap)
+      ).map((lineY) => (
         <line
           key={lineY}
           className="notation-ledger-line"
@@ -337,6 +361,7 @@ export function NoteGlyph({
         staffGap={staffGap}
         staffIndex={staffIndex}
         measureIndex={measureIndex}
+        score={score}
         systemGap={systemGap}
         x={x}
         y={y}
@@ -350,6 +375,7 @@ export function ChordGlyph({
   duration,
   measureIndex = 0,
   notes,
+  score,
   staffIndex,
   staffGap = STAFF_GAP,
   systemGap = staffGap + 152,
@@ -364,6 +390,7 @@ export function ChordGlyph({
     staffGap,
     measureIndex,
     systemGap,
+    score,
   );
   const noteYs = sortedNotes.map((note) => note.y);
   const stemX = stemDirection === 'up' ? x + NOTEHEAD_RX : x - NOTEHEAD_RX;
@@ -391,12 +418,15 @@ export function ChordGlyph({
             }`}
             data-pitch={`${note.pitch.step}${note.pitch.octave}`}
           >
-            {getLedgerLineYs(
-              note.y,
-              staffIndex,
-              staffGap,
-              measureIndex,
-              systemGap,
+            {(score
+              ? getLedgerLineYsForScore(note.y, score, staffIndex, measureIndex)
+              : getLedgerLineYs(
+                  note.y,
+                  staffIndex,
+                  staffGap,
+                  measureIndex,
+                  systemGap,
+                )
             ).map((lineY) => (
               <line
                 key={lineY}
@@ -421,6 +451,7 @@ export function ChordGlyph({
               staffGap={staffGap}
               staffIndex={staffIndex}
               measureIndex={measureIndex}
+              score={score}
               systemGap={systemGap}
               x={headX}
               y={note.y}
@@ -446,6 +477,7 @@ export function RestGlyph({
   dots = 0,
   duration,
   measureIndex = 0,
+  score,
   staffGap = STAFF_GAP,
   staffIndex = 0,
   systemGap = staffGap + 152,
@@ -465,6 +497,7 @@ export function RestGlyph({
         staffGap={staffGap}
         staffIndex={staffIndex}
         measureIndex={measureIndex}
+        score={score}
         systemGap={systemGap}
         x={x}
         y={y}

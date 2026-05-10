@@ -1524,6 +1524,47 @@ describe('StaffRenderer', () => {
     );
   });
 
+  it('keeps ghost ledger lines attached to dynamically spaced later systems', () => {
+    const firstSystemStressScore = placeScoreEvent(
+      createEmptyScore('grand', { measureCount: 8 }),
+      {
+        eventId: 'first-system-low-note',
+        staffId: 'treble',
+        measureIndex: 0,
+        beat: 0,
+        duration: 'quarter',
+        entryMode: 'note',
+        pitch: { step: 'C', octave: 3 },
+      },
+    );
+    const score = tryUpdateScoreEvent(firstSystemStressScore, 'first-system-low-note', {
+      lyric: 'low',
+    }).score;
+    const measureIndex = MEASURES_PER_SYSTEM;
+    const pitch: Pitch = { step: 'C', octave: 4 };
+    const hoverPosition: MusicPosition = {
+      staffId: 'treble',
+      staffIndex: 0,
+      measureIndex,
+      beat: 0,
+      pitch,
+      x: getBeatX(measureIndex, 0, score.timeSignature.beats, score),
+      y: getScoreStaffTop(score, 0, measureIndex) + STAFF_LINE_SPACING * 5,
+    };
+
+    render(<StaffRenderer hoverPosition={hoverPosition} score={score} />);
+
+    const ledgerLines = screen
+      .getByTestId('ghost-event')
+      .querySelectorAll('[data-testid="ledger-line"]');
+
+    expect(ledgerLines).toHaveLength(1);
+    expect(Number(ledgerLines[0]?.getAttribute('y1'))).toBeCloseTo(
+      getScoreStaffTop(score, 0, measureIndex) + STAFF_LINE_SPACING * 5,
+      2,
+    );
+  });
+
   it('expands the grand staff gap when ledger lines from both staves need more room', () => {
     const trebleLowScore = placeScoreEvent(createEmptyScore('grand'), {
       eventId: 'treble-low-ledger',
@@ -1929,6 +1970,50 @@ describe('StaffRenderer', () => {
     });
   });
 
+  it('keeps lyric map connectors local when a target is on another system', async () => {
+    const firstNoteScore = placeScoreEvent(
+      createEmptyScore('treble', { measureCount: 8 }),
+      {
+        eventId: 'cross-system-lyric',
+        staffId: 'treble',
+        measureIndex: 0,
+        beat: 0,
+        duration: 'quarter',
+        entryMode: 'note',
+        pitch: { step: 'E', octave: 4 },
+      },
+    );
+    const secondSystemNoteScore = placeScoreEvent(firstNoteScore, {
+      eventId: 'cross-system-target',
+      staffId: 'treble',
+      measureIndex: MEASURES_PER_SYSTEM,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'G', octave: 4 },
+    });
+    const score = tryUpdateScoreEvent(secondSystemNoteScore, 'cross-system-lyric', {
+      lyric: 'hold',
+      lyricMap: { eventIds: ['cross-system-target'] },
+    }).score;
+
+    render(<StaffRenderer score={score} showLyricMap />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-lyric')).toHaveTextContent('hold');
+      expect(screen.getByTestId('lyric-map-connector')).toHaveAttribute(
+        'data-target-event-ids',
+        'cross-system-target',
+      );
+    });
+
+    const connector = screen.getByTestId('lyric-map-connector');
+    const y1 = Number(connector.getAttribute('y1'));
+    const y2 = Number(connector.getAttribute('y2'));
+
+    expect(Math.abs(y2 - y1)).toBeLessThanOrEqual(STAFF_LINE_SPACING * 3);
+  });
+
   it('renders dynamic, fermata, pedal, and glissando event markings', async () => {
     const firstNoteScore = placeScoreEvent(createEmptyScore('treble'), {
       eventId: 'marked-note-1',
@@ -2091,6 +2176,43 @@ describe('StaffRenderer', () => {
     const lowerVoiceY = getPitchY({ step: 'C', octave: 3 }, 'treble', 0);
 
     expect(lyricY).toBeGreaterThan(lowerVoiceY + 24);
+  });
+
+  it('keeps below-staff lyrics close to their local note instead of a distant low note', async () => {
+    const lowNoteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'distant-low-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 3 },
+    });
+    const annotatedNoteScore = placeScoreEvent(lowNoteScore, {
+      eventId: 'local-annotated-note',
+      staffId: 'treble',
+      measureIndex: 2,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+    const score = tryUpdateScoreEvent(annotatedNoteScore, 'local-annotated-note', {
+      lyric: 'em',
+    }).score;
+
+    render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-lyric')).toHaveTextContent('em');
+    });
+
+    const lyricY = Number(screen.getByTestId('rendered-lyric').getAttribute('y'));
+    const lyricTop = lyricY - ANNOTATION_METRICS.lyric.height;
+    const localStaffBottom =
+      getScoreStaffTop(score, 0, 2) + STAFF_LINE_SPACING * 4;
+
+    expect(lyricTop).toBeLessThanOrEqual(localStaffBottom + 42);
   });
 
   it('keeps manual above annotation overrides close to the owning staff', async () => {

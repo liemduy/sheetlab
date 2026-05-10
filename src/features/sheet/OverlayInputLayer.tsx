@@ -67,6 +67,7 @@ export function GhostEvent({
           dots={dots}
           measureIndex={position.measureIndex}
           pitch={position.pitch}
+          score={score}
           staffGap={currentStaffGap}
           staffIndex={position.staffIndex}
           systemGap={systemGap}
@@ -79,6 +80,7 @@ export function GhostEvent({
           duration={duration}
           dots={dots}
           measureIndex={position.measureIndex}
+          score={score}
           staffGap={currentStaffGap}
           staffIndex={position.staffIndex}
           systemGap={systemGap}

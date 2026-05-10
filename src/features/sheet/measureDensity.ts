@@ -89,6 +89,43 @@ export function countMeasureNoteheads(score: Score, measureIndex: number) {
     }, 0);
 }
 
+function getEventLaneDensity(event: Score['parts'][number]['staves'][number]['measures'][number]['voices'][number]['events'][number]) {
+  if (isGeneratedRestEvent(event) || event.kind === 'rest') {
+    return 0;
+  }
+
+  const pitchCount = getEventPitches(event).length;
+
+  return pitchCount <= 1 ? 1 : 1 + (pitchCount - 1) * 0.25;
+}
+
+export function countMeasureLaneDensities(score: Score, measureIndex: number) {
+  const laneDensities = new Map<string, number>();
+
+  score.parts
+    .flatMap((part) => part.staves)
+    .forEach((staff) => {
+      const measure = staff.measures.find(
+        (candidate) => candidate.index === measureIndex,
+      );
+
+      measure?.voices.forEach((voice, voiceIndex) => {
+        const laneKey = `${staff.id}:${voiceIndex}`;
+        const voiceDensity = voice.events.reduce(
+          (total, event) => total + getEventLaneDensity(event),
+          0,
+        );
+
+        laneDensities.set(
+          laneKey,
+          (laneDensities.get(laneKey) ?? 0) + voiceDensity,
+        );
+      });
+    });
+
+  return laneDensities;
+}
+
 export function getMeasureSlotWeight(score: Score, measureIndex: number) {
   const beatsPerMeasure = getMeasureBeats(score.timeSignature);
 
