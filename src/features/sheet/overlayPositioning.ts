@@ -11,6 +11,7 @@ import {
 import { getBeatX, getPitchYForScore } from './notationGeometry';
 import type { RenderedEventLayout } from './renderedEventLayout';
 import {
+  findRhythmSlotAtBeat,
   findRhythmSlotAtPosition,
   getRhythmSlotsForMeasure,
 } from './rhythmSlots';
@@ -117,8 +118,27 @@ export function snapPositionToInputGrid(
   eventLayouts: Record<string, RenderedEventLayout> = {},
   voiceIndex = 0,
 ) {
+  const beatMatchedSlot = findRhythmSlotAtBeat(
+    score,
+    position.staffId,
+    position.measureIndex,
+    position.beat,
+    voiceIndex,
+  );
+  const exactBeatMatchedTupletSlot =
+    beatMatchedSlot?.event?.tuplet &&
+    Math.abs(beatMatchedSlot.beat - position.beat) <= BEAT_MATCH_EPSILON
+      ? beatMatchedSlot
+      : null;
   const activeSlot =
-    findRenderedRhythmSlotAtPosition(position, score, eventLayouts, voiceIndex) ??
+    exactBeatMatchedTupletSlot
+      ? exactBeatMatchedTupletSlot
+      : findRenderedRhythmSlotAtPosition(
+          position,
+          score,
+          eventLayouts,
+          voiceIndex,
+        ) ??
     findRhythmSlotAtPosition(score, position, voiceIndex);
   const activeSlotLayout = activeSlot ? eventLayouts[activeSlot.eventId] : undefined;
   const rhythmSlotPosition = activeSlot
