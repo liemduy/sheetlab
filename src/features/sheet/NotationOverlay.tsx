@@ -210,7 +210,10 @@ export function NotationOverlay({
     inputCursor && hoverPosition
       ? inputCursorToMusicPosition(inputCursor, score)
       : null;
-  const hoverSourcePosition = inputCursorPosition ?? hoverPosition;
+  const hoverSourcePosition =
+    inputCursor?.tuplet && hoverPosition
+      ? hoverPosition
+      : inputCursorPosition ?? hoverPosition;
   const preferredStaffId =
     hoverPosition?.staffId ?? inputCursor?.staffId ?? null;
   const snappedHoverPosition = hoverSourcePosition
