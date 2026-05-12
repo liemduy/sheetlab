@@ -14,6 +14,12 @@ export type AccidentalChoice = Accidental | 'none';
 
 export type EditableVoiceIndex = 0 | 1;
 
+export interface TupletToolState {
+  actualNotes: SupportedTupletActualNotes;
+  normalNotes: number;
+  totalDuration: DurationValue;
+}
+
 export interface EditorToolState {
   scoreType: ScoreType;
   duration: DurationValue;
@@ -26,7 +32,7 @@ export interface EditorToolState {
   voiceIndex: EditableVoiceIndex;
   showLayoutZones: boolean;
   showLyricMap: boolean;
-  tuplet: SupportedTupletActualNotes | null;
+  tuplet: TupletToolState | null;
 }
 
 export const DURATION_OPTIONS: DurationValue[] = [

@@ -7,12 +7,16 @@ import {
 import { applyActiveKeySignatureToPitch } from '../../domain/score/keySignatures';
 import { getMeasureBeats } from '../../domain/score/timeSignatures';
 import type { Score, StaffId } from '../../domain/score/types';
+import { getTupletSlotDuration } from '../../domain/score/tuplets';
 import type { EditorToolState } from '../editor/editorState';
 import type { InputCursor } from '../editor/inputCursor';
 import { createInputCursorFromPosition } from '../editor/inputCursor';
 import { playPitchPreview } from '../playback/audioEngine';
 import type { MusicPosition } from '../sheet/interaction';
-import { findRhythmSlotAtPosition } from '../sheet/rhythmSlots';
+import {
+  findRhythmSlotAtBeat,
+  findRhythmSlotAtPosition,
+} from '../sheet/rhythmSlots';
 import { snapInsertPositionToEventBoundary } from '../sheet/insertPosition';
 import {
   createCursorAfterPlacement,
@@ -30,6 +34,7 @@ interface UseCursorPlacementOptions {
   onInactivePlace: () => void;
   score: Score;
   toolState: EditorToolState;
+  updateToolState: (update: Partial<EditorToolState>) => void;
 }
 
 export function useCursorPlacement({
@@ -39,6 +44,7 @@ export function useCursorPlacement({
   onInactivePlace,
   score,
   toolState,
+  updateToolState,
 }: UseCursorPlacementOptions) {
   const [hoverPosition, setHoverPosition] = useState<MusicPosition | null>(null);
   const [inputCursor, setInputCursor] = useState<InputCursor | null>(null);
@@ -57,11 +63,19 @@ export function useCursorPlacement({
       return;
     }
 
-    const targetSlot = findRhythmSlotAtPosition(
-      score,
-      nextHoverPosition,
-      toolState.voiceIndex,
-    );
+    const targetSlot =
+      findRhythmSlotAtBeat(
+        score,
+        nextHoverPosition.staffId,
+        nextHoverPosition.measureIndex,
+        nextHoverPosition.beat,
+        toolState.voiceIndex,
+      ) ??
+      findRhythmSlotAtPosition(
+        score,
+        nextHoverPosition,
+        toolState.voiceIndex,
+      );
     const hoverDuration = targetSlot?.event?.tuplet
       ? targetSlot.duration
       : toolState.duration;
@@ -106,22 +120,37 @@ export function useCursorPlacement({
     const accidental =
       toolState.accidental === 'none' ? undefined : toolState.accidental;
     const eventId = `event-${eventCounter.current++}`;
-    const targetSlot = findRhythmSlotAtPosition(
-      score,
-      placementPosition,
-      toolState.voiceIndex,
-    );
+    const targetSlot =
+      findRhythmSlotAtBeat(
+        score,
+        placementPosition.staffId,
+        placementPosition.measureIndex,
+        placementPosition.beat,
+        toolState.voiceIndex,
+      ) ??
+      findRhythmSlotAtPosition(
+        score,
+        placementPosition,
+        toolState.voiceIndex,
+      );
     const slotTuplet = targetSlot?.event?.tuplet;
 
     if (toolState.tuplet && !slotTuplet) {
+      const totalDuration = toolState.tuplet.totalDuration;
+      const slotDuration = getTupletSlotDuration(
+        totalDuration,
+        toolState.tuplet.actualNotes,
+        toolState.tuplet.normalNotes,
+      );
       const result = tryPlaceTupletGroup(score, {
         accidental,
-        actualNotes: toolState.tuplet,
+        actualNotes: toolState.tuplet.actualNotes,
         beat: placementPosition.beat,
-        duration: toolState.duration,
+        duration: totalDuration,
         entryMode: toolState.entryMode,
         eventId,
         measureIndex: placementPosition.measureIndex,
+        normalNotes: toolState.tuplet.normalNotes,
         pitch: placementPosition.pitch,
         staffId: placementPosition.staffId,
         voiceIndex: toolState.voiceIndex,
@@ -144,11 +173,17 @@ export function useCursorPlacement({
           ]);
         }
         setHoverPosition(null);
+        updateToolState({
+          dots: 0,
+          duration: slotDuration ?? toolState.duration,
+          isInputArmed: true,
+          tuplet: null,
+        });
         setInputCursor(
           createCursorAfterPlacement(
             result.score,
             placementPosition,
-            toolState.duration,
+            slotDuration ?? toolState.duration,
             0,
             toolState.voiceIndex,
           ),

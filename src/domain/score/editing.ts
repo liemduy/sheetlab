@@ -12,7 +12,6 @@ import type {
   StaffId,
   TupletInfo,
 } from './types';
-import { getDurationBeats } from './durations';
 import {
   getEventDurationBeats,
   getEventDurationTicks,

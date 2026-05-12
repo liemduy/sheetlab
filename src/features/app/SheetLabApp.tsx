@@ -84,6 +84,7 @@ function SheetLabApp() {
     onInactivePlace: handleClearInteraction,
     score,
     toolState,
+    updateToolState,
   });
   const {
     clearMeasureUiState,
@@ -171,6 +172,7 @@ function SheetLabApp() {
     selectedMeasure,
     selectedPitchIndex,
     setEditorMessage,
+    toolState,
     updateToolState,
   });
 

@@ -20,6 +20,7 @@ import {
 import type { Score, StaffId } from './types';
 import { getMeasureTicks } from './ticks';
 import { getEventDurationTicks } from './eventDuration';
+import { getScoreRhythmIssues } from './rhythm';
 
 function getVoiceEvents(
   score: Score,
@@ -189,6 +190,62 @@ describe('score editing', () => {
       'rest',
     ]);
     expectMeasureEventsFillMeasure(result.score);
+  });
+
+  it('replaces every rest slot inside an existing triplet group', () => {
+    const tripletResult = tryPlaceTupletGroup(createEmptyScore('treble'), {
+      eventId: 'fillable-triplet',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      actualNotes: 3,
+      pitch: { step: 'C', octave: 4 },
+    });
+    const tripletSlots = (getVoiceEvents(tripletResult.score) ?? []).filter(
+      (event) => event.tuplet?.id === 'tuplet-fillable-triplet',
+    );
+    const secondSlot = tripletSlots[1];
+    const thirdSlot = tripletSlots[2];
+
+    expect(secondSlot?.tuplet?.index).toBe(1);
+    expect(thirdSlot?.tuplet?.index).toBe(2);
+
+    const secondResult = tryPlaceScoreEvent(tripletResult.score, {
+      eventId: 'triplet-note-2',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: secondSlot?.beat ?? 0,
+      duration: secondSlot?.duration ?? 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'D', octave: 4 },
+      tuplet: secondSlot?.tuplet,
+    });
+    const thirdResult = tryPlaceScoreEvent(secondResult.score, {
+      eventId: 'triplet-note-3',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: thirdSlot?.beat ?? 0,
+      duration: thirdSlot?.duration ?? 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+      tuplet: thirdSlot?.tuplet,
+    });
+    const filledTriplet = (getVoiceEvents(thirdResult.score) ?? []).filter(
+      (event) => event.tuplet?.id === 'tuplet-fillable-triplet',
+    );
+
+    expect(secondResult.placed).toBe(true);
+    expect(thirdResult.placed).toBe(true);
+    expect(filledTriplet.map((event) => event.kind)).toEqual([
+      'note',
+      'note',
+      'note',
+    ]);
+    expect(filledTriplet.map((event) => event.beat)).toEqual([0, 0.3333, 0.6667]);
+    expect(getScoreRhythmIssues(thirdResult.score)).toEqual([]);
+    expectMeasureEventsFillMeasure(thirdResult.score);
   });
 
   it('clamps placed notes to the staff readable ledger range', () => {

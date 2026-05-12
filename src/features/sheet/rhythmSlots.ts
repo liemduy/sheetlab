@@ -147,6 +147,36 @@ export function findRhythmSlotAtPosition(
   )[0] ?? null;
 }
 
+export function findRhythmSlotAtBeat(
+  score: Score,
+  staffId: StaffId,
+  measureIndex: number,
+  beat: number,
+  voiceIndex = 0,
+) {
+  const slots = getRhythmSlotsForMeasure(
+    score,
+    staffId,
+    measureIndex,
+    voiceIndex,
+  );
+  const sameStartSlot = slots.find(
+    (slot) => Math.abs(slot.beat - beat) <= SLOT_EPSILON,
+  );
+
+  if (sameStartSlot) {
+    return sameStartSlot;
+  }
+
+  return (
+    slots.find(
+      (slot) =>
+        beat >= slot.beat - SLOT_EPSILON &&
+        beat < slot.endBeat - SLOT_EPSILON,
+    ) ?? null
+  );
+}
+
 export function findNextRhythmSlotAfter(
   score: Score,
   staffId: StaffId,

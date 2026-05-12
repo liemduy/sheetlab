@@ -317,10 +317,14 @@ export function EditorToolbar({
         <button
           type="button"
           aria-label="Triplet"
-          className={`tool-button${toolState.tuplet === 3 ? ' is-active' : ''}`}
-          aria-pressed={toolState.tuplet === 3}
+          className={`tool-button${
+            toolState.tuplet?.actualNotes === 3 ? ' is-active' : ''
+          }`}
+          aria-pressed={toolState.tuplet?.actualNotes === 3}
           title="Triplet: split the selected duration into three equal notes"
-          onClick={() => onTupletChange(toolState.tuplet === 3 ? null : 3)}
+          onClick={() =>
+            onTupletChange(toolState.tuplet?.actualNotes === 3 ? null : 3)
+          }
         >
           <span className="tool-symbol tuplet-symbol" aria-hidden="true">
             3

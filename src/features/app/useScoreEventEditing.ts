@@ -15,6 +15,7 @@ import {
   diatonicValueToPitch,
   pitchToDiatonicValue,
 } from '../../domain/score/pitchRange';
+import { getTupletSlotDuration } from '../../domain/score/tuplets';
 import type { MusicPosition } from '../sheet/interaction';
 import { pitchesMatch } from './inputCursorFlow';
 import type { MeasureTarget, SelectionSource } from './selectionTypes';
@@ -38,6 +39,7 @@ interface UseScoreEventEditingOptions {
   selectedMeasure: MeasureTarget | null;
   selectedPitchIndex: number | null;
   setEditorMessage: (message: string) => void;
+  toolState: EditorToolState;
   updateToolState: (update: Partial<EditorToolState>) => void;
 }
 
@@ -56,6 +58,7 @@ export function useScoreEventEditing({
   selectedMeasure,
   selectedPitchIndex,
   setEditorMessage,
+  toolState,
   updateToolState,
 }: UseScoreEventEditingOptions) {
   function updateSelectedEvent(
@@ -133,11 +136,20 @@ export function useScoreEventEditing({
     }
 
     if (selectedEventId && selectedEventSource === 'manual') {
+      const foundEvent = findScoreEvent(score, selectedEventId);
+      const slotDuration = foundEvent
+        ? getTupletSlotDuration(foundEvent.event.duration, actualNotes)
+        : null;
       const result = tryCreateTupletFromEvent(score, selectedEventId, actualNotes);
 
       if (result.updated) {
         commitScoreChange(result.score, 'Triplet created');
-        updateToolState({ dots: 0, isInputArmed: false, tuplet: null });
+        updateToolState({
+          dots: 0,
+          duration: slotDuration ?? toolState.duration,
+          isInputArmed: true,
+          tuplet: null,
+        });
         clearPointerState();
         clearMeasureSelection();
       } else {
@@ -147,7 +159,23 @@ export function useScoreEventEditing({
       return;
     }
 
-    updateToolState({ dots: 0, isInputArmed: true, tuplet: actualNotes });
+    const slotDuration = getTupletSlotDuration(toolState.duration, actualNotes);
+
+    if (!slotDuration) {
+      setEditorMessage('Cannot create triplet from this duration');
+      return;
+    }
+
+    updateToolState({
+      dots: 0,
+      duration: slotDuration,
+      isInputArmed: true,
+      tuplet: {
+        actualNotes,
+        normalNotes: 2,
+        totalDuration: toolState.duration,
+      },
+    });
     clearPointerState();
     clearMeasureSelection();
     setEditorMessage('Triplet entry enabled');

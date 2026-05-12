@@ -230,6 +230,28 @@ describe('App editor state', () => {
     ).toBeInTheDocument();
   });
 
+  it('enables triplet entry by switching to the matching slot duration', () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Triplet' }));
+
+    expect(screen.getByRole('button', { name: 'Triplet' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Eighth' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Quarter' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText('Eighth'),
+    ).toBeInTheDocument();
+  });
+
   it('does not recenter the notation viewport when changing write toolbar options', () => {
     const scrollIntoView = vi.fn();
 
