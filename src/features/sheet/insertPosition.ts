@@ -1,5 +1,4 @@
-import { getDurationBeats } from '../../domain/score/durations';
-import { getEventDots } from '../../domain/score/events';
+import { getEventDurationBeats } from '../../domain/score/eventDuration';
 import type { Score } from '../../domain/score/types';
 import type { MusicPosition } from './interaction';
 
@@ -23,8 +22,7 @@ export function snapInsertPositionToEventBoundary(
   }
 
   const containingEvent = targetVoice.events.find((event) => {
-    const eventEnd =
-      event.beat + getDurationBeats(event.duration, getEventDots(event));
+    const eventEnd = event.beat + getEventDurationBeats(event);
 
     return (
       event.kind !== 'rest' &&
@@ -37,9 +35,7 @@ export function snapInsertPositionToEventBoundary(
     return position;
   }
 
-  const eventEnd =
-    containingEvent.beat +
-    getDurationBeats(containingEvent.duration, getEventDots(containingEvent));
+  const eventEnd = containingEvent.beat + getEventDurationBeats(containingEvent);
   const distanceToStart = position.beat - containingEvent.beat;
   const distanceToEnd = eventEnd - position.beat;
   const snappedBeat =

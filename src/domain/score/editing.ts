@@ -10,8 +10,13 @@ import type {
   ScoreEvent,
   Staff,
   StaffId,
+  TupletInfo,
 } from './types';
 import { getDurationBeats } from './durations';
+import {
+  getEventDurationBeats,
+  getEventDurationTicks,
+} from './eventDuration';
 import {
   getEventPitches,
   getEventDots,
@@ -30,6 +35,13 @@ import {
 } from './measureEvents';
 import { ensureMeasureCount } from './measureEditing';
 import { getMeasureBeats } from './timeSignatures';
+import {
+  createTupletInfo,
+  getTupletSlotDuration,
+  getTupletSlotEffectiveBeats,
+  isSupportedTupletActualNotes,
+  type SupportedTupletActualNotes,
+} from './tuplets';
 import { ensureMeasureVoiceCount, normalizeVoiceIndex } from './voices';
 
 export {
@@ -56,13 +68,27 @@ export interface PlaceScoreEventRequest {
   pitch: Pitch;
   accidental?: Accidental;
   dots?: number;
+  tuplet?: TupletInfo;
   voiceIndex?: number;
 }
 
 export interface PlaceScoreEventResult {
   score: Score;
   placed: boolean;
-  reason?: 'measure-overflow' | 'event-overlap' | 'missing-target';
+  reason?:
+    | 'measure-overflow'
+    | 'event-overlap'
+    | 'missing-target'
+    | 'unsupported-tuplet';
+}
+
+export interface PlaceTupletGroupRequest extends Omit<
+  PlaceScoreEventRequest,
+  'dots' | 'duration' | 'tuplet'
+> {
+  actualNotes: SupportedTupletActualNotes;
+  duration: DurationValue;
+  normalNotes?: number;
 }
 
 export interface UpdateScoreEventRequest {
@@ -87,6 +113,7 @@ export interface UpdateScoreEventRequest {
   lyric?: string | null;
   lyricMap?: LyricMap | null;
   pedal?: PedalMark | null;
+  tuplet?: TupletInfo | null;
 }
 
 export interface UpdateScoreEventResult {
@@ -103,6 +130,7 @@ function createScoreEvent(request: PlaceScoreEventRequest): ScoreEvent {
       beat: request.beat,
       duration: request.duration,
       dots: request.dots || undefined,
+      tuplet: request.tuplet,
     };
   }
 
@@ -112,6 +140,7 @@ function createScoreEvent(request: PlaceScoreEventRequest): ScoreEvent {
     beat: request.beat,
     duration: request.duration,
     dots: request.dots || undefined,
+    tuplet: request.tuplet,
     pitch: {
       ...request.pitch,
       accidental: request.accidental,
@@ -160,6 +189,7 @@ function clampScoreEventToStaffRange(event: ScoreEvent, staff: Staff): ScoreEven
         lyricMap: event.lyricMap,
         pedal: event.pedal,
         pitch,
+        tuplet: event.tuplet,
       };
     }
 
@@ -216,6 +246,7 @@ function mergePitchedEventWithNote(
     dynamic: existingEvent.dynamic,
     duration: noteEvent.duration,
     dots: noteEvent.dots,
+    tuplet: noteEvent.tuplet ?? existingEvent.tuplet,
     fermata: existingEvent.fermata,
     glissando: existingEvent.glissando,
     annotationPlacements: existingEvent.annotationPlacements,
@@ -224,6 +255,20 @@ function mergePitchedEventWithNote(
     pedal: existingEvent.pedal,
     pitches,
   };
+}
+
+function getTupletSlotKey(event: ScoreEvent) {
+  return event.tuplet ? `${event.tuplet.id}:${event.tuplet.index}` : '';
+}
+
+function eventsShareRhythmSlot(first: ScoreEvent, second: ScoreEvent) {
+  return (
+    getEventStartTick(first) === getEventStartTick(second) &&
+    first.duration === second.duration &&
+    getEventDots(first) === getEventDots(second) &&
+    getEventDurationTicks(first) === getEventDurationTicks(second) &&
+    getTupletSlotKey(first) === getTupletSlotKey(second)
+  );
 }
 
 function applyPitchUpdate(
@@ -302,6 +347,8 @@ function createUpdatedEventBase(
     lyricMap:
       update.lyricMap === undefined ? event.lyricMap : update.lyricMap ?? undefined,
     pedal: update.pedal === undefined ? event.pedal : update.pedal ?? undefined,
+    tuplet:
+      update.tuplet === undefined ? event.tuplet : update.tuplet ?? undefined,
   };
 }
 
@@ -405,7 +452,7 @@ function writeScoreEvent(
     eventsOverlapByTick(boundedEvent, event),
   );
   const hasUserEventOverlap = overlappingEvents.some(
-    (event) => !isGeneratedRestEvent(event),
+    (event) => !isGeneratedRestEvent(event) && isPitchedScoreEvent(event),
   );
 
   if (options.allowInvalidMeasure && (measureOverflow || hasUserEventOverlap)) {
@@ -539,6 +586,345 @@ function writeScoreEvent(
   };
 }
 
+function replaceVoiceEvents(
+  score: Score,
+  staffId: StaffId,
+  measureIndex: number,
+  voiceIndex: number,
+  events: ScoreEvent[],
+): Score {
+  return {
+    ...score,
+    parts: score.parts.map((part) => ({
+      ...part,
+      staves: part.staves.map((staff) =>
+        staff.id === staffId
+          ? {
+              ...staff,
+              measures: staff.measures.map((measure) => {
+                if (measure.index !== measureIndex) {
+                  return measure;
+                }
+
+                const measureWithVoice = ensureMeasureVoiceCount(
+                  measure,
+                  staff.id,
+                  voiceIndex,
+                );
+
+                return {
+                  ...measureWithVoice,
+                  voices: measureWithVoice.voices.map((voice, index) =>
+                    index === voiceIndex
+                      ? {
+                          ...voice,
+                          events,
+                        }
+                      : voice,
+                  ),
+                };
+              }),
+            }
+          : staff,
+      ),
+    })),
+  };
+}
+
+function roundBeat(beat: number) {
+  return Number(beat.toFixed(4));
+}
+
+function createTupletId(sourceId: string) {
+  return `tuplet-${sourceId}`;
+}
+
+function createTupletRestEvent(
+  eventId: string,
+  beat: number,
+  duration: DurationValue,
+  tuplet: TupletInfo,
+): ScoreEvent {
+  return {
+    id: eventId,
+    kind: 'rest',
+    beat,
+    duration,
+    tuplet,
+  };
+}
+
+function createTupletGroupFromEvent(
+  sourceEvent: ScoreEvent,
+  actualNotes: SupportedTupletActualNotes,
+) {
+  const slotDuration = getTupletSlotDuration(sourceEvent.duration, actualNotes);
+
+  if (!slotDuration || sourceEvent.tuplet) {
+    return null;
+  }
+
+  const tupletId = createTupletId(sourceEvent.id);
+  const normalNotes = 2;
+  const slotBeatStep = getTupletSlotEffectiveBeats(
+    slotDuration,
+    actualNotes,
+    normalNotes,
+  );
+
+  return Array.from({ length: actualNotes }, (_, index): ScoreEvent => {
+    const tuplet = createTupletInfo({
+      actualNotes,
+      id: tupletId,
+      index,
+      normalNotes,
+    });
+    const beat = roundBeat(sourceEvent.beat + slotBeatStep * index);
+
+    if (index === 0) {
+      return {
+        ...sourceEvent,
+        beat,
+        duration: slotDuration,
+        dots: undefined,
+        tuplet,
+      };
+    }
+
+    return createTupletRestEvent(
+      `${tupletId}-rest-${index}`,
+      beat,
+      slotDuration,
+      tuplet,
+    );
+  });
+}
+
+export function tryCreateTupletFromEvent(
+  score: Score,
+  eventId: string,
+  actualNotes: SupportedTupletActualNotes = 3,
+): UpdateScoreEventResult {
+  if (!isSupportedTupletActualNotes(actualNotes)) {
+    return {
+      score,
+      updated: false,
+      reason: 'unsupported-tuplet',
+    };
+  }
+
+  const found = findScoreEvent(score, eventId);
+
+  if (!found) {
+    return {
+      score,
+      updated: false,
+      reason: 'missing-event',
+    };
+  }
+
+  const group = createTupletGroupFromEvent(found.event, actualNotes);
+
+  if (!group) {
+    return {
+      score,
+      updated: false,
+      reason: 'unsupported-tuplet',
+    };
+  }
+
+  const targetVoice = getTargetVoice(
+    score,
+    found.staffId,
+    found.measureIndex,
+    found.voiceIndex,
+  ).targetVoice;
+
+  if (!targetVoice) {
+    return {
+      score,
+      updated: false,
+      reason: 'missing-target',
+    };
+  }
+
+  try {
+    const nextEvents = materializeMeasureEvents(
+      [
+        ...targetVoice.events.filter((event) => event.id !== eventId),
+        ...group,
+      ],
+      score,
+      found.staffId,
+      found.measureIndex,
+    );
+
+    return {
+      score: replaceVoiceEvents(
+        score,
+        found.staffId,
+        found.measureIndex,
+        found.voiceIndex,
+        nextEvents,
+      ),
+      updated: true,
+    };
+  } catch (error) {
+    return {
+      score,
+      updated: false,
+      reason:
+        error instanceof Error &&
+        error.message === 'Rhythm event overflows measure'
+          ? 'measure-overflow'
+          : 'event-overlap',
+    };
+  }
+}
+
+export function tryPlaceTupletGroup(
+  score: Score,
+  request: PlaceTupletGroupRequest,
+): PlaceScoreEventResult {
+  const slotDuration = getTupletSlotDuration(
+    request.duration,
+    request.actualNotes,
+    request.normalNotes,
+  );
+
+  if (!slotDuration || !isSupportedTupletActualNotes(request.actualNotes)) {
+    return {
+      score,
+      placed: false,
+      reason: 'unsupported-tuplet',
+    };
+  }
+
+  const target = getTargetVoice(
+    score,
+    request.staffId,
+    request.measureIndex,
+    request.voiceIndex,
+  );
+
+  if (
+    !target.targetStaff ||
+    !target.targetMeasure ||
+    !target.targetMeasureWithVoice ||
+    !target.targetVoice
+  ) {
+    return {
+      score,
+      placed: false,
+      reason: 'missing-target',
+    };
+  }
+
+  const targetStaff = target.targetStaff;
+  const targetVoice = target.targetVoice;
+  const targetVoiceIndex = target.voiceIndex;
+  const normalNotes = request.normalNotes ?? 2;
+  const tupletId = createTupletId(request.eventId);
+  const slotBeatStep = getTupletSlotEffectiveBeats(
+    slotDuration,
+    request.actualNotes,
+    normalNotes,
+  );
+  const group = Array.from(
+    { length: request.actualNotes },
+    (_, index): ScoreEvent => {
+      const tuplet = createTupletInfo({
+        actualNotes: request.actualNotes,
+        id: tupletId,
+        index,
+        normalNotes,
+      });
+      const beat = roundBeat(request.beat + slotBeatStep * index);
+
+      if (index === 0) {
+        return createScoreEvent({
+          ...request,
+          beat,
+          dots: 0,
+          duration: slotDuration,
+          eventId: request.eventId,
+          tuplet,
+        });
+      }
+
+      return createTupletRestEvent(
+        `${tupletId}-rest-${index}`,
+        beat,
+        slotDuration,
+        tuplet,
+      );
+    },
+  ).map((event) => clampScoreEventToStaffRange(event, targetStaff));
+
+  const overflowsMeasure = group.some(
+    (event) => getEventEnd(event) > getMeasureBeats(score.timeSignature),
+  );
+
+  if (overflowsMeasure) {
+    return {
+      score,
+      placed: false,
+      reason: 'measure-overflow',
+    };
+  }
+
+  const overlapsUserPitchedEvent = targetVoice.events.some(
+    (event) =>
+      group.some((tupletEvent) => eventsOverlapByTick(tupletEvent, event)) &&
+      !isGeneratedRestEvent(event) &&
+      isPitchedScoreEvent(event),
+  );
+
+  if (overlapsUserPitchedEvent) {
+    return {
+      score,
+      placed: false,
+      reason: 'event-overlap',
+    };
+  }
+
+  try {
+    const nextEvents = materializeMeasureEvents(
+      [
+        ...targetVoice.events.filter(
+          (event) =>
+            !group.some((tupletEvent) => eventsOverlapByTick(tupletEvent, event)),
+        ),
+        ...group,
+      ],
+      score,
+      request.staffId,
+      request.measureIndex,
+    );
+
+    return {
+      score: replaceVoiceEvents(
+        score,
+        request.staffId,
+        request.measureIndex,
+        targetVoiceIndex,
+        nextEvents,
+      ),
+      placed: true,
+    };
+  } catch (error) {
+    return {
+      score,
+      placed: false,
+      reason:
+        error instanceof Error &&
+        error.message === 'Rhythm event overflows measure'
+          ? 'measure-overflow'
+          : 'event-overlap',
+    };
+  }
+}
+
 export function tryPlaceScoreEvent(
   score: Score,
   request: PlaceScoreEventRequest,
@@ -554,9 +940,7 @@ export function tryPlaceScoreEvent(
     (event) =>
       isPitchedScoreEvent(event) &&
       eventsOverlapByTick(candidateEvent, event) &&
-      getEventStartTick(event) === getEventStartTick(candidateEvent) &&
-      event.duration === candidateEvent.duration &&
-      getEventDots(event) === getEventDots(candidateEvent),
+      eventsShareRhythmSlot(event, candidateEvent),
   );
   const nextEvent =
     candidateEvent.kind === 'note' && sameSlotPitchedEvent
@@ -626,7 +1010,7 @@ export function tryInsertScoreEvent(
 
   const beatsPerMeasure = getMeasureBeats(score.timeSignature);
   const insertGlobalBeat = request.measureIndex * beatsPerMeasure + request.beat;
-  const insertDuration = getDurationBeats(request.duration, request.dots ?? 0);
+  const insertDuration = getEventDurationBeats(nextEvent);
   const flatEvents = targetStaff.measures.flatMap((measure) =>
     ensureMeasureVoiceCount(measure, request.staffId, targetVoiceIndex)
       .voices[targetVoiceIndex]?.events.map((event) => ({
@@ -635,8 +1019,7 @@ export function tryInsertScoreEvent(
     })) ?? [],
   ).filter(({ event }) => isPitchedScoreEvent(event));
   const insertionSplitsExistingEvent = flatEvents.some(({ event, globalBeat }) => {
-    const eventEnd =
-      globalBeat + getDurationBeats(event.duration, getEventDots(event));
+    const eventEnd = globalBeat + getEventDurationBeats(event);
 
     return globalBeat < insertGlobalBeat && eventEnd > insertGlobalBeat;
   });
@@ -664,7 +1047,7 @@ export function tryInsertScoreEvent(
     (maxEnd, { event, globalBeat }) =>
       Math.max(
         maxEnd,
-        globalBeat + getDurationBeats(event.duration, getEventDots(event)),
+        globalBeat + getEventDurationBeats(event),
       ),
     insertGlobalBeat + insertDuration,
   );
@@ -802,7 +1185,20 @@ export function deleteScoreEvent(score: Score, eventId: string): Score {
             ...voice,
             events: voice.events.some((event) => event.id === eventId)
               ? materializeAfterDelete(
-                  voice.events.filter((event) => event.id !== eventId),
+                  voice.events.flatMap((event) => {
+                    if (event.id !== eventId) {
+                      return [event];
+                    }
+
+                    return event.tuplet
+                      ? [createTupletRestEvent(
+                          event.id,
+                          event.beat,
+                          event.duration,
+                          event.tuplet,
+                        )]
+                      : [];
+                  }),
                   staff.id,
                   measure.index,
                 )
@@ -816,7 +1212,13 @@ export function deleteScoreEvent(score: Score, eventId: string): Score {
 
 function removePitchFromEvent(event: ScoreEvent, pitchIndex: number): ScoreEvent | null {
   if (event.kind === 'note') {
-    return pitchIndex === 0 ? null : event;
+    if (pitchIndex !== 0) {
+      return event;
+    }
+
+    return event.tuplet
+      ? createTupletRestEvent(event.id, event.beat, event.duration, event.tuplet)
+      : null;
   }
 
   if (event.kind !== 'chord') {
@@ -830,7 +1232,9 @@ function removePitchFromEvent(event: ScoreEvent, pitchIndex: number): ScoreEvent
   }
 
   if (remainingPitches.length === 0) {
-    return null;
+    return event.tuplet
+      ? createTupletRestEvent(event.id, event.beat, event.duration, event.tuplet)
+      : null;
   }
 
   if (remainingPitches.length === 1) {

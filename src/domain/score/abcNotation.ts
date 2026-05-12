@@ -15,6 +15,7 @@ import type {
 } from './types';
 import { getEventDots, getEventPitches } from './events';
 import { getDurationBeats } from './durations';
+import { getEventDurationBeats } from './eventDuration';
 import { getMeasureBeats, getTimeSignatureId } from './timeSignatures';
 import { getActiveKeySignatureSelection, isKeySignature } from './keySignatures';
 
@@ -103,9 +104,14 @@ function escapeAbcAnnotation(value: string) {
 }
 
 function encodeEventPrefix(event: ScoreEvent) {
-  return event.chordSymbol
+  const tupletPrefix = event.tuplet?.index === 0
+    ? `(${event.tuplet.actualNotes}`
+    : '';
+  const chordPrefix = event.chordSymbol
     ? `"${escapeAbcAnnotation(event.chordSymbol)}"`
     : '';
+
+  return `${tupletPrefix}${chordPrefix}`;
 }
 
 function encodePitch(pitch: Pitch) {
@@ -506,7 +512,7 @@ function pushEvent(
   const events = state.eventsByMeasure.get(state.measureIndex) ?? [];
   events.push(event);
   state.eventsByMeasure.set(state.measureIndex, events);
-  state.beat += getDurationBeats(event.duration, event.dots);
+  state.beat += getEventDurationBeats(event);
 }
 
 function advanceMeasure(state: ParseVoiceState) {

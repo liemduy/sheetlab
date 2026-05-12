@@ -39,7 +39,7 @@ export function useUndoRedoControls({
     setScore(previousScore);
     clearTransientInteraction();
     setInvalidMeasureKeys([]);
-    updateToolState({ isInputArmed: false });
+    updateToolState({ isInputArmed: false, tuplet: null });
     setEditorMessage('Undo');
   }
 
@@ -55,7 +55,7 @@ export function useUndoRedoControls({
     setScore(nextScore);
     clearTransientInteraction();
     setInvalidMeasureKeys([]);
-    updateToolState({ isInputArmed: false });
+    updateToolState({ isInputArmed: false, tuplet: null });
     setEditorMessage('Redo');
   }
 

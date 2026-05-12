@@ -15,7 +15,7 @@ import {
   getPlaybackScoreBeatAtSeconds,
   getTimelineDurationSeconds,
 } from './timeline';
-import type { ChordEvent } from '../../domain/score/types';
+import type { ChordEvent, ScoreEvent } from '../../domain/score/types';
 
 describe('playback timeline', () => {
   it('converts quarter notes to beat and second timings', () => {
@@ -136,6 +136,38 @@ describe('playback timeline', () => {
       ],
       startBeat: 0,
     });
+  });
+
+  it('uses effective triplet duration for playback timing', () => {
+    const score = createEmptyScore('treble', { measureCount: 1, tempo: 60 });
+    const events: ScoreEvent[] = [0, 1, 2].map((index) => ({
+      id: `triplet-note-${index}`,
+      kind: 'note',
+      beat: Number((index / 3).toFixed(4)),
+      duration: 'eighth',
+      pitch: { step: 'C', octave: 4 + index },
+      tuplet: {
+        actualNotes: 3,
+        id: 'tuplet-playback',
+        index,
+        normalNotes: 2,
+      },
+    }));
+
+    score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events.push(...events);
+
+    const timeline = buildPlaybackTimeline(score);
+
+    expect(timeline.map((event) => Number(event.startSeconds.toFixed(4)))).toEqual([
+      0,
+      0.3333,
+      0.6667,
+    ]);
+    expect(timeline.map((event) => Number(event.durationSeconds.toFixed(4)))).toEqual([
+      0.3333,
+      0.3333,
+      0.3333,
+    ]);
   });
 
   it('applies the active key signature to playback pitches', () => {

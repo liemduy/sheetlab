@@ -1,6 +1,6 @@
 import type { DurationValue, Score, ScoreEvent, StaffId } from './types';
-import { getDurationBeats } from './durations';
-import { getEventDots, isGeneratedRestEvent } from './events';
+import { isGeneratedRestEvent } from './events';
+import { getEventDurationTicks } from './eventDuration';
 import {
   beatToTick,
   getDurationTicks,
@@ -10,7 +10,7 @@ import {
 } from './ticks';
 
 export function getEventEnd(event: ScoreEvent) {
-  return event.beat + getDurationBeats(event.duration, getEventDots(event));
+  return tickToBeat(getEventEndTick(event));
 }
 
 export function getEventStartTick(event: ScoreEvent) {
@@ -18,7 +18,7 @@ export function getEventStartTick(event: ScoreEvent) {
 }
 
 export function getEventEndTick(event: ScoreEvent) {
-  return getEventStartTick(event) + getDurationTicks(event.duration, getEventDots(event));
+  return getEventStartTick(event) + getEventDurationTicks(event);
 }
 
 export function eventsOverlapByTick(candidate: ScoreEvent, existing: ScoreEvent) {

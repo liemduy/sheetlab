@@ -11,12 +11,15 @@ import {
   insertMeasureAt,
   placeScoreEvent,
   setMeasureSectionMarker,
+  tryCreateTupletFromEvent,
   tryPlaceScoreEvent,
   tryInsertScoreEvent,
+  tryPlaceTupletGroup,
   tryUpdateScoreEvent,
 } from './editing';
 import type { Score, StaffId } from './types';
-import { getDurationTicks, getMeasureTicks } from './ticks';
+import { getMeasureTicks } from './ticks';
+import { getEventDurationTicks } from './eventDuration';
 
 function getVoiceEvents(
   score: Score,
@@ -50,7 +53,7 @@ function expectMeasureEventsFillMeasure(
 
   expect(
     events.reduce(
-      (totalTicks, event) => totalTicks + getDurationTicks(event.duration),
+      (totalTicks, event) => totalTicks + getEventDurationTicks(event),
       0,
     ),
   ).toBe(getMeasureTicks(score.timeSignature));
@@ -123,6 +126,69 @@ describe('score editing', () => {
         duration: 'half',
       },
     ]);
+  });
+
+  it('splits a selected duration into a triplet group', () => {
+    const score = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'triplet-source',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const result = tryCreateTupletFromEvent(score, 'triplet-source', 3);
+    const events = getVoiceEvents(result.score) ?? [];
+    const tripletEvents = events.filter(
+      (event) => event.tuplet?.id === 'tuplet-triplet-source',
+    );
+
+    expect(result.updated).toBe(true);
+    expect(tripletEvents).toHaveLength(3);
+    expect(tripletEvents.map((event) => event.duration)).toEqual([
+      'eighth',
+      'eighth',
+      'eighth',
+    ]);
+    expect(tripletEvents.map((event) => event.beat)).toEqual([0, 0.3333, 0.6667]);
+    expect(tripletEvents.map((event) => event.tuplet?.index)).toEqual([0, 1, 2]);
+    expect(tripletEvents.map((event) => event.kind)).toEqual([
+      'note',
+      'rest',
+      'rest',
+    ]);
+    expectMeasureEventsFillMeasure(result.score);
+  });
+
+  it('places a triplet group from an armed duration', () => {
+    const score = createEmptyScore('treble');
+    const result = tryPlaceTupletGroup(score, {
+      eventId: 'triplet-entry',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 1,
+      duration: 'quarter',
+      entryMode: 'note',
+      actualNotes: 3,
+      pitch: { step: 'E', octave: 4 },
+    });
+    const events = getVoiceEvents(result.score) ?? [];
+    const tripletEvents = events.filter(
+      (event) => event.tuplet?.id === 'tuplet-triplet-entry',
+    );
+
+    expect(result.placed).toBe(true);
+    expect(tripletEvents.map((event) => event.beat)).toEqual([1, 1.3333, 1.6667]);
+    expect(tripletEvents[0]).toMatchObject({
+      kind: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+    expect(tripletEvents.slice(1).map((event) => event.kind)).toEqual([
+      'rest',
+      'rest',
+    ]);
+    expectMeasureEventsFillMeasure(result.score);
   });
 
   it('clamps placed notes to the staff readable ledger range', () => {

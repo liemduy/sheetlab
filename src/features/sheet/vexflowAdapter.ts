@@ -6,6 +6,7 @@ import type {
   ScoreEvent,
 } from '../../domain/score/types';
 import { getEventPitches } from '../../domain/score/events';
+import { getEventDurationBeats } from '../../domain/score/eventDuration';
 import { clampPitchToClefRange } from '../../domain/score/pitchRange';
 
 export interface VexFlowNoteSpec {
@@ -155,8 +156,7 @@ export function buildVexFlowMeasureNotes(
 
     cursorBeat = Math.max(
       cursorBeat,
-      event.beat +
-        (DURATION_BY_BEATS.find((entry) => entry.duration === event.duration)?.beats ?? 0),
+      event.beat + getEventDurationBeats(event),
     );
   }
 

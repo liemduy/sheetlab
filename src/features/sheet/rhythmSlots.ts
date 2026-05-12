@@ -1,5 +1,5 @@
-import { getDurationBeats } from '../../domain/score/durations';
 import { getEventDots } from '../../domain/score/events';
+import { getEventDurationBeats } from '../../domain/score/eventDuration';
 import {
   getDurationTicks,
   getMeasureTicks,
@@ -86,7 +86,7 @@ export function getRhythmSlotsForMeasure(
     .sort((a, b) => a.beat - b.beat)
     .map((event) => {
       const dots = getEventDots(event);
-      const durationBeats = getDurationBeats(event.duration, dots);
+      const durationBeats = getEventDurationBeats(event);
 
       return {
         beat: event.beat,

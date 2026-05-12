@@ -1,10 +1,9 @@
 import type { Score } from '../../domain/score/types';
-import { getDurationBeats } from '../../domain/score/durations';
 import {
-  getEventDots,
   getEventPitches,
   isGeneratedRestEvent,
 } from '../../domain/score/events';
+import { getEventDurationBeats } from '../../domain/score/eventDuration';
 import { getMeasureBeats } from '../../domain/score/timeSignatures';
 import { MEASURE_COMPLEXITY_WEIGHT_SCALE } from './layoutConstants';
 
@@ -38,7 +37,7 @@ function countMeasureRhythmIntervals(score: Score, measureIndex: number) {
 
           const eventStart = normalizeBoundary(event.beat, beatsPerMeasure);
           const eventEnd = normalizeBoundary(
-            event.beat + getDurationBeats(event.duration, getEventDots(event)),
+            event.beat + getEventDurationBeats(event),
             beatsPerMeasure,
           );
 

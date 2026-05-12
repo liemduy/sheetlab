@@ -11,6 +11,7 @@ import {
   StaveConnector,
   StaveNote,
   Stem,
+  Tuplet,
   Volta,
   Voice as VexFlowVoice,
 } from 'vexflow';
@@ -288,6 +289,62 @@ function applyRepeatJumpToStave(
   }
 }
 
+function createVexFlowTuplets(
+  events: ScoreEvent[],
+  notes: StaveNote[],
+  voiceIndex: number,
+) {
+  const groups = new Map<
+    string,
+    {
+      actualNotes: number;
+      normalNotes: number;
+      notesByIndex: Map<number, StaveNote>;
+    }
+  >();
+
+  events.forEach((event, eventIndex) => {
+    if (!event.tuplet) {
+      return;
+    }
+
+    const note = notes[eventIndex];
+
+    if (!note) {
+      return;
+    }
+
+    const group = groups.get(event.tuplet.id) ?? {
+      actualNotes: event.tuplet.actualNotes,
+      normalNotes: event.tuplet.normalNotes,
+      notesByIndex: new Map<number, StaveNote>(),
+    };
+
+    group.notesByIndex.set(event.tuplet.index, note);
+    groups.set(event.tuplet.id, group);
+  });
+
+  return [...groups.entries()].flatMap(([tupletId, group]) => {
+    const tupletNotes = [...group.notesByIndex.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([, note]) => note);
+
+    if (tupletNotes.length < 2) {
+      return [];
+    }
+
+    const tuplet = new Tuplet(tupletNotes, {
+      bracketed: true,
+      location:
+        voiceIndex === 1 ? Tuplet.LOCATION_BOTTOM : Tuplet.LOCATION_TOP,
+      notesOccupied: group.normalNotes,
+      numNotes: group.actualNotes,
+    });
+
+    return [{ id: tupletId, tuplet }];
+  });
+}
+
 function drawVexFlowMeasureEvents({
   beatsPerMeasure,
   context,
@@ -337,10 +394,16 @@ function drawVexFlowMeasureEvents({
     const notes = voiceGroup.events.map((event) =>
       createVexFlowNote(event, staff, stemDirection),
     );
+    const tuplets = createVexFlowTuplets(
+      voiceGroup.events,
+      notes,
+      voiceGroup.voiceIndex,
+    );
 
     return {
       ...voiceGroup,
       notes,
+      tuplets,
       vexFlowVoice: new VexFlowVoice({
         beatValue: score.timeSignature.beatUnit,
         numBeats: score.timeSignature.beats,
@@ -369,6 +432,17 @@ function drawVexFlowMeasureEvents({
     });
   vexFlowVoices.forEach((voice) => voice.draw(context, stave));
   beams.forEach((beam) => beam.setContext(context).draw());
+  renderedVoices
+    .flatMap((voice) => voice.tuplets)
+    .forEach(({ id, tuplet }) => {
+      tuplet.setContext(context).draw();
+      const svgElement = tuplet.getSVGElement();
+
+      if (svgElement) {
+        svgElement.setAttribute('data-testid', 'rendered-tuplet');
+        svgElement.setAttribute('data-tuplet-id', id);
+      }
+    });
 
   renderedVoices.forEach(({ events, notes, voiceIndex }) => {
     notes.forEach((note, noteIndex) => {
@@ -385,6 +459,10 @@ function drawVexFlowMeasureEvents({
       svgElement.setAttribute('data-measure-index', String(measureIndex));
       svgElement.setAttribute('data-pitch-count', String(getEventPitches(event).length));
       svgElement.setAttribute('data-staff-id', staff.id);
+      if (event.tuplet) {
+        svgElement.setAttribute('data-tuplet-id', event.tuplet.id);
+        svgElement.setAttribute('data-tuplet-index', String(event.tuplet.index));
+      }
       svgElement.setAttribute('data-voice-index', String(voiceIndex));
 
       const eventPitches = getEventPitches(event);

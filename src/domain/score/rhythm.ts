@@ -1,5 +1,5 @@
-import { getDurationTicks, getMeasureTicks, beatToTick, tickToBeat } from './ticks';
-import { getEventDots } from './events';
+import { getMeasureTicks, beatToTick, tickToBeat } from './ticks';
+import { getEventDurationTicks } from './eventDuration';
 import type { Score, ScoreEvent, StaffId, TimeSignature } from './types';
 
 export type RhythmSegmentSource = 'event' | 'implicit-rest';
@@ -54,10 +54,7 @@ export function normalizeMeasureVoice(
 
   for (const event of sortedEvents) {
     const eventStartTick = beatToTick(event.beat);
-    const eventDurationTicks = getDurationTicks(
-      event.duration,
-      getEventDots(event),
-    );
+    const eventDurationTicks = getEventDurationTicks(event);
     const eventEndTick = eventStartTick + eventDurationTicks;
 
     if (eventStartTick < cursorTick) {

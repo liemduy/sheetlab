@@ -3,6 +3,7 @@ import {
   deleteScoreEvent,
   deleteScoreEventPitch,
   findScoreEvent,
+  tryCreateTupletFromEvent,
   tryUpdateScoreEvent,
 } from '../../domain/score/editing';
 import type {
@@ -122,6 +123,34 @@ export function useScoreEventEditing({
       dotted ? 'Dotted note enabled' : 'Dotted note disabled',
       { allowInvalidMeasure: true },
     );
+  }
+
+  function handleTupletChange(actualNotes: 3 | null) {
+    if (actualNotes === null) {
+      updateToolState({ tuplet: null });
+      setEditorMessage('Triplet entry cleared');
+      return;
+    }
+
+    if (selectedEventId && selectedEventSource === 'manual') {
+      const result = tryCreateTupletFromEvent(score, selectedEventId, actualNotes);
+
+      if (result.updated) {
+        commitScoreChange(result.score, 'Triplet created');
+        updateToolState({ dots: 0, isInputArmed: false, tuplet: null });
+        clearPointerState();
+        clearMeasureSelection();
+      } else {
+        setEditorMessage(`Cannot create triplet: ${result.reason}`);
+      }
+
+      return;
+    }
+
+    updateToolState({ dots: 0, isInputArmed: true, tuplet: actualNotes });
+    clearPointerState();
+    clearMeasureSelection();
+    setEditorMessage('Triplet entry enabled');
   }
 
   function handleAccidentalChange(accidental: AccidentalChoice) {
@@ -274,5 +303,6 @@ export function useScoreEventEditing({
     handleDurationChange,
     handleMoveEvent,
     handleTransposeSelectedPitch,
+    handleTupletChange,
   };
 }

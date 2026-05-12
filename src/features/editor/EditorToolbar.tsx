@@ -217,6 +217,7 @@ interface EditorToolbarProps {
   onResetScore: () => void;
   onSaveProject: () => void;
   onTimeSignatureChange: (value: string) => void;
+  onTupletChange: (actualNotes: 3 | null) => void;
   onUndo: () => void;
   onVoiceIndexChange: (voiceIndex: EditableVoiceIndex) => void;
 }
@@ -259,6 +260,7 @@ export function EditorToolbar({
   onResetScore,
   onSaveProject,
   onTimeSignatureChange,
+  onTupletChange,
   onUndo,
   onVoiceIndexChange,
 }: EditorToolbarProps) {
@@ -310,6 +312,18 @@ export function EditorToolbar({
         >
           <span className="tool-symbol" aria-hidden="true">
             .
+          </span>
+        </button>
+        <button
+          type="button"
+          aria-label="Triplet"
+          className={`tool-button${toolState.tuplet === 3 ? ' is-active' : ''}`}
+          aria-pressed={toolState.tuplet === 3}
+          title="Triplet: split the selected duration into three equal notes"
+          onClick={() => onTupletChange(toolState.tuplet === 3 ? null : 3)}
+        >
+          <span className="tool-symbol tuplet-symbol" aria-hidden="true">
+            3
           </span>
         </button>
         {(['none', 'natural', 'sharp', 'flat'] satisfies AccidentalChoice[]).map(

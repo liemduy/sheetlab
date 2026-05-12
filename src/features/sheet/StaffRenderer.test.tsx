@@ -5,6 +5,7 @@ import {
   setMeasureKeySignature,
   setMeasureRepeatJump,
   setMeasureSectionMarker,
+  tryPlaceTupletGroup,
   tryUpdateScoreEvent,
 } from '../../domain/score/editing';
 import { createEmptyScore } from '../../domain/score/factories';
@@ -142,6 +143,25 @@ describe('StaffRenderer', () => {
     );
 
     expect(screen.queryByTestId('rhythm-slot')).not.toBeInTheDocument();
+  });
+
+  it('renders a triplet bracket for tuplet events', () => {
+    const result = tryPlaceTupletGroup(createEmptyScore('treble'), {
+      eventId: 'render-triplet',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      actualNotes: 3,
+      pitch: { step: 'C', octave: 4 },
+    });
+    const { container } = render(<StaffRenderer score={result.score} />);
+
+    expect(result.placed).toBe(true);
+    expect(container.querySelector('[data-tuplet-id="tuplet-render-triplet"]'))
+      .toBeInTheDocument();
+    expect(screen.getAllByTestId('rendered-tuplet')).toHaveLength(1);
   });
 
   it('renders only the active rhythm slot instead of every possible beat', () => {

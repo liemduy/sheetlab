@@ -155,6 +155,7 @@ function SheetLabApp() {
     handleDurationChange,
     handleMoveEvent,
     handleTransposeSelectedPitch,
+    handleTupletChange,
   } = useScoreEventEditing({
     clearMeasureSelection: () => setSelectedMeasure(null),
     clearMeasureUiState,
@@ -206,7 +207,7 @@ function SheetLabApp() {
   });
 
   function handleClearInteraction() {
-    updateToolState({ isInputArmed: false });
+    updateToolState({ isInputArmed: false, tuplet: null });
     clearTransientInteraction();
     setEditorMessage('Select mode');
   }
@@ -254,7 +255,7 @@ function SheetLabApp() {
   }
 
   function handleSelectMeasure(staffId: StaffId, measureIndex: number) {
-    updateToolState({ isInputArmed: false });
+    updateToolState({ isInputArmed: false, tuplet: null });
     clearPointerState();
     clearMeasureUiState();
     selectMeasure({ staffId, measureIndex });
@@ -287,6 +288,7 @@ function SheetLabApp() {
 
     updateToolState({
       isInputArmed: false,
+      tuplet: null,
       voiceIndex:
         foundEvent?.voiceIndex === 1 || foundEvent?.voiceIndex === 0
           ? foundEvent.voiceIndex
@@ -327,6 +329,7 @@ function SheetLabApp() {
       scoreType: loadedScore.type,
       tempo: loadedScore.tempo,
       isInputArmed: false,
+      tuplet: null,
     }));
     clearTransientInteraction();
     if (options?.closePalette) {
@@ -439,6 +442,7 @@ function SheetLabApp() {
           onResetScore={handleResetScore}
           onSaveProject={handleSaveProject}
           onTimeSignatureChange={handleTimeSignatureChange}
+          onTupletChange={handleTupletChange}
           onUndo={handleUndo}
           onVoiceIndexChange={handleVoiceIndexChange}
         />

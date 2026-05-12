@@ -4,7 +4,13 @@ import {
   snapBeatToInputSlot,
 } from '../../domain/score/inputGrid';
 import { getMeasureBeats } from '../../domain/score/timeSignatures';
-import type { DurationValue, Pitch, Score, StaffId } from '../../domain/score/types';
+import type {
+  DurationValue,
+  Pitch,
+  Score,
+  StaffId,
+  TupletInfo,
+} from '../../domain/score/types';
 import type { MusicPosition } from '../sheet/interaction';
 import { formatPitch } from '../sheet/interaction';
 
@@ -23,6 +29,17 @@ export interface InputCursor {
   pitchPreview: Pitch;
   staffId: StaffId;
   staffIndex: number;
+  tuplet?: TupletInfo;
+}
+
+export function getCursorDurationBeats(
+  cursor: Pick<InputCursor, 'dots' | 'duration' | 'tuplet'>,
+) {
+  const baseBeats = getDurationBeats(cursor.duration, cursor.dots ?? 0);
+
+  return cursor.tuplet
+    ? baseBeats * (cursor.tuplet.normalNotes / cursor.tuplet.actualNotes)
+    : baseBeats;
 }
 
 function getMeasureCount(score: Score, staffId: StaffId) {
@@ -39,9 +56,12 @@ export function createInputCursorFromPosition(
   mode: InputCursorMode = 'note-input',
   beatsPerMeasure = 4,
   dots = 0,
+  tuplet?: TupletInfo,
 ): InputCursor {
   return {
-    beat: snapBeatToInputSlot(position.beat, duration, beatsPerMeasure, dots),
+    beat: tuplet
+      ? position.beat
+      : snapBeatToInputSlot(position.beat, duration, beatsPerMeasure, dots),
     clientX: position.clientX,
     clientY: position.clientY,
     dots,
@@ -51,12 +71,13 @@ export function createInputCursorFromPosition(
     pitchPreview: position.pitch,
     staffId: position.staffId,
     staffIndex: position.staffIndex,
+    tuplet,
   };
 }
 
 export function advanceInputCursor(score: Score, cursor: InputCursor): InputCursor {
   const beatsPerMeasure = getMeasureBeats(score.timeSignature);
-  const durationBeats = getDurationBeats(cursor.duration, cursor.dots ?? 0);
+  const durationBeats = getCursorDurationBeats(cursor);
   const globalBeat =
     cursor.measureIndex * beatsPerMeasure + cursor.beat + durationBeats;
   const measureCount = getMeasureCount(score, cursor.staffId);

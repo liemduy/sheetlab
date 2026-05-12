@@ -15,6 +15,7 @@ import type {
   ScoreEvent,
   ScoreType,
   StaffId,
+  TupletInfo,
 } from './types';
 import { isRepeatJumpKind } from './repeatJumps';
 
@@ -123,6 +124,24 @@ function isLyricMap(value: unknown): value is LyricMap {
   );
 }
 
+function isTupletInfo(value: unknown): value is TupletInfo {
+  return (
+    isRecord(value) &&
+    isString(value.id) &&
+    isNumber(value.actualNotes) &&
+    Number.isInteger(value.actualNotes) &&
+    value.actualNotes >= 2 &&
+    value.actualNotes <= 9 &&
+    isNumber(value.normalNotes) &&
+    Number.isInteger(value.normalNotes) &&
+    value.normalNotes >= 1 &&
+    isNumber(value.index) &&
+    Number.isInteger(value.index) &&
+    value.index >= 0 &&
+    value.index < value.actualNotes
+  );
+}
+
 function isScoreEvent(value: unknown): value is ScoreEvent {
   if (!isRecord(value)) {
     return false;
@@ -141,6 +160,7 @@ function isScoreEvent(value: unknown): value is ScoreEvent {
     (value.lyric === undefined || isString(value.lyric)) &&
     (value.lyricMap === undefined || isLyricMap(value.lyricMap)) &&
     (value.pedal === undefined || PEDAL_MARKS.has(value.pedal as PedalMark)) &&
+    (value.tuplet === undefined || isTupletInfo(value.tuplet)) &&
     (value.dots === undefined ||
       (isNumber(value.dots) && value.dots >= 0 && value.dots <= 1));
 

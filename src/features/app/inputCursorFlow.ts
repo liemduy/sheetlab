@@ -58,12 +58,23 @@ export function createCursorAfterPlacement(
         clientX: undefined,
         clientY: undefined,
       };
+  const nextDuration = nextSlot?.event?.tuplet ? nextSlot.duration : duration;
+  const nextDots = nextSlot?.event?.tuplet ? nextSlot.dots ?? 0 : dots;
+  const nextTuplet = nextSlot?.event?.tuplet;
 
-  return createInputCursorFromPosition(
+  const cursor = createInputCursorFromPosition(
     nextPosition,
-    duration,
+    nextDuration,
     'note-input',
     getMeasureBeats(score.timeSignature),
-    dots,
+    nextDots,
+    nextTuplet,
   );
+
+  return nextSlot?.event?.tuplet
+    ? {
+        ...cursor,
+        beat: nextSlot.beat,
+      }
+    : cursor;
 }

@@ -4,6 +4,7 @@ import type {
   PageSize,
   ScoreType,
 } from '../../domain/score/types';
+import type { SupportedTupletActualNotes } from '../../domain/score/tuplets';
 
 export type EntryMode = 'note' | 'rest';
 
@@ -25,6 +26,7 @@ export interface EditorToolState {
   voiceIndex: EditableVoiceIndex;
   showLayoutZones: boolean;
   showLyricMap: boolean;
+  tuplet: SupportedTupletActualNotes | null;
 }
 
 export const DURATION_OPTIONS: DurationValue[] = [
@@ -50,6 +52,7 @@ export const DEFAULT_EDITOR_TOOL_STATE: EditorToolState = {
   voiceIndex: 0,
   showLayoutZones: false,
   showLyricMap: false,
+  tuplet: null,
 };
 
 export const DURATION_LABEL: Record<DurationValue, string> = {

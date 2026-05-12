@@ -1,7 +1,9 @@
-import { getDurationBeats } from '../../domain/score/durations';
 import { getMeasureBeats } from '../../domain/score/timeSignatures';
 import type { Score, ScoreEvent } from '../../domain/score/types';
-import type { InputCursor } from '../editor/inputCursor';
+import {
+  getCursorDurationBeats,
+  type InputCursor,
+} from '../editor/inputCursor';
 import {
   getScoreStaffTop,
   STAFF_LINE_SPACING,
@@ -150,7 +152,7 @@ export function getInputSlotLayout({
   );
   const slotEndBeat = Math.min(
     beatsPerMeasure,
-    cursor.beat + getDurationBeats(cursor.duration, cursor.dots ?? 0),
+    cursor.beat + getCursorDurationBeats(cursor),
   );
 
   return {

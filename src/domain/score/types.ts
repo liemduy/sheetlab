@@ -74,6 +74,13 @@ export interface LyricMap {
   eventIds: string[];
 }
 
+export interface TupletInfo {
+  actualNotes: number;
+  id: string;
+  index: number;
+  normalNotes: number;
+}
+
 export interface TimeSignature {
   beats: number;
   beatUnit: number;
@@ -104,6 +111,7 @@ export interface BaseScoreEvent {
   lyric?: string;
   lyricMap?: LyricMap;
   pedal?: PedalMark;
+  tuplet?: TupletInfo;
 }
 
 export interface NoteEvent extends BaseScoreEvent {
