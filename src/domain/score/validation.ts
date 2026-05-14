@@ -1,9 +1,12 @@
 import type {
   Accidental,
+  ArticulationKind,
   AnnotationKind,
   AnnotationPlacementSide,
   Clef,
+  ClefChange,
   DurationValue,
+  HairpinMark,
   KeySignature,
   KeySignatureAccidental,
   LyricMap,
@@ -13,11 +16,16 @@ import type {
   RepeatJumpKind,
   Score,
   ScoreEvent,
+  SlurMark,
   ScoreType,
+  StemDirection,
   StaffId,
+  TieMark,
   TupletInfo,
 } from './types';
+import { isArticulationKind } from './articulations';
 import { isRepeatJumpKind } from './repeatJumps';
+import { isStemDirection } from './stemDirection';
 
 const SCORE_TYPES = new Set<ScoreType>(['treble', 'grand']);
 const PAGE_SIZES = new Set<PageSize>(['a4', 'letter']);
@@ -42,6 +50,7 @@ const PEDAL_MARKS = new Set<PedalMark>([
   'release',
   'start-release',
 ]);
+const HAIRPIN_MARKS = new Set<HairpinMark>(['crescendo', 'diminuendo']);
 const ANNOTATION_KINDS = new Set<AnnotationKind>([
   'chordSymbol',
   'dynamic',
@@ -105,6 +114,16 @@ function isKeySignatureSymbol(value: unknown) {
   );
 }
 
+function isClefChange(value: unknown): value is ClefChange {
+  return (
+    isRecord(value) &&
+    isString(value.id) &&
+    isNumber(value.beat) &&
+    value.beat >= 0 &&
+    CLEFS.has(value.clef as Clef)
+  );
+}
+
 function isAnnotationPlacements(value: unknown) {
   return (
     isRecord(value) &&
@@ -122,6 +141,14 @@ function isLyricMap(value: unknown): value is LyricMap {
     Array.isArray(value.eventIds) &&
     value.eventIds.every(isString)
   );
+}
+
+function isArticulations(value: unknown): value is ArticulationKind[] {
+  return Array.isArray(value) && value.every(isArticulationKind);
+}
+
+function isScoreStemDirection(value: unknown): value is StemDirection {
+  return isStemDirection(value);
 }
 
 function isTupletInfo(value: unknown): value is TupletInfo {
@@ -142,6 +169,27 @@ function isTupletInfo(value: unknown): value is TupletInfo {
   );
 }
 
+function isTieMark(value: unknown): value is TieMark {
+  return (
+    isRecord(value) &&
+    isNumber(value.pitchIndex) &&
+    Number.isInteger(value.pitchIndex) &&
+    value.pitchIndex >= 0 &&
+    isString(value.targetEventId) &&
+    isNumber(value.targetPitchIndex) &&
+    Number.isInteger(value.targetPitchIndex) &&
+    value.targetPitchIndex >= 0
+  );
+}
+
+function isSlurMark(value: unknown): value is SlurMark {
+  return (
+    isRecord(value) &&
+    isString(value.id) &&
+    isString(value.targetEventId)
+  );
+}
+
 function isScoreEvent(value: unknown): value is ScoreEvent {
   if (!isRecord(value)) {
     return false;
@@ -151,15 +199,25 @@ function isScoreEvent(value: unknown): value is ScoreEvent {
     isString(value.id) &&
     DURATIONS.has(value.duration as DurationValue) &&
     isNumber(value.beat) &&
+    (value.articulations === undefined ||
+      isArticulations(value.articulations)) &&
+    (value.stemDirection === undefined ||
+      isScoreStemDirection(value.stemDirection)) &&
     (value.chordSymbol === undefined || isString(value.chordSymbol)) &&
     (value.dynamic === undefined || isString(value.dynamic)) &&
     (value.fermata === undefined || typeof value.fermata === 'boolean') &&
     (value.glissando === undefined || typeof value.glissando === 'boolean') &&
+    (value.hairpin === undefined ||
+      HAIRPIN_MARKS.has(value.hairpin as HairpinMark)) &&
     (value.annotationPlacements === undefined ||
       isAnnotationPlacements(value.annotationPlacements)) &&
     (value.lyric === undefined || isString(value.lyric)) &&
     (value.lyricMap === undefined || isLyricMap(value.lyricMap)) &&
     (value.pedal === undefined || PEDAL_MARKS.has(value.pedal as PedalMark)) &&
+    (value.slurs === undefined ||
+      (Array.isArray(value.slurs) && value.slurs.every(isSlurMark))) &&
+    (value.ties === undefined ||
+      (Array.isArray(value.ties) && value.ties.every(isTieMark))) &&
     (value.tuplet === undefined || isTupletInfo(value.tuplet)) &&
     (value.dots === undefined ||
       (isNumber(value.dots) && value.dots >= 0 && value.dots <= 1));
@@ -169,7 +227,17 @@ function isScoreEvent(value: unknown): value is ScoreEvent {
   }
 
   if (value.kind === 'rest') {
-    return true;
+    return (
+      value.articulations === undefined &&
+      value.hairpin === undefined &&
+      value.stemDirection === undefined &&
+      value.slurs === undefined &&
+      value.ties === undefined
+    );
+  }
+
+  if (value.duration === 'whole' && value.stemDirection !== undefined) {
+    return false;
   }
 
   if (value.kind === 'note') {
@@ -214,6 +282,9 @@ export function isScore(value: unknown): value is Score {
                 isRecord(measure) &&
                 isString(measure.id) &&
                 isNumber(measure.index) &&
+                (measure.clefChanges === undefined ||
+                  (Array.isArray(measure.clefChanges) &&
+                    measure.clefChanges.every(isClefChange))) &&
                 (measure.keySignature === undefined ||
                   KEY_SIGNATURES.has(measure.keySignature as KeySignature)) &&
                 (measure.keySignatureSymbols === undefined ||

@@ -7,6 +7,7 @@ import type {
   Staff,
 } from '../../domain/score/types';
 import { getActiveKeySignatureSymbolState } from '../../domain/score/keySignatures';
+import { getActiveClef } from '../../domain/score/clefChanges';
 import {
   getLocalMeasureIndex,
   getMeasureX,
@@ -113,7 +114,8 @@ export function getKeySignatureSymbolLayouts(score: Score) {
       const staffTop = getScoreStaffTop(score, staffIndex, measure.index);
 
       symbols.forEach((symbol, symbolIndex) => {
-        const pitch = getKeySignatureDisplayPitch(symbol, staff.clef);
+        const activeClef = getActiveClef(score, staff.id, measure.index, 0);
+        const pitch = getKeySignatureDisplayPitch(symbol, activeClef);
 
         layouts.push({
           accidental: symbol.accidental,
@@ -128,7 +130,7 @@ export function getKeySignatureSymbolLayouts(score: Score) {
           y:
             getPitchYForScore(
               pitch,
-              staff.clef,
+              activeClef,
               staffIndex,
               score,
               measure.index,

@@ -1,4 +1,4 @@
-import type { Score } from '../../domain/score/types';
+import type { Score, ScoreEvent } from '../../domain/score/types';
 import {
   getEventPitches,
   isGeneratedRestEvent,
@@ -7,20 +7,21 @@ import { getEventDurationBeats } from '../../domain/score/eventDuration';
 import { getMeasureBeats } from '../../domain/score/timeSignatures';
 import { MEASURE_COMPLEXITY_WEIGHT_SCALE } from './layoutConstants';
 
-function normalizeBoundary(beat: number, beatsPerMeasure: number) {
-  return Number(Math.min(beatsPerMeasure, Math.max(0, beat)).toFixed(4));
+const TUPLET_REST_LANE_DENSITY = 0.9;
+const TUPLET_NOTE_LANE_DENSITY_BONUS = 0.25;
+const LANE_DENSITY_SLOT_WEIGHT_SCALE = 0.65;
+
+function normalizeBoundary(beat: number) {
+  return Number(Math.max(0, beat).toFixed(4));
 }
 
 function countMeasureRhythmIntervals(score: Score, measureIndex: number) {
   const beatsPerMeasure = getMeasureBeats(score.timeSignature);
+  let maxBeat = beatsPerMeasure;
   const boundaries = new Set<number>([
     0,
     beatsPerMeasure,
   ]);
-
-  for (let beat = 1; beat < beatsPerMeasure; beat += 1) {
-    boundaries.add(normalizeBoundary(beat, beatsPerMeasure));
-  }
 
   score.parts
     .flatMap((part) => part.staves)
@@ -35,17 +36,21 @@ function countMeasureRhythmIntervals(score: Score, measureIndex: number) {
             return;
           }
 
-          const eventStart = normalizeBoundary(event.beat, beatsPerMeasure);
+          const eventStart = normalizeBoundary(event.beat);
           const eventEnd = normalizeBoundary(
             event.beat + getEventDurationBeats(event),
-            beatsPerMeasure,
           );
 
+          maxBeat = Math.max(maxBeat, eventEnd);
           boundaries.add(eventStart);
           boundaries.add(eventEnd);
         });
       });
     });
+
+  for (let beat = 1; beat < Math.ceil(maxBeat); beat += 1) {
+    boundaries.add(normalizeBoundary(beat));
+  }
 
   const sortedBoundaries = [...boundaries].sort((a, b) => a - b);
 
@@ -88,14 +93,19 @@ export function countMeasureNoteheads(score: Score, measureIndex: number) {
     }, 0);
 }
 
-function getEventLaneDensity(event: Score['parts'][number]['staves'][number]['measures'][number]['voices'][number]['events'][number]) {
-  if (isGeneratedRestEvent(event) || event.kind === 'rest') {
+function getEventLaneDensity(event: ScoreEvent) {
+  if (isGeneratedRestEvent(event)) {
     return 0;
   }
 
-  const pitchCount = getEventPitches(event).length;
+  if (event.kind === 'rest') {
+    return event.tuplet ? TUPLET_REST_LANE_DENSITY : 0;
+  }
 
-  return pitchCount <= 1 ? 1 : 1 + (pitchCount - 1) * 0.25;
+  const pitchCount = getEventPitches(event).length;
+  const tupletBonus = event.tuplet ? TUPLET_NOTE_LANE_DENSITY_BONUS : 0;
+
+  return (pitchCount <= 1 ? 1 : 1 + (pitchCount - 1) * 0.25) + tupletBonus;
 }
 
 export function countMeasureLaneDensities(score: Score, measureIndex: number) {
@@ -125,6 +135,12 @@ export function countMeasureLaneDensities(score: Score, measureIndex: number) {
   return laneDensities;
 }
 
+function getMeasureMaxLaneDensity(score: Score, measureIndex: number) {
+  const laneDensities = [...countMeasureLaneDensities(score, measureIndex).values()];
+
+  return laneDensities.length > 0 ? Math.max(...laneDensities) : 0;
+}
+
 export function getMeasureSlotWeight(score: Score, measureIndex: number) {
   const beatsPerMeasure = getMeasureBeats(score.timeSignature);
 
@@ -134,11 +150,31 @@ export function getMeasureSlotWeight(score: Score, measureIndex: number) {
   );
 }
 
+export function getMeasureReadableSlotWeight(
+  score: Score,
+  measureIndex: number,
+) {
+  const beatsPerMeasure = getMeasureBeats(score.timeSignature);
+  const laneDensitySlotWeight =
+    beatsPerMeasure +
+    Math.max(
+      0,
+      getMeasureMaxLaneDensity(score, measureIndex) - beatsPerMeasure,
+    ) *
+      LANE_DENSITY_SLOT_WEIGHT_SCALE;
+
+  return Math.max(
+    getMeasureSlotWeight(score, measureIndex),
+    laneDensitySlotWeight,
+  );
+}
+
 export function getMeasureDistributionWeight(score: Score, measureIndex: number) {
   const beatsPerMeasure = getMeasureBeats(score.timeSignature);
+  const effectiveSlotWeight = getMeasureReadableSlotWeight(score, measureIndex);
   const extraIntervals = Math.max(
     0,
-    getMeasureSlotWeight(score, measureIndex) - beatsPerMeasure,
+    effectiveSlotWeight - beatsPerMeasure,
   );
 
   return beatsPerMeasure + Math.sqrt(extraIntervals) * MEASURE_COMPLEXITY_WEIGHT_SCALE;

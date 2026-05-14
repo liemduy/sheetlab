@@ -1,4 +1,5 @@
 import type { Score } from '../../domain/score/types';
+import { getActiveClef } from '../../domain/score/clefChanges';
 import {
   getMeasureRight,
   getMeasureX,
@@ -91,7 +92,7 @@ export function getRenderedSystemStaffSymbolInkBounds(
 
   return [
     getClefInkBounds({
-      clef: staff.clef,
+      clef: getActiveClef(score, staff.id, firstMeasureIndex, 0),
       measureX: getMeasureX(firstMeasureIndex, score),
       staffTop: getScoreStaffTop(score, staffIndex, firstMeasureIndex),
     }),

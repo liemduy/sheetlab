@@ -2,7 +2,7 @@ import { getDurationBeats } from './durations';
 import type { DurationValue, TimeSignature } from './types';
 import { getMeasureBeats } from './timeSignatures';
 
-export const TICKS_PER_QUARTER = 480;
+export const TICKS_PER_QUARTER = 10080;
 
 const DURATION_VALUES_DESC: DurationValue[] = [
   'whole',

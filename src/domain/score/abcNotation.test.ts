@@ -30,6 +30,7 @@ describe('ABC notation conversion', () => {
                         id: 'voice-treble-1-main',
                         events: [
                           {
+                            articulations: ['accent', 'staccato'],
                             beat: 0,
                             chordSymbol: 'D',
                             duration: 'quarter',
@@ -97,7 +98,7 @@ describe('ABC notation conversion', () => {
     expect(abc).toContain('Q:1/4=96');
     expect(abc).toContain('K:D');
     expect(abc).toContain('V:T clef=treble');
-    expect(abc).toContain('[V:T] \"D\"C8 [EG]8 |');
+    expect(abc).toContain('[V:T] !accent!!staccato!"D"C8 [EG]8 |');
     expect(abc).toContain('w: Du * |');
     expect(abc).toContain('[V:B] z16 |');
   });
@@ -130,6 +131,28 @@ K:D
     expect(trebleMeasures[1]?.voices[0]?.events[0]).toMatchObject({
       duration: 'quarter',
       kind: 'chord',
+    });
+  });
+
+  it('imports supported ABC articulation decorations onto the next pitched event', () => {
+    const { score, warnings } = importScoreFromAbc(`
+X:1
+T:Decorated
+M:4/4
+L:1/32
+K:C
+!marcato!!tenuto!C8 !accent!z8 |
+`);
+
+    const events = score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events ?? [];
+
+    expect(warnings).toEqual([]);
+    expect(events[0]).toMatchObject({
+      articulations: ['marcato', 'tenuto'],
+      kind: 'note',
+    });
+    expect(events[1]).not.toMatchObject({
+      articulations: expect.any(Array),
     });
   });
 

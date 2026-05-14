@@ -144,6 +144,7 @@ export function LyricMapConnectors({
                   />
                   <line
                     className="lyric-map-hit-target"
+                    data-testid="lyric-map-hit-target"
                     x1={layout.x}
                     x2={target.x}
                     y1={lyricAnchorY}
@@ -196,6 +197,7 @@ export function LyricMapConnectors({
                 ))}
                 <path
                   className="lyric-map-hit-target"
+                  data-testid="lyric-map-hit-target"
                   d={pathData}
                   onMouseDown={handleStartDrag}
                 />
@@ -236,6 +238,7 @@ export function LyricMapConnectors({
                   />
                   <line
                     className="lyric-map-hit-target"
+                    data-testid="lyric-map-hit-target"
                     x1={target.x}
                     x2={target.x}
                     y1={markerY}
@@ -289,6 +292,7 @@ export function LyricMapConnectors({
                 ))}
                 <path
                   className="lyric-map-hit-target"
+                  data-testid="lyric-map-hit-target"
                   d={pathData}
                   onMouseDown={handleStartDrag}
                 />

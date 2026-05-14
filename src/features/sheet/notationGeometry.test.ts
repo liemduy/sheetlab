@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { placeScoreEvent, tryUpdateScoreEvent } from '../../domain/score/editing';
+import {
+  placeScoreEvent,
+  tryPlaceTupletGroup,
+  tryUpdateScoreEvent,
+} from '../../domain/score/editing';
 import { createEmptyScore } from '../../domain/score/factories';
 import {
   FIRST_MEASURE_LEFT_PADDING,
@@ -70,6 +74,84 @@ describe('notation geometry', () => {
     expect(getBeatX(0, 0.5, 4, score)).toBeGreaterThan(getBeatX(0, 0.5, 4));
   });
 
+  it('widens a measure when tuplets add fractional input slots', () => {
+    const tripletResult = tryPlaceTupletGroup(
+      createEmptyScore('treble', { measureCount: 4 }),
+      {
+        eventId: 'width-triplet',
+        staffId: 'treble',
+        measureIndex: 0,
+        beat: 0,
+        duration: 'quarter',
+        entryMode: 'note',
+        actualNotes: 3,
+        pitch: { step: 'E', octave: 4 },
+      },
+    );
+
+    expect(getMeasureSlotWeight(tripletResult.score, 0)).toBeGreaterThan(
+      getMeasureSlotWeight(tripletResult.score, 1),
+    );
+    expect(getMeasureWidth(0, tripletResult.score)).toBeGreaterThan(
+      getMeasureWidth(1, tripletResult.score),
+    );
+  });
+
+  it('widens an overflowing invalid measure so the overflow is visible for repair', () => {
+    const validScore = placeScoreEvent(
+      createEmptyScore('treble', { measureCount: 4 }),
+      {
+        eventId: 'overflow-width-note',
+        staffId: 'treble',
+        measureIndex: 1,
+        beat: 3,
+        duration: 'quarter',
+        entryMode: 'note',
+        pitch: { step: 'E', octave: 4 },
+      },
+    );
+    const invalidScore = tryUpdateScoreEvent(
+      validScore,
+      'overflow-width-note',
+      {
+        allowInvalidMeasure: true,
+        duration: 'half',
+      },
+    ).score;
+
+    expect(getMeasureSlotWeight(invalidScore, 1)).toBeGreaterThan(
+      getMeasureSlotWeight(validScore, 1),
+    );
+    expect(getMeasureWidth(1, invalidScore)).toBeGreaterThan(
+      getMeasureWidth(1, validScore),
+    );
+  });
+
+  it('widens a chord-dense measure even when the rhythm grid has only quarter slots', () => {
+    const chordPitches = [
+      { step: 'C', octave: 4 },
+      { step: 'E', octave: 4 },
+      { step: 'G', octave: 4 },
+      { step: 'B', octave: 4 },
+    ] as const;
+    const score = [0, 1, 2, 3].reduce((measureScore, beat) =>
+      chordPitches.reduce((chordScore, pitch, pitchIndex) =>
+        placeScoreEvent(chordScore, {
+          eventId: `chord-dense-b${beat}-p${pitchIndex}`,
+          staffId: 'treble',
+          measureIndex: 1,
+          beat,
+          duration: 'quarter',
+          entryMode: 'note',
+          pitch,
+        }),
+      measureScore),
+    createEmptyScore('treble', { measureCount: 4 }));
+
+    expect(getMeasureSlotWeight(score, 1)).toBe(4);
+    expect(getMeasureWidth(1, score)).toBeGreaterThan(getMeasureWidth(2, score));
+  });
+
   it('keeps sparse measures readable when a neighboring measure is dense', () => {
     const score = Array.from({ length: 16 }, (_, index) => index).reduce(
       (currentScore, index) =>
@@ -92,7 +174,7 @@ describe('notation geometry', () => {
 
     expect(denseMeasureWidth).toBeGreaterThan(sparseMeasureWidth);
     expect(sparseMeasureWidth).toBeGreaterThan(150);
-    expect(denseMeasureWidth / sparseMeasureWidth).toBeLessThan(2);
+    expect(getSystemIndex(3, score)).toBe(1);
     expect(getMeasureRight(3, score)).toBeCloseTo(STAFF_RIGHT, 2);
   });
 
@@ -192,6 +274,57 @@ describe('notation geometry', () => {
     expect(getSystemIndex(1, score)).toBe(0);
     expect(getSystemIndex(2, score)).toBe(0);
     expect(getScoreSystemCount(score)).toBe(1);
+  });
+
+  it('wraps tuplet-heavy measures before rendered tuplet columns get cramped', () => {
+    const score = [0, 1].reduce((currentScore, measureIndex) => {
+      return [0, 1, 2, 3].reduce((measureScore, beat) => {
+        const result = tryPlaceTupletGroup(
+          measureScore,
+          {
+            eventId: `wrap-triplet-m${measureIndex}-b${beat}`,
+            staffId: 'treble',
+            measureIndex,
+            beat,
+            duration: 'quarter',
+            entryMode: 'note',
+            actualNotes: 3,
+            pitch: { step: beat % 2 === 0 ? 'E' : 'G', octave: 4 },
+          },
+        );
+
+        return result.score;
+      }, currentScore);
+    }, createEmptyScore('treble', { measureCount: 4 }));
+
+    expect(getSystemIndex(0, score)).toBe(0);
+    expect(getSystemIndex(1, score)).toBe(1);
+    expect(getScoreSystemCount(score)).toBeGreaterThan(1);
+  });
+
+  it('gives a full readable row to a measure packed with nonuplet slots', () => {
+    const score = [0, 1, 2, 3].reduce((measureScore, beat) => {
+      const result = tryPlaceTupletGroup(
+        measureScore,
+        {
+          eventId: `readable-nonuplet-b${beat}`,
+          staffId: 'treble',
+          measureIndex: 0,
+          beat,
+          duration: 'quarter',
+          entryMode: 'note',
+          actualNotes: 9,
+          pitch: { step: beat % 2 === 0 ? 'E' : 'G', octave: 4 },
+        },
+      );
+
+      return result.score;
+    }, createEmptyScore('treble', { measureCount: 4 }));
+
+    expect(getMeasureSlotWeight(score, 0)).toBeGreaterThan(30);
+    expect(getSystemIndex(0, score)).toBe(0);
+    expect(getSystemIndex(1, score)).toBe(1);
+    expect(getMeasureWidth(0, score)).toBeGreaterThan(700);
   });
 
   it('adds inter-system padding for previous bass annotations', () => {

@@ -12,6 +12,7 @@ import {
   placeScoreEvent,
   setMeasureSectionMarker,
   tryCreateTupletFromEvent,
+  tryFlipScoreEventStemDirection,
   tryPlaceScoreEvent,
   tryInsertScoreEvent,
   tryPlaceTupletGroup,
@@ -21,6 +22,14 @@ import type { Score, StaffId } from './types';
 import { getMeasureTicks } from './ticks';
 import { getEventDurationTicks } from './eventDuration';
 import { getScoreRhythmIssues } from './rhythm';
+import {
+  findLyricMapSourceEventId,
+  getLyricMapTargetEventIds,
+} from './lyricMapping';
+import {
+  getDefaultTupletNormalNotes,
+  SUPPORTED_TUPLET_ACTUAL_NOTES,
+} from './tuplets';
 
 function getVoiceEvents(
   score: Score,
@@ -91,7 +100,7 @@ describe('score editing', () => {
         pitch: { step: 'C', octave: 4, accidental: 'sharp' },
       },
       {
-        id: 'rest-treble-m1-t960-half',
+        id: 'rest-treble-m1-t20160-half',
         kind: 'rest',
         beat: 2,
         duration: 'half',
@@ -162,6 +171,29 @@ describe('score editing', () => {
     expectMeasureEventsFillMeasure(result.score);
   });
 
+  it('rejects splitting a dotted source event into a triplet group', () => {
+    const score = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'dotted-triplet-source',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      dots: 1,
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const result = tryCreateTupletFromEvent(score, 'dotted-triplet-source', 3);
+
+    expect(result.updated).toBe(false);
+    expect(result.reason).toBe('unsupported-tuplet');
+    expect(findScoreEvent(result.score, 'dotted-triplet-source')?.event)
+      .toMatchObject({
+        duration: 'quarter',
+        dots: 1,
+        tuplet: undefined,
+      });
+  });
+
   it('places a triplet group from an armed duration', () => {
     const score = createEmptyScore('treble');
     const result = tryPlaceTupletGroup(score, {
@@ -190,6 +222,134 @@ describe('score editing', () => {
       'rest',
     ]);
     expectMeasureEventsFillMeasure(result.score);
+  });
+
+  it('places a quintuplet group from an armed duration', () => {
+    const score = createEmptyScore('treble');
+    const result = tryPlaceTupletGroup(score, {
+      eventId: 'quintuplet-entry',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 1,
+      duration: 'quarter',
+      entryMode: 'note',
+      actualNotes: 5,
+      pitch: { step: 'E', octave: 4 },
+    });
+    const events = getVoiceEvents(result.score) ?? [];
+    const quintupletEvents = events.filter(
+      (event) => event.tuplet?.id === 'tuplet-quintuplet-entry',
+    );
+
+    expect(result.placed).toBe(true);
+    expect(quintupletEvents).toHaveLength(5);
+    expect(quintupletEvents.map((event) => event.beat)).toEqual([
+      1,
+      1.2,
+      1.4,
+      1.6,
+      1.8,
+    ]);
+    expect(quintupletEvents.map((event) => event.duration)).toEqual([
+      'sixteenth',
+      'sixteenth',
+      'sixteenth',
+      'sixteenth',
+      'sixteenth',
+    ]);
+    expect(quintupletEvents.map((event) => event.tuplet?.normalNotes)).toEqual([
+      4,
+      4,
+      4,
+      4,
+      4,
+    ]);
+    expect(quintupletEvents[0]).toMatchObject({
+      kind: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+    expect(quintupletEvents.slice(1).map((event) => event.kind)).toEqual([
+      'rest',
+      'rest',
+      'rest',
+      'rest',
+    ]);
+    expectMeasureEventsFillMeasure(result.score);
+  });
+
+  it('places every supported tuplet count from an armed quarter duration', () => {
+    SUPPORTED_TUPLET_ACTUAL_NOTES.forEach((actualNotes) => {
+      const result = tryPlaceTupletGroup(createEmptyScore('treble'), {
+        eventId: `tuplet-${actualNotes}-entry`,
+        staffId: 'treble',
+        measureIndex: 0,
+        beat: 0,
+        duration: 'quarter',
+        entryMode: 'note',
+        actualNotes,
+        pitch: { step: 'E', octave: 4 },
+      });
+      const tupletEvents = getVoiceEvents(result.score)?.filter(
+        (event) => event.tuplet?.id === `tuplet-tuplet-${actualNotes}-entry`,
+      ) ?? [];
+
+      expect(result.placed, `tuplet ${actualNotes}`).toBe(true);
+      expect(tupletEvents, `tuplet ${actualNotes}`).toHaveLength(actualNotes);
+      expect(
+        tupletEvents.every(
+          (event) =>
+            event.tuplet?.actualNotes === actualNotes &&
+            event.tuplet.normalNotes ===
+              getDefaultTupletNormalNotes(actualNotes),
+        ),
+        `tuplet ${actualNotes}`,
+      ).toBe(true);
+      expect(getScoreRhythmIssues(result.score), `tuplet ${actualNotes}`)
+        .toEqual([]);
+      expectMeasureEventsFillMeasure(result.score);
+    });
+  });
+
+  it('places septuplet and nonuplet groups without tick rounding rhythm issues', () => {
+    const septupletResult = tryPlaceTupletGroup(createEmptyScore('treble'), {
+      eventId: 'septuplet-entry',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      actualNotes: 7,
+      pitch: { step: 'E', octave: 4 },
+    });
+    const nonupletResult = tryPlaceTupletGroup(createEmptyScore('treble'), {
+      eventId: 'nonuplet-entry',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      actualNotes: 9,
+      pitch: { step: 'E', octave: 4 },
+    });
+    const septupletEvents = getVoiceEvents(septupletResult.score)?.filter(
+      (event) => event.tuplet?.id === 'tuplet-septuplet-entry',
+    ) ?? [];
+    const nonupletEvents = getVoiceEvents(nonupletResult.score)?.filter(
+      (event) => event.tuplet?.id === 'tuplet-nonuplet-entry',
+    ) ?? [];
+
+    expect(septupletResult.placed).toBe(true);
+    expect(nonupletResult.placed).toBe(true);
+    expect(septupletEvents).toHaveLength(7);
+    expect(nonupletEvents).toHaveLength(9);
+    expect(septupletEvents.every((event) => event.duration === 'sixteenth'))
+      .toBe(true);
+    expect(nonupletEvents.every((event) => event.duration === 'thirtySecond'))
+      .toBe(true);
+    expect(getScoreRhythmIssues(septupletResult.score)).toEqual([]);
+    expect(getScoreRhythmIssues(nonupletResult.score)).toEqual([]);
+    expectMeasureEventsFillMeasure(septupletResult.score);
+    expectMeasureEventsFillMeasure(nonupletResult.score);
   });
 
   it('replaces every rest slot inside an existing triplet group', () => {
@@ -246,6 +406,255 @@ describe('score editing', () => {
     expect(filledTriplet.map((event) => event.beat)).toEqual([0, 0.3333, 0.6667]);
     expect(getScoreRhythmIssues(thirdResult.score)).toEqual([]);
     expectMeasureEventsFillMeasure(thirdResult.score);
+  });
+
+  it('adds a chord pitch inside an existing triplet slot without changing tuplet timing', () => {
+    const tripletResult = tryPlaceTupletGroup(createEmptyScore('treble'), {
+      eventId: 'triplet-chord-slot',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      actualNotes: 3,
+      pitch: { step: 'C', octave: 4 },
+    });
+    const firstSlot = (getVoiceEvents(tripletResult.score) ?? []).find(
+      (event) => event.tuplet?.id === 'tuplet-triplet-chord-slot',
+    );
+    const chordResult = tryPlaceScoreEvent(tripletResult.score, {
+      eventId: 'triplet-chord-slot-upper',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: firstSlot?.beat ?? 0,
+      duration: firstSlot?.duration ?? 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+      tuplet: firstSlot?.tuplet,
+    });
+    const chordSlot = (getVoiceEvents(chordResult.score) ?? []).find(
+      (event) => event.tuplet?.id === 'tuplet-triplet-chord-slot' &&
+        event.tuplet.index === 0,
+    );
+
+    expect(chordResult.placed).toBe(true);
+    expect(chordSlot).toMatchObject({
+      kind: 'chord',
+      beat: 0,
+      duration: 'eighth',
+      tuplet: {
+        actualNotes: 3,
+        id: 'tuplet-triplet-chord-slot',
+        index: 0,
+        normalNotes: 2,
+      },
+    });
+    expect(chordSlot?.kind === 'chord' ? chordSlot.pitches : []).toEqual([
+      { step: 'C', octave: 4 },
+      { step: 'E', octave: 4 },
+    ]);
+    expect(getScoreRhythmIssues(chordResult.score)).toEqual([]);
+    expectMeasureEventsFillMeasure(chordResult.score);
+  });
+
+  it('deletes tuplet notes back to tuplet rests without collapsing the group', () => {
+    const tripletResult = tryPlaceTupletGroup(createEmptyScore('treble'), {
+      eventId: 'triplet-delete-slot',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      actualNotes: 3,
+      pitch: { step: 'C', octave: 4 },
+    });
+    const deletedScore = deleteScoreEvent(tripletResult.score, 'triplet-delete-slot');
+    const tupletSlots = (getVoiceEvents(deletedScore) ?? []).filter(
+      (event) => event.tuplet?.id === 'tuplet-triplet-delete-slot',
+    );
+
+    expect(tupletSlots).toHaveLength(3);
+    expect(tupletSlots.map((event) => event.kind)).toEqual(['rest', 'rest', 'rest']);
+    expect(tupletSlots.map((event) => event.beat)).toEqual([0, 0.3333, 0.6667]);
+    expect(tupletSlots.every((event) => event.duration === 'eighth')).toBe(true);
+    expect(getScoreRhythmIssues(deletedScore)).toEqual([]);
+    expectMeasureEventsFillMeasure(deletedScore);
+  });
+
+  it('removes pitches from a tuplet chord while preserving the tuplet slot', () => {
+    const tripletResult = tryPlaceTupletGroup(createEmptyScore('treble'), {
+      eventId: 'triplet-chord-delete',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      actualNotes: 3,
+      pitch: { step: 'C', octave: 4 },
+    });
+    const firstSlot = (getVoiceEvents(tripletResult.score) ?? []).find(
+      (event) => event.tuplet?.id === 'tuplet-triplet-chord-delete',
+    );
+    const chordResult = tryPlaceScoreEvent(tripletResult.score, {
+      eventId: 'triplet-chord-delete-upper',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: firstSlot?.beat ?? 0,
+      duration: firstSlot?.duration ?? 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+      tuplet: firstSlot?.tuplet,
+    });
+    const chordSlot = (getVoiceEvents(chordResult.score) ?? []).find(
+      (event) => event.tuplet?.id === 'tuplet-triplet-chord-delete' &&
+        event.tuplet.index === 0,
+    );
+    const onePitchScore = deleteScoreEventPitch(
+      chordResult.score,
+      chordSlot?.id ?? '',
+      0,
+    );
+    const onePitchSlot = (getVoiceEvents(onePitchScore) ?? []).find(
+      (event) => event.tuplet?.id === 'tuplet-triplet-chord-delete' &&
+        event.tuplet.index === 0,
+    );
+    const emptyScore = deleteScoreEventPitch(
+      onePitchScore,
+      onePitchSlot?.id ?? '',
+      0,
+    );
+    const emptySlot = (getVoiceEvents(emptyScore) ?? []).find(
+      (event) => event.tuplet?.id === 'tuplet-triplet-chord-delete' &&
+        event.tuplet.index === 0,
+    );
+
+    expect(onePitchSlot).toMatchObject({
+      kind: 'note',
+      duration: 'eighth',
+      pitch: { step: 'E', octave: 4 },
+      tuplet: firstSlot?.tuplet,
+    });
+    expect(emptySlot).toMatchObject({
+      kind: 'rest',
+      duration: 'eighth',
+      tuplet: firstSlot?.tuplet,
+    });
+    expect(getScoreRhythmIssues(emptyScore)).toEqual([]);
+    expectMeasureEventsFillMeasure(emptyScore);
+  });
+
+  it('rejects changing a single tuplet slot duration outside the tuplet context', () => {
+    const tripletResult = tryPlaceTupletGroup(createEmptyScore('treble'), {
+      eventId: 'triplet-duration-update',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      actualNotes: 3,
+      pitch: { step: 'C', octave: 4 },
+    });
+    const result = tryUpdateScoreEvent(tripletResult.score, 'triplet-duration-update', {
+      duration: 'quarter',
+    });
+
+    expect(result.updated).toBe(false);
+    expect(result.reason).toBe('locked-tuplet-slot');
+    expect(findScoreEvent(result.score, 'triplet-duration-update')?.event).toMatchObject({
+      duration: 'eighth',
+      tuplet: {
+        actualNotes: 3,
+        id: 'tuplet-triplet-duration-update',
+        index: 0,
+        normalNotes: 2,
+      },
+    });
+  });
+
+  it('maps one lyric syllable across multiple triplet notes in order', () => {
+    const tripletResult = tryPlaceTupletGroup(createEmptyScore('treble'), {
+      eventId: 'triplet-lyric-map',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      actualNotes: 3,
+      pitch: { step: 'C', octave: 4 },
+    });
+    const tripletSlots = (getVoiceEvents(tripletResult.score) ?? []).filter(
+      (event) => event.tuplet?.id === 'tuplet-triplet-lyric-map',
+    );
+    const secondResult = tryPlaceScoreEvent(tripletResult.score, {
+      eventId: 'triplet-lyric-map-2',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: tripletSlots[1]?.beat ?? 0,
+      duration: tripletSlots[1]?.duration ?? 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'D', octave: 4 },
+      tuplet: tripletSlots[1]?.tuplet,
+    });
+    const thirdResult = tryPlaceScoreEvent(secondResult.score, {
+      eventId: 'triplet-lyric-map-3',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: tripletSlots[2]?.beat ?? 0,
+      duration: tripletSlots[2]?.duration ?? 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+      tuplet: tripletSlots[2]?.tuplet,
+    });
+    const mappedScore = tryUpdateScoreEvent(thirdResult.score, 'triplet-lyric-map', {
+      lyric: 'love',
+      lyricMap: {
+        eventIds: ['triplet-lyric-map', 'triplet-lyric-map-2', 'triplet-lyric-map-3'],
+      },
+    }).score;
+
+    expect(getLyricMapTargetEventIds(
+      mappedScore,
+      'triplet-lyric-map',
+      'triplet-lyric-map-3',
+    )).toEqual([
+      'triplet-lyric-map',
+      'triplet-lyric-map-2',
+      'triplet-lyric-map-3',
+    ]);
+    expect(findLyricMapSourceEventId(mappedScore, 'triplet-lyric-map-3'))
+      .toBe('triplet-lyric-map');
+  });
+
+  it('places a triplet group inside compound meter without rhythm issues', () => {
+    const result = tryPlaceTupletGroup(
+      createEmptyScore('treble', {
+        measureCount: 1,
+        timeSignature: { beats: 6, beatUnit: 8 },
+      }),
+      {
+        eventId: 'compound-triplet-entry',
+        staffId: 'treble',
+        measureIndex: 0,
+        beat: 0,
+        duration: 'eighth',
+        entryMode: 'note',
+        actualNotes: 3,
+        pitch: { step: 'C', octave: 4 },
+      },
+    );
+    const tripletEvents = (getVoiceEvents(result.score) ?? []).filter(
+      (event) => event.tuplet?.id === 'tuplet-compound-triplet-entry',
+    );
+
+    expect(result.placed).toBe(true);
+    expect(tripletEvents.map((event) => event.duration)).toEqual([
+      'sixteenth',
+      'sixteenth',
+      'sixteenth',
+    ]);
+    expect(tripletEvents.map((event) => event.beat)).toEqual([0, 0.1667, 0.3333]);
+    expect(getScoreRhythmIssues(result.score)).toEqual([]);
+    expectMeasureEventsFillMeasure(result.score);
   });
 
   it('clamps placed notes to the staff readable ledger range', () => {
@@ -672,9 +1081,9 @@ describe('score editing', () => {
       ]),
     ).toEqual([
       ['event-c', 'note', 0, 'quarter'],
-      ['rest-treble-m1-t480-quarter', 'rest', 1, 'quarter'],
+      ['rest-treble-m1-t10080-quarter', 'rest', 1, 'quarter'],
       ['event-e', 'note', 2, 'quarter'],
-      ['rest-treble-m1-t1440-quarter', 'rest', 3, 'quarter'],
+      ['rest-treble-m1-t30240-quarter', 'rest', 3, 'quarter'],
     ]);
     expectMeasureEventsFillMeasure(nextScore);
   });
@@ -869,12 +1278,14 @@ describe('score editing', () => {
       dynamic: ' mf ',
       fermata: true,
       glissando: true,
+      hairpin: 'crescendo',
       pedal: 'start',
     });
     const cleared = tryUpdateScoreEvent(marked.score, 'event-performance-me', {
       dynamic: null,
       fermata: false,
       glissando: false,
+      hairpin: null,
       pedal: null,
     });
 
@@ -883,13 +1294,166 @@ describe('score editing', () => {
       dynamic: 'mf',
       fermata: true,
       glissando: true,
+      hairpin: 'crescendo',
       pedal: 'start',
     });
     expect(findScoreEvent(cleared.score, 'event-performance-me')?.event).not.toMatchObject({
       dynamic: expect.any(String),
       fermata: true,
       glissando: true,
+      hairpin: expect.any(String),
       pedal: expect.any(String),
+    });
+  });
+
+  it('normalizes combinable articulations on pitched events and rejects them on rests', () => {
+    const noteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'event-articulate-me',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const marked = tryUpdateScoreEvent(noteScore, 'event-articulate-me', {
+      articulations: ['staccato', 'accent', 'accent', 'marcato'],
+    });
+    const cleared = tryUpdateScoreEvent(marked.score, 'event-articulate-me', {
+      articulations: null,
+    });
+    const restScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'event-rest-articulation',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'rest',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const restResult = tryUpdateScoreEvent(restScore, 'event-rest-articulation', {
+      articulations: ['accent'],
+    });
+
+    expect(findScoreEvent(marked.score, 'event-articulate-me')?.event)
+      .toMatchObject({
+        articulations: ['marcato', 'accent', 'staccato'],
+      });
+    expect(findScoreEvent(cleared.score, 'event-articulate-me')?.event)
+      .not.toMatchObject({
+        articulations: expect.any(Array),
+      });
+    expect(findScoreEvent(restResult.score, 'event-rest-articulation')?.event)
+      .not.toMatchObject({
+        articulations: expect.any(Array),
+      });
+  });
+
+  it('flips a selected stem direction without changing rhythm data', () => {
+    const score = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'event-flip-me',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const flipped = tryFlipScoreEventStemDirection(score, 'event-flip-me');
+    const flippedAgain = tryFlipScoreEventStemDirection(
+      flipped.score,
+      'event-flip-me',
+    );
+
+    expect(flipped.updated).toBe(true);
+    expect(flipped.direction).toBe('down');
+    expect(findScoreEvent(flipped.score, 'event-flip-me')?.event)
+      .toMatchObject({
+        beat: 0,
+        duration: 'quarter',
+        stemDirection: 'down',
+      });
+    expect(flippedAgain.updated).toBe(true);
+    expect(findScoreEvent(flippedAgain.score, 'event-flip-me')?.event)
+      .toMatchObject({
+        beat: 0,
+        duration: 'quarter',
+        stemDirection: 'up',
+      });
+  });
+
+  it('flips attached beamed notes without crossing the next beat group', () => {
+    const firstScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'beam-note-1',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const secondScore = placeScoreEvent(firstScore, {
+      eventId: 'beam-note-2',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0.5,
+      duration: 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'D', octave: 4 },
+    });
+    const score = placeScoreEvent(secondScore, {
+      eventId: 'beam-note-3',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 1,
+      duration: 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+    const flipped = tryFlipScoreEventStemDirection(score, 'beam-note-2');
+
+    expect(flipped.updated).toBe(true);
+    expect(flipped.eventIds).toEqual([
+      'beam-note-1',
+      'beam-note-2',
+    ]);
+    expect(
+      ['beam-note-1', 'beam-note-2'].map(
+        (eventId) => findScoreEvent(flipped.score, eventId)?.event.stemDirection,
+      ),
+    ).toEqual(['down', 'down']);
+    expect(
+      findScoreEvent(flipped.score, 'beam-note-3')?.event.stemDirection,
+    ).toBeUndefined();
+  });
+
+  it('rejects flipping whole notes and rests because they have no stem', () => {
+    const wholeScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'whole-no-stem',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'whole',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const restScore = placeScoreEvent(createEmptyScore('treble', { measureCount: 4 }), {
+      eventId: 'event-rest-no-stem',
+      staffId: 'treble',
+      measureIndex: 1,
+      beat: 2,
+      duration: 'half',
+      entryMode: 'rest',
+      pitch: { step: 'C', octave: 4 },
+    });
+
+    expect(tryFlipScoreEventStemDirection(wholeScore, 'whole-no-stem')).toMatchObject({
+      updated: false,
+      reason: 'missing-stem',
+    });
+    expect(tryFlipScoreEventStemDirection(restScore, 'event-rest-no-stem')).toMatchObject({
+      updated: false,
+      reason: 'missing-stem',
     });
   });
 

@@ -58,7 +58,7 @@ export function useAnnotationCommands({
     clientX: number,
     clientY: number,
   ) {
-    updateToolState({ isInputArmed: false });
+    updateToolState({ clefChange: null, isInputArmed: false });
     clearPointerState();
     clearMeasureUiState();
     selectEvent(eventId, null);

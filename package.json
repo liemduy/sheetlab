@@ -8,9 +8,11 @@
     "dev:vite": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "qa:browser-stress": "node scripts/qa/browserStressQa.mjs",
     "test": "vitest run",
     "test:app": "vitest run src/App.test.tsx src/App.uat.test.tsx",
     "test:gate": "npm run typecheck && npm test && npm run build",
+    "test:hardening": "npm run typecheck && vitest run src/domain/score/fixtures.test.ts server/pdf/createScorePdf.test.mjs src/features/sheet/StaffRenderer.test.tsx --reporter=dot && npm run qa:browser-stress",
     "test:uat": "vitest run src/App.uat.test.tsx",
     "typecheck": "tsc --noEmit"
   },

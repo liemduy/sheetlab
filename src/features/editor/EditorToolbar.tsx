@@ -9,11 +9,18 @@ import {
   REPEAT_JUMP_OPTIONS,
 } from '../../domain/score/repeatJumps';
 import type {
+  Clef,
   DurationValue,
   KeySignature,
   RepeatJumpKind,
   TimeSignature,
 } from '../../domain/score/types';
+import {
+  getDefaultTupletNormalNotes,
+  isSupportedTupletActualNotes,
+  SUPPORTED_TUPLET_ACTUAL_NOTES,
+  type SupportedTupletActualNotes,
+} from '../../domain/score/tuplets';
 import {
   getTimeSignatureId,
   getTimeSignatureLabel,
@@ -26,6 +33,7 @@ import type {
   EntryMode,
   PlacementMode,
 } from './editorState';
+import type { InputCursor } from './inputCursor';
 import {
   ACCIDENTAL_LABEL,
   ACCIDENTAL_SYMBOL,
@@ -42,7 +50,22 @@ export const ZOOM_MAX = 180;
 export const ZOOM_STEP = 5;
 export const DEFAULT_CANVAS_ZOOM = 100;
 
-export type ToolbarPalette = 'key' | 'repeat' | null;
+export type ToolbarPalette = 'key' | 'repeat' | 'tuplet' | null;
+
+export interface DemoScoreOption {
+  id: string;
+  label: string;
+}
+
+const CLEF_OPTIONS = ['treble', 'bass'] satisfies Clef[];
+const CLEF_LABEL: Record<Clef, string> = {
+  bass: 'Bass clef',
+  treble: 'Treble clef',
+};
+const CLEF_SYMBOL: Record<Clef, string> = {
+  bass: '\uD834\uDD22',
+  treble: '\uD834\uDD1E',
+};
 
 const THUMBNAIL_ACCIDENTAL_Y = {
   flat: {
@@ -138,6 +161,14 @@ function isEndingRepeat(kind: RepeatJumpKind) {
   return kind === 'ending-1' || kind === 'ending-2' || kind === 'ending-3';
 }
 
+function getTupletLabel(actualNotes: SupportedTupletActualNotes) {
+  return actualNotes === 3 ? 'Triplet' : `Tuplet ${actualNotes}`;
+}
+
+function getTupletTriggerText(actualNotes: SupportedTupletActualNotes | null) {
+  return actualNotes === null ? 'Tuplet' : `T${actualNotes}`;
+}
+
 function RepeatJumpThumbnail({ kind }: { kind: RepeatJumpKind }) {
   const option = getRepeatJumpOption(kind);
   const endingLabel =
@@ -191,18 +222,24 @@ interface EditorToolbarProps {
   pastScoreCount: number;
   scoreTimeSignature: TimeSignature;
   canDeleteSelection: boolean;
+  canFlipSelection: boolean;
+  demoScoreOptions: readonly DemoScoreOption[];
+  inputCursor?: InputCursor | null;
   toolState: EditorToolState;
   onAccidentalChange: (accidental: AccidentalChoice) => void;
   onAddMeasure: () => void;
   onCanvasZoomChange: (value: string) => void;
+  onClefChangeToolChange: (clef: Clef) => void;
   onClearInteraction: () => void;
   onDeleteSelected: () => void;
+  onDemoScoreLoad: (fixtureId: string) => void;
   onDottedChange: (dotted: boolean) => void;
   onDownloadAbc: () => void;
   onDownloadProject: () => void;
   onDurationChange: (duration: DurationValue) => void;
   onEntryModeChange: (entryMode: EntryMode) => void;
   onExportPdf: () => void;
+  onFlipDirection: () => void;
   onImportAbcFile: (fileList: FileList | null) => void | Promise<void>;
   onImportProjectFile: (fileList: FileList | null) => void | Promise<void>;
   onKeySignatureChange: (keySignature: KeySignature) => void;
@@ -217,7 +254,7 @@ interface EditorToolbarProps {
   onResetScore: () => void;
   onSaveProject: () => void;
   onTimeSignatureChange: (value: string) => void;
-  onTupletChange: (actualNotes: 3 | null) => void;
+  onTupletChange: (actualNotes: SupportedTupletActualNotes | null) => void;
   onUndo: () => void;
   onVoiceIndexChange: (voiceIndex: EditableVoiceIndex) => void;
 }
@@ -234,18 +271,24 @@ export function EditorToolbar({
   pastScoreCount,
   scoreTimeSignature,
   canDeleteSelection,
+  canFlipSelection,
+  demoScoreOptions,
+  inputCursor,
   toolState,
   onAccidentalChange,
   onAddMeasure,
   onCanvasZoomChange,
+  onClefChangeToolChange,
   onClearInteraction,
   onDeleteSelected,
+  onDemoScoreLoad,
   onDottedChange,
   onDownloadAbc,
   onDownloadProject,
   onDurationChange,
   onEntryModeChange,
   onExportPdf,
+  onFlipDirection,
   onImportAbcFile,
   onImportProjectFile,
   onKeySignatureChange,
@@ -264,6 +307,18 @@ export function EditorToolbar({
   onUndo,
   onVoiceIndexChange,
 }: EditorToolbarProps) {
+  const activeDuration = inputCursor?.tuplet
+    ? inputCursor.duration
+    : toolState.duration;
+  const activeDots = inputCursor?.tuplet ? inputCursor.dots ?? 0 : toolState.dots;
+  const rawActiveTupletActualNotes =
+    inputCursor?.tuplet?.actualNotes ?? toolState.tuplet?.actualNotes ?? null;
+  const activeTupletActualNotes =
+    rawActiveTupletActualNotes !== null &&
+    isSupportedTupletActualNotes(rawActiveTupletActualNotes)
+      ? rawActiveTupletActualNotes
+      : null;
+
   return (
     <nav className="toolbar" aria-label="Editor toolbar">
       <div className="toolbar-group" aria-label="Duration tools">
@@ -286,11 +341,11 @@ export function EditorToolbar({
             type="button"
             aria-label={DURATION_LABEL[duration]}
             className={`tool-button${
-              toolState.isInputArmed && toolState.duration === duration
+              toolState.isInputArmed && activeDuration === duration
                 ? ' is-active'
                 : ''
             }`}
-            aria-pressed={toolState.isInputArmed && toolState.duration === duration}
+            aria-pressed={toolState.isInputArmed && activeDuration === duration}
             title={DURATION_LABEL[duration]}
             onClick={() => onDurationChange(duration)}
           >
@@ -305,8 +360,8 @@ export function EditorToolbar({
         <button
           type="button"
           aria-label="Dotted note"
-          className={`tool-button${toolState.dots > 0 ? ' is-active' : ''}`}
-          aria-pressed={toolState.dots > 0}
+          className={`tool-button${activeDots > 0 ? ' is-active' : ''}`}
+          aria-pressed={activeDots > 0}
           title="Add one augmentation dot to the selected duration"
           onClick={() => onDottedChange(toolState.dots === 0)}
         >
@@ -316,20 +371,100 @@ export function EditorToolbar({
         </button>
         <button
           type="button"
-          aria-label="Triplet"
-          className={`tool-button${
-            toolState.tuplet?.actualNotes === 3 ? ' is-active' : ''
-          }`}
-          aria-pressed={toolState.tuplet?.actualNotes === 3}
-          title="Triplet: split the selected duration into three equal notes"
-          onClick={() =>
-            onTupletChange(toolState.tuplet?.actualNotes === 3 ? null : 3)
-          }
+          aria-label="Flip direction"
+          className="tool-button"
+          disabled={!canFlipSelection}
+          title="Flip selected stem, chord, or attached beam direction (X)"
+          onClick={onFlipDirection}
         >
-          <span className="tool-symbol tuplet-symbol" aria-hidden="true">
-            3
+          <span className="tool-symbol" aria-hidden="true">
+            {'\u21c5'}
           </span>
         </button>
+        <div className="palette-host tuplet-palette-host">
+          <button
+            type="button"
+            aria-expanded={openPalette === 'tuplet'}
+            aria-label="Tuplet menu"
+            aria-pressed={activeTupletActualNotes !== null}
+            className={`tool-button tuplet-trigger${
+              activeTupletActualNotes !== null ? ' is-active' : ''
+            }`}
+            title={
+              activeTupletActualNotes === null
+                ? 'Choose a tuplet division'
+                : `${getTupletLabel(
+                    activeTupletActualNotes,
+                  )}: split the selected duration into ${activeTupletActualNotes} equal tuplet slots`
+            }
+            onClick={() =>
+              onOpenPaletteChange(openPalette === 'tuplet' ? null : 'tuplet')
+            }
+          >
+            <span className="tool-symbol tuplet-symbol" aria-hidden="true">
+              {getTupletTriggerText(activeTupletActualNotes)}
+            </span>
+          </button>
+          {openPalette === 'tuplet' ? (
+            <div
+              className="thumbnail-menu tuplet-menu"
+              data-testid="tuplet-menu"
+              role="menu"
+            >
+              <button
+                type="button"
+                className={`thumbnail-option tuplet-option${
+                  activeTupletActualNotes === null ? ' is-current' : ''
+                }`}
+                role="menuitem"
+                aria-label="Tuplet off"
+                onClick={() => {
+                  onTupletChange(null);
+                  onOpenPaletteChange(null);
+                }}
+              >
+                <span className="tuplet-menu-token" aria-hidden="true">
+                  -
+                </span>
+                <span className="tuplet-menu-label">Off</span>
+              </button>
+              {SUPPORTED_TUPLET_ACTUAL_NOTES.map((actualNotes) => {
+                const isActive = activeTupletActualNotes === actualNotes;
+                const label = getTupletLabel(actualNotes);
+                const normalNotes = getDefaultTupletNormalNotes(actualNotes);
+
+                return (
+                  <button
+                    key={actualNotes}
+                    type="button"
+                    className={`thumbnail-option tuplet-option${
+                      isActive ? ' is-current' : ''
+                    }`}
+                    role="menuitem"
+                    aria-label={label}
+                    title={`${label}: ${actualNotes} notes in the time of ${normalNotes}`}
+                    onClick={() => {
+                      onTupletChange(
+                        toolState.tuplet?.actualNotes === actualNotes
+                          ? null
+                          : actualNotes,
+                      );
+                      onOpenPaletteChange(null);
+                    }}
+                  >
+                    <span className="tuplet-menu-token" aria-hidden="true">
+                      {actualNotes}
+                    </span>
+                    <span className="tuplet-menu-label">{label}</span>
+                    <span className="tuplet-menu-meta">
+                      {actualNotes}:{normalNotes}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
         {(['none', 'natural', 'sharp', 'flat'] satisfies AccidentalChoice[]).map(
           (accidental) => (
             <button
@@ -349,6 +484,26 @@ export function EditorToolbar({
             </button>
           ),
         )}
+      </div>
+      <div className="toolbar-group" aria-label="Clef tools">
+        <span className="toolbar-group-label">Clef</span>
+        {CLEF_OPTIONS.map((clef) => (
+          <button
+            key={clef}
+            type="button"
+            aria-label={`Insert ${CLEF_LABEL[clef]}`}
+            className={`tool-button${
+              toolState.clefChange === clef ? ' is-active' : ''
+            }`}
+            aria-pressed={toolState.clefChange === clef}
+            title={`Insert ${CLEF_LABEL[clef]} before the target note`}
+            onClick={() => onClefChangeToolChange(clef)}
+          >
+            <span className="tool-symbol" aria-hidden="true">
+              {CLEF_SYMBOL[clef]}
+            </span>
+          </button>
+        ))}
       </div>
       <div className="toolbar-group" aria-label="Key signature tools">
         <span className="toolbar-group-label">Key</span>
@@ -623,6 +778,26 @@ export function EditorToolbar({
       </div>
       <div className="toolbar-group" aria-label="Project tools">
         <span className="toolbar-group-label">File</span>
+        <select
+          aria-label="Load demo score"
+          className="toolbar-select compact-select"
+          defaultValue=""
+          onChange={(event) => {
+            const fixtureId = event.target.value;
+
+            if (fixtureId) {
+              onDemoScoreLoad(fixtureId);
+              event.currentTarget.value = '';
+            }
+          }}
+        >
+          <option value="">Demo</option>
+          {demoScoreOptions.map((fixture) => (
+            <option key={fixture.id} value={fixture.id}>
+              {fixture.label}
+            </option>
+          ))}
+        </select>
         <button type="button" className="tool-button" onClick={onSaveProject}>
           Save
         </button>

@@ -2,6 +2,7 @@ import { createEmptyScore } from './factories';
 import { setMeasureKeySignature } from './editing';
 import type {
   Accidental,
+  ArticulationKind,
   DurationValue,
   KeySignature,
   Measure,
@@ -13,6 +14,10 @@ import type {
   StaffId,
   TimeSignature,
 } from './types';
+import {
+  isArticulationKind,
+  normalizeArticulations,
+} from './articulations';
 import { getEventDots, getEventPitches } from './events';
 import { getDurationBeats } from './durations';
 import { getEventDurationBeats } from './eventDuration';
@@ -56,6 +61,23 @@ const SUPPORTED_DURATION_BEATS = [
   { duration: 'thirtySecond', dots: 0, beats: 0.125 },
 ] satisfies Array<{ beats: number; dots: number; duration: DurationValue }>;
 const STEP_ORDER: NoteStep[] = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+const ABC_DECORATION_BY_ARTICULATION = {
+  accent: 'accent',
+  breath: 'breath',
+  caesura: 'caesura',
+  marcato: 'marcato',
+  staccato: 'staccato',
+  staccatissimo: 'staccatissimo',
+  tenuto: 'tenuto',
+} satisfies Record<ArticulationKind, string>;
+const ARTICULATION_BY_ABC_DECORATION = new Map<string, ArticulationKind>(
+  Object.entries(ABC_DECORATION_BY_ARTICULATION).map(
+    ([articulation, decoration]) => [
+      decoration,
+      articulation as ArticulationKind,
+    ],
+  ),
+);
 
 interface ParsedAbcHeaders {
   composer: string;
@@ -110,8 +132,11 @@ function encodeEventPrefix(event: ScoreEvent) {
   const chordPrefix = event.chordSymbol
     ? `"${escapeAbcAnnotation(event.chordSymbol)}"`
     : '';
+  const articulationPrefix = (event.articulations ?? [])
+    .map((articulation) => `!${ABC_DECORATION_BY_ARTICULATION[articulation]}!`)
+    .join('');
 
-  return `${tupletPrefix}${chordPrefix}`;
+  return `${tupletPrefix}${articulationPrefix}${chordPrefix}`;
 }
 
 function encodePitch(pitch: Pitch) {
@@ -528,6 +553,7 @@ function parseAbcBody(
   const statesByStaff = new Map<StaffId, ParseVoiceState>();
   let activeVoiceId = headers.voiceStaffById.keys().next().value ?? 'T';
   let eventCounter = 1;
+  let pendingArticulations: ArticulationKind[] = [];
   let pendingChordSymbol: string | null = null;
 
   function getActiveStaffId() {
@@ -542,8 +568,10 @@ function parseAbcBody(
     pitches: Pitch[] = [],
   ): ScoreEvent {
     const id = `abc-${eventCounter}`;
+    const articulations = normalizeArticulations(pendingArticulations);
     const chordSymbol = pendingChordSymbol ?? undefined;
     eventCounter += 1;
+    pendingArticulations = [];
     pendingChordSymbol = null;
 
     if (kind === 'rest') {
@@ -561,6 +589,7 @@ function parseAbcBody(
       return {
         id,
         beat,
+        articulations: articulations ?? undefined,
         chordSymbol,
         duration,
         dots: dots || undefined,
@@ -572,6 +601,7 @@ function parseAbcBody(
     return {
       id,
       beat,
+      articulations: articulations ?? undefined,
       chordSymbol,
       duration,
       dots: dots || undefined,
@@ -603,6 +633,25 @@ function parseAbcBody(
       }
 
       pendingChordSymbol = body.slice(index + 1, endIndex).trim() || null;
+      index = endIndex + 1;
+      continue;
+    }
+
+    if (char === '!') {
+      const endIndex = body.indexOf('!', index + 1);
+
+      if (endIndex === -1) {
+        warnings.push('Unclosed ABC decoration ignored');
+        break;
+      }
+
+      const decoration = body.slice(index + 1, endIndex).trim();
+      const articulation = ARTICULATION_BY_ABC_DECORATION.get(decoration);
+
+      if (articulation && isArticulationKind(articulation)) {
+        pendingArticulations.push(articulation);
+      }
+
       index = endIndex + 1;
       continue;
     }

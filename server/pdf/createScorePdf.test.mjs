@@ -1,8 +1,24 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
+import { trySetClefChange } from '../../src/domain/score/clefChanges';
 import { placeScoreEvent } from '../../src/domain/score/editing';
 import { createEmptyScore } from '../../src/domain/score/factories';
+import {
+  stressPianoHardeningFixture,
+} from '../../src/domain/score/fixtures';
+import { extremeScoreFixtureCatalog } from '../../src/domain/score/fixtureCatalog';
+import { getScoreMusicIssues } from '../../src/domain/score/musicIssues';
 import { createScorePdf, createScorePdfLayout } from './createScorePdf.mjs';
+
+function getAllScoreEvents(score) {
+  return score.parts.flatMap((part) =>
+    part.staves.flatMap((staff) =>
+      staff.measures.flatMap((measure) =>
+        measure.voices.flatMap((voice) => voice.events),
+      ),
+    ),
+  );
+}
 
 describe('createScorePdf', () => {
   it('returns a real PDF buffer for a score', async () => {
@@ -90,6 +106,91 @@ describe('createScorePdf', () => {
     expect(event?.ledgerYs).toHaveLength(4);
     expect(event?.bounds.maxY).toBeLessThanOrEqual(layout.pageSize[1] - 24);
   });
+
+  it('uses active clef changes when laying out PDF note pitch positions', () => {
+    const clefResult = trySetClefChange(
+      createEmptyScore('grand', { measureCount: 1 }),
+      'bass',
+      0,
+      1,
+      'treble',
+    );
+    const score = placeScoreEvent(clefResult.score, {
+      eventId: 'pdf-after-clef-change',
+      staffId: 'bass',
+      measureIndex: 0,
+      beat: 1,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'D', octave: 5 },
+    });
+    const layout = createScorePdfLayout(score);
+    const event = layout.events.find(
+      (candidate) => candidate.event.id === 'pdf-after-clef-change',
+    );
+
+    expect(event?.clef).toBe('treble');
+    expect(event?.y).toBeCloseTo((event?.staffTop ?? 0) + 8);
+  });
+
+  it('uses a clef change at the beginning of a PDF system as the displayed staff clef', () => {
+    const score = trySetClefChange(
+      createEmptyScore('grand', { measureCount: 1 }),
+      'bass',
+      0,
+      0,
+      'treble',
+    ).score;
+    const layout = createScorePdfLayout(score);
+    const bassStaff = layout.staves.find((staff) => staff.id === 'bass');
+
+    expect(bassStaff?.clef).toBe('treble');
+  });
+
+  it('keeps the hardening piano fixture event parity in legacy PDF layout', async () => {
+    const expectedEvents = getAllScoreEvents(stressPianoHardeningFixture);
+    const layout = createScorePdfLayout(stressPianoHardeningFixture);
+    const layoutIds = new Set(layout.events.map((event) => event.event.id));
+    const pdf = await createScorePdf(stressPianoHardeningFixture);
+
+    expect(layout.events).toHaveLength(expectedEvents.length);
+    [
+      'stress-voice2-m0-e5',
+      'stress-cross-source',
+      'stress-cross-target',
+      'stress-high-ledger',
+      'stress-low-ledger',
+      'stress-final-chord',
+      'stress-b-final',
+    ].forEach((eventId) => expect(layoutIds.has(eventId)).toBe(true));
+    expect(
+      layout.events.find((event) => event.event.id === 'stress-voice2-m0-e5')
+        ?.voiceIndex,
+    ).toBe(1);
+    expect(pdf.subarray(0, 5).toString('utf8')).toBe('%PDF-');
+    expect(pdf.length).toBeGreaterThan(1000);
+  });
+
+  it.each(extremeScoreFixtureCatalog)(
+    'exports the extreme fixture $label through the legacy PDF layout',
+    async (fixture) => {
+      const score = fixture.score;
+      const expectedEvents = getAllScoreEvents(score);
+      const layout = createScorePdfLayout(score);
+      const layoutIds = new Set(layout.events.map((event) => event.event.id));
+      const pdf = await createScorePdf(score);
+
+      expect(getScoreMusicIssues(score)).toEqual([]);
+      expect(expectedEvents).toHaveLength(fixture.expectedEventCount);
+      expect(layout.events).toHaveLength(expectedEvents.length);
+      expectedEvents.forEach((event) => {
+        expect(layoutIds.has(event.id)).toBe(true);
+      });
+      expect(layout.staves.length).toBeGreaterThan(0);
+      expect(pdf.subarray(0, 5).toString('utf8')).toBe('%PDF-');
+      expect(pdf.length).toBeGreaterThan(1000);
+    },
+  );
 
   it.each([
     {

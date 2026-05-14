@@ -2,8 +2,11 @@ import type { Score, ScoreType } from '../../domain/score/types';
 import {
   MAX_SYSTEM_NOTEHEADS,
   MEASURES_PER_SYSTEM,
+  SYSTEM_READABILITY_BREATHING_ROOM,
+  SYSTEM_WIDTH,
 } from './layoutConstants';
 import { countMeasureLaneDensities } from './measureDensity';
+import { getMeasureReadableMinWidthForLocalIndex } from './measureWidthPolicy';
 
 export interface ScoreSystemLayout {
   firstMeasureIndex: number;
@@ -33,10 +36,27 @@ export function computeScoreSystems(score: Score): ScoreSystemLayout[] {
   let currentSystemMeasureIndexes: number[] = [];
   let currentSystemLaneDensities = new Map<string, number>();
 
+  function getProjectedReadableWidth(candidateMeasureIndex: number) {
+    return [...currentSystemMeasureIndexes, candidateMeasureIndex].reduce(
+      (total, measureIndex, localMeasureIndex) =>
+        total +
+        getMeasureReadableMinWidthForLocalIndex(
+          score,
+          measureIndex,
+          localMeasureIndex,
+        ),
+      0,
+    );
+  }
+
   for (let measureIndex = 0; measureIndex < measureCount; measureIndex += 1) {
     const measureLaneDensities = countMeasureLaneDensities(score, measureIndex);
     const shouldBreakForCount =
       currentSystemMeasureIndexes.length >= MEASURES_PER_SYSTEM;
+    const shouldBreakForReadableWidth =
+      currentSystemMeasureIndexes.length > 0 &&
+      getProjectedReadableWidth(measureIndex) >
+        SYSTEM_WIDTH - SYSTEM_READABILITY_BREATHING_ROOM;
     const shouldBreakForDensity =
       currentSystemMeasureIndexes.length > 0 &&
       [...measureLaneDensities].some(
@@ -45,7 +65,7 @@ export function computeScoreSystems(score: Score): ScoreSystemLayout[] {
           MAX_SYSTEM_NOTEHEADS,
       );
 
-    if (shouldBreakForCount || shouldBreakForDensity) {
+    if (shouldBreakForCount || shouldBreakForReadableWidth || shouldBreakForDensity) {
       systems.push({
         firstMeasureIndex: currentSystemMeasureIndexes[0] ?? measureIndex,
         measureIndexes: currentSystemMeasureIndexes,

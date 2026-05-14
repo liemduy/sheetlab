@@ -171,10 +171,9 @@ export function drawTextAnnotations(
         '.sheetlab-chord-symbol',
         '.sheetlab-lyric',
         '.sheetlab-section-marker',
+        '.sheetlab-tempo-mark',
         '.sheetlab-dynamic',
-        '.sheetlab-fermata',
         '.sheetlab-pedal',
-        '.sheetlab-glissando',
       ].join(', '),
     )
     .forEach((element) => element.remove());
@@ -237,6 +236,19 @@ export function drawTextAnnotations(
         return nextState;
       };
 
+      if (staffIndex === 0 && systemIndex === 0) {
+        appendSvgText({
+          className: 'sheetlab-tempo-mark',
+          dataset: {
+            'data-testid': 'rendered-tempo-mark',
+          },
+          svg,
+          text: `Moderato \u2669 = ${Math.round(score.tempo)}`,
+          x: getMeasureContentLeft(systemFirstMeasureIndex, score) + 12,
+          y: staffTop - 56,
+        });
+      }
+
       systemMeasures.forEach((measure) => {
         if (staffIndex === 0 && measure.sectionMarker) {
           const markerX = getMeasureContentLeft(measure.index, score) + 12;
@@ -288,7 +300,7 @@ export function drawTextAnnotations(
           const voiceState = getVoiceState(voiceIndex);
           const sortedEvents = [...voice.events].sort((a, b) => a.beat - b.beat);
 
-          sortedEvents.forEach((event, eventIndex) => {
+          sortedEvents.forEach((event) => {
             const layout = eventLayouts[event.id];
 
             if (!layout || isGeneratedRestEvent(event)) {
@@ -400,21 +412,6 @@ export function drawTextAnnotations(
               });
             }
 
-            if (event.fermata) {
-              const text = getEventAnnotationText(event, 'fermata');
-
-              if (!text) {
-                return;
-              }
-
-              drawEventAnnotation({
-                className: 'sheetlab-fermata',
-                kind: 'fermata',
-                testId: 'rendered-fermata',
-                text,
-              });
-            }
-
             if (event.pedal) {
               const text = getEventAnnotationText(event, 'pedal');
 
@@ -428,29 +425,6 @@ export function drawTextAnnotations(
                 testId: 'rendered-pedal',
                 text,
               });
-            }
-
-            if (event.glissando) {
-              const nextEvent = sortedEvents
-                .slice(eventIndex + 1)
-                .find((candidate) => !isGeneratedRestEvent(candidate));
-              const nextLayout = nextEvent ? eventLayouts[nextEvent.id] : null;
-
-              if (nextLayout) {
-                const glissando = document.createElementNS(
-                  'http://www.w3.org/2000/svg',
-                  'line',
-                );
-
-                glissando.classList.add('sheetlab-glissando');
-                glissando.setAttribute('data-event-id', event.id);
-                glissando.setAttribute('data-testid', 'rendered-glissando');
-                glissando.setAttribute('x1', (layout.x + 12).toFixed(2));
-                glissando.setAttribute('y1', layout.y.toFixed(2));
-                glissando.setAttribute('x2', (nextLayout.x - 12).toFixed(2));
-                glissando.setAttribute('y2', nextLayout.y.toFixed(2));
-                svg.appendChild(glissando);
-              }
             }
           });
         });

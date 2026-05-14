@@ -1,17 +1,23 @@
 import type {
   Accidental,
+  ArticulationKind,
   AnnotationKind,
   AnnotationPlacementSide,
   DurationValue,
+  HairpinMark,
   LyricMap,
   PedalMark,
   Pitch,
   Score,
   ScoreEvent,
+  SlurMark,
+  StemDirection,
   Staff,
   StaffId,
+  TieMark,
   TupletInfo,
 } from './types';
+import { normalizeArticulations } from './articulations';
 import {
   getEventDurationBeats,
   getEventDurationTicks,
@@ -36,11 +42,19 @@ import { ensureMeasureCount } from './measureEditing';
 import { getMeasureBeats } from './timeSignatures';
 import {
   createTupletInfo,
+  getDefaultTupletNormalNotes,
   getTupletSlotDuration,
   getTupletSlotEffectiveBeats,
   isSupportedTupletActualNotes,
   type SupportedTupletActualNotes,
 } from './tuplets';
+import {
+  getAttachedStemDirectionEventIds,
+  getOppositeStemDirection,
+  getStemDirectionContext,
+  isStemmedScoreEvent,
+} from './stemDirection';
+import { getActiveClef } from './clefChanges';
 import { ensureMeasureVoiceCount, normalizeVoiceIndex } from './voices';
 
 export {
@@ -100,11 +114,14 @@ export interface UpdateScoreEventRequest {
   pitchIndex?: number;
   staffId?: StaffId;
   dots?: number;
+  articulations?: ArticulationKind[] | null;
+  stemDirection?: StemDirection | null;
   voiceIndex?: number;
   chordSymbol?: string | null;
   dynamic?: string | null;
   fermata?: boolean;
   glissando?: boolean;
+  hairpin?: HairpinMark | null;
   annotationPlacement?: {
     kind: AnnotationKind;
     side: AnnotationPlacementSide;
@@ -112,13 +129,23 @@ export interface UpdateScoreEventRequest {
   lyric?: string | null;
   lyricMap?: LyricMap | null;
   pedal?: PedalMark | null;
+  slurs?: SlurMark[] | null;
+  ties?: TieMark[] | null;
   tuplet?: TupletInfo | null;
 }
 
 export interface UpdateScoreEventResult {
   score: Score;
   updated: boolean;
-  reason?: PlaceScoreEventResult['reason'] | 'missing-event';
+  reason?: PlaceScoreEventResult['reason'] | 'locked-tuplet-slot' | 'missing-event';
+}
+
+export interface FlipStemDirectionResult {
+  score: Score;
+  updated: boolean;
+  eventIds?: string[];
+  direction?: StemDirection;
+  reason?: 'missing-event' | 'missing-stem' | UpdateScoreEventResult['reason'];
 }
 
 function createScoreEvent(request: PlaceScoreEventRequest): ScoreEvent {
@@ -147,11 +174,15 @@ function createScoreEvent(request: PlaceScoreEventRequest): ScoreEvent {
   };
 }
 
-function clampScoreEventToStaffRange(event: ScoreEvent, staff: Staff): ScoreEvent {
+function clampScoreEventToStaffRange(
+  event: ScoreEvent,
+  staff: Staff,
+  clef = staff.clef,
+): ScoreEvent {
   if (event.kind === 'note') {
     return {
       ...event,
-      pitch: clampPitchToClefRange(event.pitch, staff.clef),
+      pitch: clampPitchToClefRange(event.pitch, clef),
     };
   }
 
@@ -159,7 +190,7 @@ function clampScoreEventToStaffRange(event: ScoreEvent, staff: Staff): ScoreEven
     const uniquePitches = new Map<string, Pitch>();
 
     event.pitches
-      .map((pitch) => clampPitchToClefRange(pitch, staff.clef))
+      .map((pitch) => clampPitchToClefRange(pitch, clef))
       .forEach((pitch) => {
         uniquePitches.set(getPitchKey(pitch), pitch);
       });
@@ -178,16 +209,21 @@ function clampScoreEventToStaffRange(event: ScoreEvent, staff: Staff): ScoreEven
         kind: 'note',
         beat: event.beat,
         annotationPlacements: event.annotationPlacements,
+        articulations: event.articulations,
         chordSymbol: event.chordSymbol,
         dynamic: event.dynamic,
         duration: event.duration,
         dots: event.dots,
         fermata: event.fermata,
         glissando: event.glissando,
+        hairpin: event.hairpin,
         lyric: event.lyric,
         lyricMap: event.lyricMap,
         pedal: event.pedal,
         pitch,
+        slurs: event.slurs,
+        stemDirection: event.stemDirection,
+        ties: event.ties,
         tuplet: event.tuplet,
       };
     }
@@ -242,16 +278,21 @@ function mergePitchedEventWithNote(
     kind: 'chord',
     beat: noteEvent.beat,
     chordSymbol: existingEvent.chordSymbol,
+    articulations: existingEvent.articulations,
     dynamic: existingEvent.dynamic,
     duration: noteEvent.duration,
     dots: noteEvent.dots,
+    stemDirection: existingEvent.stemDirection,
     tuplet: noteEvent.tuplet ?? existingEvent.tuplet,
     fermata: existingEvent.fermata,
     glissando: existingEvent.glissando,
+    hairpin: existingEvent.hairpin,
     annotationPlacements: existingEvent.annotationPlacements,
     lyric: existingEvent.lyric,
     lyricMap: existingEvent.lyricMap,
     pedal: existingEvent.pedal,
+    slurs: existingEvent.slurs,
+    ties: existingEvent.ties,
     pitches,
   };
 }
@@ -308,6 +349,7 @@ function createUpdatedEventBase(
   const chordSymbol = normalizeAnnotationText(update.chordSymbol);
   const dynamic = normalizeAnnotationText(update.dynamic);
   const lyric = normalizeAnnotationText(update.lyric);
+  const articulations = normalizeArticulations(update.articulations);
   let annotationPlacements = event.annotationPlacements;
 
   if (update.annotationPlacement) {
@@ -332,6 +374,14 @@ function createUpdatedEventBase(
     beat,
     duration,
     dots: update.dots ?? event.dots,
+    articulations:
+      articulations === undefined ? event.articulations : articulations ?? undefined,
+    stemDirection:
+      duration === 'whole'
+        ? undefined
+        : update.stemDirection === undefined
+          ? event.stemDirection
+          : update.stemDirection ?? undefined,
     chordSymbol:
       chordSymbol === undefined ? event.chordSymbol : chordSymbol ?? undefined,
     dynamic: dynamic === undefined ? event.dynamic : dynamic ?? undefined,
@@ -341,11 +391,15 @@ function createUpdatedEventBase(
       update.glissando === undefined
         ? event.glissando
         : update.glissando || undefined,
+    hairpin:
+      update.hairpin === undefined ? event.hairpin : update.hairpin ?? undefined,
     annotationPlacements: normalizedAnnotationPlacements,
     lyric: lyric === undefined ? event.lyric : lyric ?? undefined,
     lyricMap:
       update.lyricMap === undefined ? event.lyricMap : update.lyricMap ?? undefined,
     pedal: update.pedal === undefined ? event.pedal : update.pedal ?? undefined,
+    slurs: update.slurs === undefined ? event.slurs : update.slurs ?? undefined,
+    ties: update.ties === undefined ? event.ties : update.ties ?? undefined,
     tuplet:
       update.tuplet === undefined ? event.tuplet : update.tuplet ?? undefined,
   };
@@ -359,8 +413,17 @@ function createUpdatedScoreEvent(
   update: UpdateScoreEventRequest,
 ): ScoreEvent {
   if (event.kind === 'rest') {
+    const {
+      articulations: _articulations,
+      hairpin: _hairpin,
+      slurs: _slurs,
+      stemDirection: _stemDirection,
+      ties: _ties,
+      ...base
+    } = createUpdatedEventBase(event, eventId, beat, duration, update);
+
     return {
-      ...createUpdatedEventBase(event, eventId, beat, duration, update),
+      ...base,
       kind: 'rest',
     };
   }
@@ -444,7 +507,17 @@ function writeScoreEvent(
     };
   }
 
-  const boundedEvent = clampScoreEventToStaffRange(nextEvent, targetStaff);
+  const activeClef = getActiveClef(
+    score,
+    staffId,
+    measureIndex,
+    nextEvent.beat,
+  );
+  const boundedEvent = clampScoreEventToStaffRange(
+    nextEvent,
+    targetStaff,
+    activeClef,
+  );
   const measureOverflow =
     getEventEnd(boundedEvent) > getMeasureBeats(score.timeSignature);
   const overlappingEvents = targetVoice.events.filter((event) =>
@@ -657,14 +730,18 @@ function createTupletGroupFromEvent(
   sourceEvent: ScoreEvent,
   actualNotes: SupportedTupletActualNotes,
 ) {
-  const slotDuration = getTupletSlotDuration(sourceEvent.duration, actualNotes);
+  const normalNotes = getDefaultTupletNormalNotes(actualNotes);
+  const slotDuration = getTupletSlotDuration(
+    sourceEvent.duration,
+    actualNotes,
+    normalNotes,
+  );
 
-  if (!slotDuration || sourceEvent.tuplet) {
+  if (!slotDuration || sourceEvent.dots || sourceEvent.tuplet) {
     return null;
   }
 
   const tupletId = createTupletId(sourceEvent.id);
-  const normalNotes = 2;
   const slotBeatStep = getTupletSlotEffectiveBeats(
     slotDuration,
     actualNotes,
@@ -822,7 +899,8 @@ export function tryPlaceTupletGroup(
   const targetStaff = target.targetStaff;
   const targetVoice = target.targetVoice;
   const targetVoiceIndex = target.voiceIndex;
-  const normalNotes = request.normalNotes ?? 2;
+  const normalNotes =
+    request.normalNotes ?? getDefaultTupletNormalNotes(request.actualNotes);
   const tupletId = createTupletId(request.eventId);
   const slotBeatStep = getTupletSlotEffectiveBeats(
     slotDuration,
@@ -1346,6 +1424,18 @@ export function tryUpdateScoreEvent(
     };
   }
 
+  if (
+    found.event.tuplet &&
+    ((update.duration !== undefined && update.duration !== found.event.duration) ||
+      (update.dots !== undefined && update.dots !== getEventDots(found.event)))
+  ) {
+    return {
+      score,
+      updated: false,
+      reason: 'locked-tuplet-slot',
+    };
+  }
+
   const scoreWithoutEvent = deleteScoreEvent(score, eventId);
   const duration = update.duration ?? found.event.duration;
   const targetStaffId = update.staffId ?? found.staffId;
@@ -1375,5 +1465,64 @@ export function tryUpdateScoreEvent(
     score: result.placed ? result.score : score,
     updated: result.placed,
     reason: result.reason,
+  };
+}
+
+export function tryFlipScoreEventStemDirection(
+  score: Score,
+  eventId: string,
+): FlipStemDirectionResult {
+  const context = getStemDirectionContext(score, eventId);
+
+  if (!context) {
+    return {
+      score,
+      updated: false,
+      reason: 'missing-event',
+    };
+  }
+
+  if (!isStemmedScoreEvent(context.event) || !context.direction) {
+    return {
+      score,
+      updated: false,
+      reason: 'missing-stem',
+    };
+  }
+
+  const direction = getOppositeStemDirection(context.direction);
+  const eventIds = getAttachedStemDirectionEventIds(score, eventId);
+
+  if (eventIds.length === 0) {
+    return {
+      score,
+      updated: false,
+      reason: 'missing-stem',
+    };
+  }
+
+  let nextScore = score;
+
+  for (const targetEventId of eventIds) {
+    const result = tryUpdateScoreEvent(nextScore, targetEventId, {
+      stemDirection: direction,
+    });
+
+    if (!result.updated) {
+      return {
+        score,
+        updated: false,
+        reason: result.reason,
+      };
+    }
+
+    nextScore = result.score;
+  }
+
+  return {
+    score: nextScore,
+    updated: true,
+    direction,
+    eventIds,
   };
 }

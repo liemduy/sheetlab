@@ -4,18 +4,24 @@ import {
   deleteScoreEventPitch,
   findScoreEvent,
   tryCreateTupletFromEvent,
+  tryFlipScoreEventStemDirection,
   tryUpdateScoreEvent,
 } from '../../domain/score/editing';
-import type {
-  AccidentalChoice,
-  EditorToolState,
+import {
+  DURATION_OPTIONS,
+  type AccidentalChoice,
+  type EditorToolState,
 } from '../editor/editorState';
 import type { DurationValue, Score } from '../../domain/score/types';
 import {
   diatonicValueToPitch,
   pitchToDiatonicValue,
 } from '../../domain/score/pitchRange';
-import { getTupletSlotDuration } from '../../domain/score/tuplets';
+import {
+  getDefaultTupletNormalNotes,
+  getTupletSlotDuration,
+  type SupportedTupletActualNotes,
+} from '../../domain/score/tuplets';
 import type { MusicPosition } from '../sheet/interaction';
 import { pitchesMatch } from './inputCursorFlow';
 import type { MeasureTarget, SelectionSource } from './selectionTypes';
@@ -41,6 +47,37 @@ interface UseScoreEventEditingOptions {
   setEditorMessage: (message: string) => void;
   toolState: EditorToolState;
   updateToolState: (update: Partial<EditorToolState>) => void;
+}
+
+function getTupletLabel(actualNotes: SupportedTupletActualNotes) {
+  return actualNotes === 3 ? 'Triplet' : `Tuplet ${actualNotes}`;
+}
+
+function getTupletEntrySetup(
+  currentDuration: DurationValue,
+  actualNotes: SupportedTupletActualNotes,
+) {
+  const normalNotes = getDefaultTupletNormalNotes(actualNotes);
+  const currentIndex = DURATION_OPTIONS.indexOf(currentDuration);
+
+  for (let index = currentIndex; index >= 0; index -= 1) {
+    const totalDuration = DURATION_OPTIONS[index];
+    const slotDuration = getTupletSlotDuration(
+      totalDuration,
+      actualNotes,
+      normalNotes,
+    );
+
+    if (slotDuration) {
+      return {
+        normalNotes,
+        slotDuration,
+        totalDuration,
+      };
+    }
+  }
+
+  return null;
 }
 
 export function useScoreEventEditing({
@@ -105,7 +142,7 @@ export function useScoreEventEditing({
   }
 
   function handleDurationChange(duration: DurationValue) {
-    updateToolState({ duration, isInputArmed: true });
+    updateToolState({ clefChange: null, duration, isInputArmed: true, tuplet: null });
     clearPointerState();
     clearMeasureSelection();
     updateSelectedEvent(
@@ -118,7 +155,7 @@ export function useScoreEventEditing({
   function handleDottedChange(dotted: boolean) {
     const dots = dotted ? 1 : 0;
 
-    updateToolState({ dots });
+    updateToolState({ clefChange: null, dots, tuplet: null });
     clearPointerState();
     clearMeasureSelection();
     updateSelectedEvent(
@@ -128,23 +165,41 @@ export function useScoreEventEditing({
     );
   }
 
-  function handleTupletChange(actualNotes: 3 | null) {
+  function handleTupletChange(actualNotes: SupportedTupletActualNotes | null) {
     if (actualNotes === null) {
-      updateToolState({ tuplet: null });
-      setEditorMessage('Triplet entry cleared');
+      updateToolState({ clefChange: null, tuplet: null });
+      setEditorMessage('Tuplet entry cleared');
       return;
     }
 
+    const tupletLabel = getTupletLabel(actualNotes);
+    const tupletName = tupletLabel.toLowerCase();
+    const normalNotes = getDefaultTupletNormalNotes(actualNotes);
+
     if (selectedEventId && selectedEventSource === 'manual') {
       const foundEvent = findScoreEvent(score, selectedEventId);
+      if (foundEvent?.event.dots) {
+        markInvalidMeasure(
+          foundEvent.staffId,
+          foundEvent.measureIndex,
+          `Cannot create ${tupletName}: unsupported-tuplet`,
+        );
+        return;
+      }
+
       const slotDuration = foundEvent
-        ? getTupletSlotDuration(foundEvent.event.duration, actualNotes)
+        ? getTupletSlotDuration(
+            foundEvent.event.duration,
+            actualNotes,
+            normalNotes,
+          )
         : null;
       const result = tryCreateTupletFromEvent(score, selectedEventId, actualNotes);
 
       if (result.updated) {
-        commitScoreChange(result.score, 'Triplet created');
+        commitScoreChange(result.score, `${tupletLabel} created`);
         updateToolState({
+          clefChange: null,
           dots: 0,
           duration: slotDuration ?? toolState.duration,
           isInputArmed: true,
@@ -153,36 +208,51 @@ export function useScoreEventEditing({
         clearPointerState();
         clearMeasureSelection();
       } else {
-        setEditorMessage(`Cannot create triplet: ${result.reason}`);
+        if (foundEvent) {
+          markInvalidMeasure(
+            foundEvent.staffId,
+            foundEvent.measureIndex,
+            `Cannot create ${tupletName}: ${result.reason}`,
+          );
+        } else {
+          setEditorMessage(`Cannot create ${tupletName}: ${result.reason}`);
+        }
       }
 
       return;
     }
 
-    const slotDuration = getTupletSlotDuration(toolState.duration, actualNotes);
+    if (toolState.dots > 0) {
+      setEditorMessage(`Cannot create ${tupletName} from dotted duration`);
+      updateToolState({ clefChange: null, tuplet: null });
+      return;
+    }
 
-    if (!slotDuration) {
-      setEditorMessage('Cannot create triplet from this duration');
+    const setup = getTupletEntrySetup(toolState.duration, actualNotes);
+
+    if (!setup) {
+      setEditorMessage(`Cannot create ${tupletName} from this duration`);
       return;
     }
 
     updateToolState({
+      clefChange: null,
       dots: 0,
-      duration: slotDuration,
+      duration: setup.slotDuration,
       isInputArmed: true,
       tuplet: {
         actualNotes,
-        normalNotes: 2,
-        totalDuration: toolState.duration,
+        normalNotes: setup.normalNotes,
+        totalDuration: setup.totalDuration,
       },
     });
     clearPointerState();
     clearMeasureSelection();
-    setEditorMessage('Triplet entry enabled');
+    setEditorMessage(`${tupletLabel} entry enabled`);
   }
 
   function handleAccidentalChange(accidental: AccidentalChoice) {
-    updateToolState({ accidental });
+    updateToolState({ accidental, clefChange: null });
     updateSelectedEvent(
       { accidental: accidental === 'none' ? null : accidental },
       'Event accidental updated',
@@ -323,12 +393,45 @@ export function useScoreEventEditing({
     }
   }
 
+  function handleFlipSelectedDirection() {
+    if (!selectedEventId || selectedEventSource !== 'manual') {
+      return;
+    }
+
+    const result = tryFlipScoreEventStemDirection(score, selectedEventId);
+
+    if (result.updated) {
+      commitScoreChange(
+        result.score,
+        result.eventIds && result.eventIds.length > 1
+          ? 'Beam direction flipped'
+          : 'Stem direction flipped',
+      );
+      clearPointerState();
+      clearMeasureSelection();
+      return;
+    }
+
+    const foundEvent = findScoreEvent(score, selectedEventId);
+
+    if (foundEvent) {
+      markInvalidMeasure(
+        foundEvent.staffId,
+        foundEvent.measureIndex,
+        `Cannot flip direction: ${result.reason}`,
+      );
+    } else {
+      setEditorMessage(`Cannot flip direction: ${result.reason}`);
+    }
+  }
+
   return {
     handleAccidentalChange,
     handleDeleteEvent,
     handleDeleteSelected,
     handleDottedChange,
     handleDurationChange,
+    handleFlipSelectedDirection,
     handleMoveEvent,
     handleTransposeSelectedPitch,
     handleTupletChange,

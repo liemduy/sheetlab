@@ -7,6 +7,7 @@ import {
   normalizeMeasureVoice,
   normalizeScoreRhythm,
 } from './rhythm';
+import { getDurationTicks, getMeasureTicks } from './ticks';
 import type { Score, ScoreEvent } from './types';
 
 const FOUR_FOUR = { beats: 4, beatUnit: 4 };
@@ -15,8 +16,8 @@ describe('score rhythm normalization', () => {
   it('represents an empty measure as a full implicit rest', () => {
     expect(normalizeMeasureVoice([], FOUR_FOUR)).toEqual([
       {
-        durationTicks: 1920,
-        endTick: 1920,
+        durationTicks: getMeasureTicks(FOUR_FOUR),
+        endTick: getMeasureTicks(FOUR_FOUR),
         source: 'implicit-rest',
         startBeat: 0,
         startTick: 0,
@@ -51,22 +52,22 @@ describe('score rhythm normalization', () => {
       })),
     ).toEqual([
       {
-        durationTicks: 480,
+        durationTicks: getDurationTicks('quarter'),
         eventId: 'note-1',
         source: 'event',
         startTick: 0,
       },
       {
-        durationTicks: 480,
+        durationTicks: getDurationTicks('quarter'),
         eventId: null,
         source: 'implicit-rest',
-        startTick: 480,
+        startTick: getDurationTicks('quarter'),
       },
       {
-        durationTicks: 960,
+        durationTicks: getDurationTicks('half'),
         eventId: 'note-2',
         source: 'event',
-        startTick: 960,
+        startTick: getDurationTicks('half'),
       },
     ]);
   });
@@ -90,13 +91,13 @@ describe('score rhythm normalization', () => {
       })),
     ).toEqual([
       {
-        durationTicks: 960,
+        durationTicks: getDurationTicks('half'),
         eventId: 'rest-1',
         kind: 'rest',
         source: 'event',
       },
       {
-        durationTicks: 960,
+        durationTicks: getDurationTicks('half'),
         eventId: null,
         kind: 'implicit-rest',
         source: 'implicit-rest',

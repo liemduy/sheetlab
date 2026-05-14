@@ -3,6 +3,7 @@ import type { MouseEvent } from 'react';
 import type { Score } from '../../domain/score/types';
 import type {
   AnnotationKind,
+  Clef,
   DurationValue,
   StaffId,
 } from '../../domain/score/types';
@@ -10,6 +11,7 @@ import { getMeasureBeats } from '../../domain/score/timeSignatures';
 import { getKeySignatureSymbolMoveIssue } from '../../domain/score/keySignatures';
 import { getEventDots } from '../../domain/score/events';
 import { getLyricMapTargetEventIds } from '../../domain/score/lyricMapping';
+import { getActiveClef } from '../../domain/score/clefChanges';
 import type { EntryMode, PlacementMode } from '../editor/editorState';
 import type { InputCursor } from '../editor/inputCursor';
 import {
@@ -28,8 +30,8 @@ import {
   getMeasureRight,
   isScoreSystemEndMeasure,
 } from './layout';
-import { snapInsertPositionToEventBoundary } from './insertPosition';
 import { getPitchYForScore } from './notationGeometry';
+import { getBeatX } from './notationGeometry';
 import { getMeasureKey } from './measureKey';
 import {
   getKeySignatureSymbolLayouts,
@@ -39,14 +41,26 @@ import {
   inputCursorToMusicPosition,
   snapPositionToInputGrid,
 } from './overlayPositioning';
+import { snapInsertPositionToEventBoundary } from './insertPosition';
 import { EventHitTarget } from './OverlayEventHitTarget';
 import {
   GhostEvent,
   InsertionCursor,
+  ClefChangePreview,
   RhythmSlots,
   StaffHoverGuide,
 } from './OverlayInputLayer';
+import {
+  getInsertTargetEvent,
+  resolveInsertDisplayPosition,
+} from './insertPreview';
+import { findClosestRenderedInsertTarget } from './renderedEventTargets';
 import { KeySignatureSymbolTarget } from './OverlayKeySignatureTarget';
+import {
+  ClefChangeTarget,
+  getClefChangeTargetLayouts,
+  type ClefChangeTargetLayout,
+} from './OverlayClefChangeTarget';
 import {
   InvalidMeasureWarning,
   MeasureHitTarget,
@@ -70,6 +84,7 @@ import type {
 interface NotationOverlayProps {
   activeEventId?: string | null;
   activeEventIds?: readonly string[];
+  clefChange?: Clef | null;
   dots: number;
   duration: DurationValue;
   entryMode: EntryMode;
@@ -109,11 +124,25 @@ interface NotationOverlayProps {
     symbolIndex: number,
     position: MusicPosition,
   ) => void;
+  onMoveClefChange?: (
+    target: {
+      clefChangeId: string;
+      measureIndex: number;
+      staffId: StaffId;
+    },
+    position: MusicPosition,
+  ) => void;
+  onSelectClefChange?: (target: {
+    clefChangeId: string;
+    measureIndex: number;
+    staffId: StaffId;
+  }) => void;
   onSelectMeasure?: (staffId: StaffId, measureIndex: number) => void;
   playbackBeat?: number | null;
   placementMode?: PlacementMode;
   score: Score;
   selectedEventId?: string | null;
+  selectedClefChangeId?: string | null;
   selectedMeasure?: { staffId: StaffId; measureIndex: number } | null;
   selectedPitchIndex?: number | null;
   svgHeight: number;
@@ -130,6 +159,7 @@ export function NotationOverlay({
   activeEventId,
   activeEventIds = [],
   annotationLayouts = [],
+  clefChange = null,
   dots,
   duration,
   entryMode,
@@ -141,6 +171,7 @@ export function NotationOverlay({
   onClearInteraction,
   onHoverPositionChange,
   onMoveEvent,
+  onMoveClefChange,
   onMoveKeySignatureSymbol,
   onAnnotationContextMenu,
   onLyricMapChange,
@@ -149,10 +180,12 @@ export function NotationOverlay({
   onMeasureContextMenu,
   onSelectMeasure,
   onSelectEvent,
+  onSelectClefChange,
   playbackBeat,
   placementMode = 'place',
   score,
   selectedEventId,
+  selectedClefChangeId,
   selectedMeasure,
   selectedPitchIndex,
   showLayoutZones = false,
@@ -181,6 +214,16 @@ export function NotationOverlay({
     startSvgX: number;
     startSvgY: number;
   } | null>(null);
+  const [clefChangeDragState, setClefChangeDragState] = useState<{
+    hasMoved: boolean;
+    layout: ClefChangeTargetLayout;
+    previewIssue: string | null;
+    previewPosition: MusicPosition | null;
+    startClientX: number;
+    startClientY: number;
+    startSvgX: number;
+    startSvgY: number;
+  } | null>(null);
   const [lyricMapDragState, setLyricMapDragState] = useState<(LyricMapDragAnchor & {
     previewPoint: { x: number; y: number } | null;
   }) | null>(null);
@@ -191,6 +234,10 @@ export function NotationOverlay({
   const staves = score.parts[0]?.staves ?? [];
   const beatsPerMeasure = getMeasureBeats(score.timeSignature);
   const keySignatureSymbolLayouts = getKeySignatureSymbolLayouts(score);
+  const clefChangeTargetLayouts = getClefChangeTargetLayouts({
+    eventLayouts,
+    score,
+  });
   const invalidMeasureKeySet = new Set(invalidMeasureKeys);
   const activeEventIdSet = new Set([
     ...activeEventIds,
@@ -210,7 +257,13 @@ export function NotationOverlay({
     inputCursor && hoverPosition
       ? inputCursorToMusicPosition(inputCursor, score)
       : null;
-  const hoverSourcePosition = inputCursorPosition ?? hoverPosition;
+  const cursorMatchesHover =
+    Boolean(inputCursor && hoverPosition) &&
+    inputCursor?.staffId === hoverPosition?.staffId &&
+    inputCursor?.measureIndex === hoverPosition?.measureIndex &&
+    Math.abs((inputCursor?.beat ?? 0) - (hoverPosition?.beat ?? 0)) <= 0.0001;
+  const hoverSourcePosition =
+    cursorMatchesHover ? inputCursorPosition : hoverPosition ?? inputCursorPosition;
   const preferredStaffId =
     hoverPosition?.staffId ?? inputCursor?.staffId ?? null;
   const snappedHoverPosition = hoverSourcePosition
@@ -221,21 +274,45 @@ export function NotationOverlay({
         score,
         eventLayouts,
         voiceIndex,
+        { preferRenderedPosition: !cursorMatchesHover },
       )
     : null;
   const shouldShowInputPreview =
     isInputArmed &&
     !dragState &&
     !keySignatureDragState &&
+    !clefChangeDragState &&
     !lyricMapDragState &&
     !deleteHoverEventId &&
     !selectedEventId;
   const displayHoverPosition =
     shouldShowInputPreview && placementMode === 'insert' && snappedHoverPosition
-      ? snapInsertPositionToEventBoundary(score, snappedHoverPosition, voiceIndex)
+      ? resolveInsertDisplayPosition({
+          dots,
+          duration,
+          eventLayouts,
+          position: snappedHoverPosition,
+          score,
+          voiceIndex,
+        })
       : shouldShowInputPreview
         ? snappedHoverPosition
         : null;
+  const displayInputCursor =
+    inputCursor && displayHoverPosition
+      ? {
+          ...inputCursor,
+          beat: displayHoverPosition.beat,
+          clientX: displayHoverPosition.clientX,
+          clientY: displayHoverPosition.clientY,
+          measureIndex: displayHoverPosition.measureIndex,
+          pitchPreview: displayHoverPosition.pitch,
+          staffId: displayHoverPosition.staffId,
+          staffIndex: displayHoverPosition.staffIndex,
+        }
+      : placementMode === 'insert'
+        ? null
+        : inputCursor;
 
   function getEventMusicPosition(event: MouseEvent<SVGSVGElement>) {
     const position = mapPointToMusicPosition(
@@ -297,16 +374,22 @@ export function NotationOverlay({
     }
 
     const targetMeasureIndex = mappedPosition?.measureIndex ?? origin.measureIndex;
+    const activeClef = getActiveClef(
+      score,
+      staff.id,
+      targetMeasureIndex,
+      origin.beat,
+    );
     const pitch = mapScoreStaffYToPitch(
       point.y,
-      staff.clef,
+      activeClef,
       targetStaffIndex,
       score,
       targetMeasureIndex,
     );
     const y = getPitchYForScore(
       pitch,
-      staff.clef,
+      activeClef,
       targetStaffIndex,
       score,
       targetMeasureIndex,
@@ -337,16 +420,22 @@ export function NotationOverlay({
     }
 
     const point = getSvgPoint(event, svgHeight);
+    const activeClef = getActiveClef(
+      score,
+      staff.id,
+      layout.measureIndex,
+      0,
+    );
     const pitch = mapScoreStaffYToPitch(
       point.y,
-      staff.clef,
+      activeClef,
       layout.staffIndex,
       score,
       layout.measureIndex,
     );
     const y = getPitchYForScore(
       pitch,
-      staff.clef,
+      activeClef,
       layout.staffIndex,
       score,
       layout.measureIndex,
@@ -363,6 +452,69 @@ export function NotationOverlay({
       x: layout.x,
       y,
     };
+  }
+
+  function getClefChangeDragMusicPosition(event: MouseEvent<SVGSVGElement>) {
+    const point = getSvgPoint(event, svgHeight);
+    const pointerPosition = getEventMusicPosition(event);
+
+    if (!pointerPosition) {
+      return null;
+    }
+
+    const boundaryPosition = snapInsertPositionToEventBoundary(
+      score,
+      pointerPosition,
+      voiceIndex,
+    );
+    const targetEvent = getInsertTargetEvent(
+      score,
+      boundaryPosition,
+      voiceIndex,
+    );
+    const renderedTarget =
+      targetEvent && eventLayouts[targetEvent.id]
+        ? {
+            beat: targetEvent.beat,
+            layout: eventLayouts[targetEvent.id],
+          }
+        : findClosestRenderedInsertTarget({
+            eventLayouts,
+            measureIndex: boundaryPosition.measureIndex,
+            pointerX: point.x,
+            staffId: boundaryPosition.staffId,
+            voiceIndex,
+          });
+    const targetLayout = renderedTarget?.layout;
+
+    return {
+      ...boundaryPosition,
+      beat: renderedTarget?.beat ?? targetEvent?.beat ?? boundaryPosition.beat,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      pitch: pointerPosition.pitch,
+      x:
+        targetLayout?.staffId === boundaryPosition.staffId &&
+        targetLayout.measureIndex === boundaryPosition.measureIndex
+          ? targetLayout.x
+          : getBeatX(
+              boundaryPosition.measureIndex,
+              renderedTarget?.beat ?? targetEvent?.beat ?? boundaryPosition.beat,
+              beatsPerMeasure,
+              score,
+            ),
+      y: pointerPosition.y,
+    };
+  }
+
+  function getClefChangePreviewIssue(position: MusicPosition | null) {
+    if (!position) {
+      return 'missing-target';
+    }
+
+    return getInsertTargetEvent(score, position, voiceIndex)
+      ? null
+      : 'target-note-required';
   }
 
   const keySignaturePreviewIssue =
@@ -431,6 +583,35 @@ export function NotationOverlay({
           return;
         }
 
+        if (clefChangeDragState) {
+          const point = getSvgPoint(event, svgHeight);
+          const clientMovement = Math.hypot(
+            event.clientX - clefChangeDragState.startClientX,
+            event.clientY - clefChangeDragState.startClientY,
+          );
+          const svgMovement = Math.hypot(
+            point.x - clefChangeDragState.startSvgX,
+            point.y - clefChangeDragState.startSvgY,
+          );
+          const hasMoved =
+            clefChangeDragState.hasMoved ||
+            Math.max(clientMovement, svgMovement) > 3;
+          const previewPosition = hasMoved
+            ? getClefChangeDragMusicPosition(event)
+            : clefChangeDragState.previewPosition;
+
+          setClefChangeDragState({
+            ...clefChangeDragState,
+            hasMoved,
+            previewIssue: hasMoved
+              ? getClefChangePreviewIssue(previewPosition)
+              : clefChangeDragState.previewIssue,
+            previewPosition,
+          });
+          onHoverPositionChange?.(null);
+          return;
+        }
+
         if (dragState) {
           const position = getDragMusicPosition(event);
           const point = getSvgPoint(event, svgHeight);
@@ -465,6 +646,7 @@ export function NotationOverlay({
                 score,
                 eventLayouts,
                 voiceIndex,
+                { preferRenderedPosition: true },
               )
             : null,
         );
@@ -472,6 +654,7 @@ export function NotationOverlay({
       onMouseLeave={() => {
         setDragState(null);
         setKeySignatureDragState(null);
+        setClefChangeDragState(null);
         setLyricMapDragState(null);
         setDeleteHoverEventId(null);
         onHoverPositionChange?.(null);
@@ -513,6 +696,25 @@ export function NotationOverlay({
           return;
         }
 
+        if (clefChangeDragState) {
+          const position = getClefChangeDragMusicPosition(event);
+
+          if (clefChangeDragState.hasMoved && position) {
+            suppressNextPlaceRef.current = true;
+            onMoveClefChange?.(
+              {
+                clefChangeId: clefChangeDragState.layout.id,
+                measureIndex: clefChangeDragState.layout.measureIndex,
+                staffId: clefChangeDragState.layout.staffId,
+              },
+              position,
+            );
+          }
+
+          setClefChangeDragState(null);
+          return;
+        }
+
         if (!dragState) {
           return;
         }
@@ -545,6 +747,7 @@ export function NotationOverlay({
               score,
               eventLayouts,
               voiceIndex,
+              { preferRenderedPosition: true },
             )
           : null;
 
@@ -580,12 +783,12 @@ export function NotationOverlay({
       <RhythmSlots
         entryMode={entryMode}
         eventLayouts={eventLayouts}
-        inputCursor={inputCursor}
-        isInputArmed={shouldShowInputPreview}
+        inputCursor={displayInputCursor}
+        isInputArmed={shouldShowInputPreview && !clefChange}
         score={score}
         voiceIndex={voiceIndex}
       />
-      {!dragState && displayHoverPosition && !inputCursor ? (
+      {!dragState && displayHoverPosition && !displayInputCursor ? (
         <StaffHoverGuide
           position={displayHoverPosition}
           score={score}
@@ -617,13 +820,21 @@ export function NotationOverlay({
               score={score}
             />
           ) : null}
-          <GhostEvent
-            dots={dots}
-            duration={duration}
-            entryMode={entryMode}
-            position={displayHoverPosition}
-            score={score}
-          />
+          {clefChange ? (
+            <ClefChangePreview
+              clef={clefChange}
+              position={displayHoverPosition}
+              score={score}
+            />
+          ) : (
+            <GhostEvent
+              dots={dots}
+              duration={duration}
+              entryMode={entryMode}
+              position={displayHoverPosition}
+              score={score}
+            />
+          )}
         </>
       ) : null}
       {staves.map((staff, staffIndex) => (
@@ -689,41 +900,46 @@ export function NotationOverlay({
           {staff.measures.flatMap((measure) =>
             measure.voices.flatMap((voice, voiceIndexForTarget) =>
               voice.events.map((event) => (
-              <EventHitTarget
-                key={event.id}
-                activeEventId={activeEventId}
-                isPlaybackActive={activeEventIdSet.has(event.id)}
-                beatsPerMeasure={beatsPerMeasure}
-                event={event}
-                eventLayout={eventLayouts[event.id]}
-                isInputArmed={isInputArmed}
-                measureIndex={measure.index}
-                onDeleteEvent={onDeleteEvent}
-                onDeleteHoverChange={setDeleteHoverEventId}
-                onStartDrag={(eventId, pitchIndex, originPosition, dragEvent) => {
-                  const startPoint = getNestedSvgPoint(dragEvent);
-
-                  setDragState({
+                <EventHitTarget
+                  key={`${event.id}-voice-${voiceIndexForTarget}`}
+                  activeEventId={activeEventId}
+                  isPlaybackActive={activeEventIdSet.has(event.id)}
+                  beatsPerMeasure={beatsPerMeasure}
+                  event={event}
+                  eventLayout={eventLayouts[event.id]}
+                  isInputArmed={isInputArmed}
+                  measureIndex={measure.index}
+                  onDeleteEvent={onDeleteEvent}
+                  onDeleteHoverChange={setDeleteHoverEventId}
+                  onStartDrag={(
                     eventId,
-                    hasMoved: false,
-                    originPosition,
                     pitchIndex,
-                    previewPosition: null,
-                    startClientX: dragEvent.clientX,
-                    startClientY: dragEvent.clientY,
-                    startSvgX: startPoint.x,
-                    startSvgY: startPoint.y,
-                  });
-                }}
-                onSelectEvent={onSelectEvent}
-                placementMode={placementMode}
-                selectedEventId={selectedEventId}
-                selectedPitchIndex={selectedPitchIndex}
-                score={score}
-                staff={staff}
-                staffIndex={staffIndex}
-                voiceIndex={voiceIndexForTarget}
-              />
+                    originPosition,
+                    dragEvent,
+                  ) => {
+                    const startPoint = getNestedSvgPoint(dragEvent);
+
+                    setDragState({
+                      eventId,
+                      hasMoved: false,
+                      originPosition,
+                      pitchIndex,
+                      previewPosition: null,
+                      startClientX: dragEvent.clientX,
+                      startClientY: dragEvent.clientY,
+                      startSvgX: startPoint.x,
+                      startSvgY: startPoint.y,
+                    });
+                  }}
+                  onSelectEvent={onSelectEvent}
+                  placementMode={placementMode}
+                  selectedEventId={selectedEventId}
+                  selectedPitchIndex={selectedPitchIndex}
+                  score={score}
+                  staff={staff}
+                  staffIndex={staffIndex}
+                  voiceIndex={voiceIndexForTarget}
+                />
               )),
             ),
           )}
@@ -768,6 +984,36 @@ export function NotationOverlay({
           }}
         />
       ))}
+      {clefChangeTargetLayouts.map((layout) => (
+        <ClefChangeTarget
+          key={layout.id}
+          isInputArmed={isInputArmed}
+          isSelected={selectedClefChangeId === layout.id}
+          layout={layout}
+          onSelect={(targetLayout) =>
+            onSelectClefChange?.({
+              clefChangeId: targetLayout.id,
+              measureIndex: targetLayout.measureIndex,
+              staffId: targetLayout.staffId,
+            })
+          }
+          onStartDrag={(targetLayout, dragEvent) => {
+            const startPoint = getNestedSvgPoint(dragEvent);
+
+            setClefChangeDragState({
+              hasMoved: false,
+              layout: targetLayout,
+              previewIssue: null,
+              previewPosition: null,
+              startClientX: dragEvent.clientX,
+              startClientY: dragEvent.clientY,
+              startSvgX: startPoint.x,
+              startSvgY: startPoint.y,
+            });
+            onHoverPositionChange?.(null);
+          }}
+        />
+      ))}
       <PlaybackLayer
         beatsPerMeasure={beatsPerMeasure}
         eventLayouts={eventLayouts}
@@ -798,6 +1044,14 @@ export function NotationOverlay({
         >
           {KEY_SIGNATURE_SYMBOL_TEXT[keySignatureDragState.layout.accidental]}
         </text>
+      ) : null}
+      {clefChangeDragState?.previewPosition ? (
+        <ClefChangePreview
+          clef={clefChangeDragState.layout.clef}
+          isInvalid={Boolean(clefChangeDragState.previewIssue)}
+          position={clefChangeDragState.previewPosition}
+          score={score}
+        />
       ) : null}
     </svg>
   );

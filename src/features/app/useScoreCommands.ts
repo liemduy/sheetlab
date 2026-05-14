@@ -87,7 +87,7 @@ export function useScoreCommands({
   }
 
   function handleScoreTypeChange(scoreType: ScoreType) {
-    updateToolState({ scoreType, isInputArmed: false });
+    updateToolState({ clefChange: null, scoreType, isInputArmed: false });
     commitScoreChange(
       createEmptyScore(scoreType, {
         pageSize: score.pageSize,
@@ -101,7 +101,7 @@ export function useScoreCommands({
   }
 
   function handleResetScore() {
-    updateToolState({ placementMode: 'place', isInputArmed: false });
+    updateToolState({ clefChange: null, placementMode: 'place', isInputArmed: false });
     commitScoreChange(
       createEmptyScore(toolState.scoreType, {
         pageSize: score.pageSize,

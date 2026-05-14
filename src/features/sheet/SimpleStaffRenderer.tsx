@@ -1,5 +1,6 @@
 import type { MouseEvent } from 'react';
 import type { Score, ScoreEvent, Staff } from '../../domain/score/types';
+import { getActiveClef } from '../../domain/score/clefChanges';
 import type { DurationValue } from '../../domain/score/types';
 import {
   formatEventPitchList,
@@ -48,6 +49,7 @@ function EventGlyph({
   onSelectEvent,
   activeEventId,
   selectedEventId,
+  score,
   staff,
   staffIndex,
 }: {
@@ -57,6 +59,7 @@ function EventGlyph({
   onSelectEvent?: (eventId: string) => void;
   activeEventId?: string | null;
   selectedEventId?: string | null;
+  score: Score;
   staff: Staff;
   staffIndex: number;
 }) {
@@ -65,7 +68,11 @@ function EventGlyph({
   const primaryPitch = getPrimaryEventPitch(event);
   const y =
     primaryPitch
-      ? getPitchY(primaryPitch, staff.clef, staffIndex)
+      ? getPitchY(
+          primaryPitch,
+          getActiveClef(score, staff.id, measureIndex, event.beat),
+          staffIndex,
+        )
       : getStaffTop(staffIndex) + STAFF_LINE_SPACING * 2;
   const label =
     event.kind === 'rest'
@@ -82,7 +89,11 @@ function EventGlyph({
         duration={event.duration}
         notes={eventPitches.map((pitch) => ({
           pitch,
-          y: getPitchY(pitch, staff.clef, staffIndex),
+          y: getPitchY(
+            pitch,
+            getActiveClef(score, staff.id, measureIndex, event.beat),
+            staffIndex,
+          ),
         }))}
         staffIndex={staffIndex}
         variant="placed"
@@ -95,7 +106,11 @@ function EventGlyph({
         staffIndex={staffIndex}
         variant="placed"
         x={x}
-        y={getPitchY(eventPitches[0], staff.clef, staffIndex)}
+        y={getPitchY(
+          eventPitches[0],
+          getActiveClef(score, staff.id, measureIndex, event.beat),
+          staffIndex,
+        )}
       />
     ) : (
       <RestGlyph duration={event.duration} variant="placed" x={x} y={y} />
@@ -147,6 +162,7 @@ function StaffLines({
   onSelectEvent,
   activeEventId,
   selectedEventId,
+  score,
   staff,
   staffIndex,
 }: {
@@ -154,6 +170,7 @@ function StaffLines({
   onSelectEvent?: (eventId: string) => void;
   activeEventId?: string | null;
   selectedEventId?: string | null;
+  score: Score;
   staff: Staff;
   staffIndex: number;
 }) {
@@ -219,6 +236,7 @@ function StaffLines({
               onSelectEvent={onSelectEvent}
               activeEventId={activeEventId}
               selectedEventId={selectedEventId}
+              score={score}
               staff={staff}
               staffIndex={staffIndex}
             />
@@ -267,7 +285,11 @@ function GhostEvent({
     position.beat,
     score.timeSignature.beats,
   );
-  const y = getPitchY(position.pitch, staff.clef, position.staffIndex);
+  const y = getPitchY(
+    position.pitch,
+    getActiveClef(score, staff.id, position.measureIndex, position.beat),
+    position.staffIndex,
+  );
 
   return (
     <g
@@ -347,6 +369,7 @@ export function SimpleStaffRenderer({
           activeEventId={activeEventId}
           beatsPerMeasure={score.timeSignature.beats}
           onSelectEvent={onSelectEvent}
+          score={score}
           selectedEventId={selectedEventId}
           staff={staff}
           staffIndex={staffIndex}

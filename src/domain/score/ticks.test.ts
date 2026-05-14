@@ -9,33 +9,33 @@ import {
 } from './ticks';
 
 describe('score ticks', () => {
-  it('uses 480 ticks as the quarter-note base unit', () => {
-    expect(TICKS_PER_QUARTER).toBe(480);
-    expect(getDurationTicks('whole')).toBe(1920);
-    expect(getDurationTicks('half')).toBe(960);
-    expect(getDurationTicks('quarter')).toBe(480);
-    expect(getDurationTicks('eighth')).toBe(240);
-    expect(getDurationTicks('sixteenth')).toBe(120);
-    expect(getDurationTicks('thirtySecond')).toBe(60);
-    expect(getDurationTicks('quarter', 1)).toBe(720);
+  it('uses a high-resolution quarter-note base unit for tuplets 2 through 9', () => {
+    expect(TICKS_PER_QUARTER).toBe(10080);
+    expect(getDurationTicks('whole')).toBe(40320);
+    expect(getDurationTicks('half')).toBe(20160);
+    expect(getDurationTicks('quarter')).toBe(10080);
+    expect(getDurationTicks('eighth')).toBe(5040);
+    expect(getDurationTicks('sixteenth')).toBe(2520);
+    expect(getDurationTicks('thirtySecond')).toBe(1260);
+    expect(getDurationTicks('quarter', 1)).toBe(15120);
   });
 
   it('derives measure ticks from the time signature beats', () => {
-    expect(getMeasureTicks({ beats: 4, beatUnit: 4 })).toBe(1920);
-    expect(getMeasureTicks({ beats: 3, beatUnit: 4 })).toBe(1440);
+    expect(getMeasureTicks({ beats: 4, beatUnit: 4 })).toBe(40320);
+    expect(getMeasureTicks({ beats: 3, beatUnit: 4 })).toBe(30240);
   });
 
   it('converts between beat offsets and tick offsets', () => {
-    expect(beatToTick(2.5)).toBe(1200);
-    expect(tickToBeat(1200)).toBe(2.5);
-    expect(tickToBeat(60)).toBe(0.125);
+    expect(beatToTick(2.5)).toBe(25200);
+    expect(tickToBeat(25200)).toBe(2.5);
+    expect(tickToBeat(1260)).toBe(0.125);
   });
 
   it('splits tick ranges into supported duration values', () => {
-    expect(splitTicksIntoDurations(1440)).toEqual(['half', 'quarter']);
-    expect(splitTicksIntoDurations(300)).toEqual(['eighth', 'thirtySecond']);
-    expect(() => splitTicksIntoDurations(59)).toThrow(
-      'Cannot represent 59 ticks with supported durations',
+    expect(splitTicksIntoDurations(30240)).toEqual(['half', 'quarter']);
+    expect(splitTicksIntoDurations(6300)).toEqual(['eighth', 'thirtySecond']);
+    expect(() => splitTicksIntoDurations(1259)).toThrow(
+      'Cannot represent 1259 ticks with supported durations',
     );
   });
 });

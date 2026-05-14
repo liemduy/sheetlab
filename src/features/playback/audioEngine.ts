@@ -60,8 +60,9 @@ export async function playTimelineAudio(
     if (event.pitches.length > 0) {
       synth.triggerAttackRelease(
         event.pitches.map(pitchToToneNote),
-        event.durationSeconds,
+        event.soundDurationSeconds,
         scheduledStartSeconds + event.startSeconds,
+        event.velocity,
       );
     }
   });

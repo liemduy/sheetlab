@@ -5,6 +5,10 @@ export interface MeasureTarget {
   measureIndex: number;
 }
 
+export interface ClefChangeTarget extends MeasureTarget {
+  clefChangeId: string;
+}
+
 export interface MeasureContextMenuState extends MeasureTarget {
   clientX: number;
   clientY: number;

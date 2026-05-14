@@ -1,5 +1,6 @@
 import type {
   Accidental,
+  Clef,
   DurationValue,
   PageSize,
   ScoreType,
@@ -32,6 +33,7 @@ export interface EditorToolState {
   voiceIndex: EditableVoiceIndex;
   showLayoutZones: boolean;
   showLyricMap: boolean;
+  clefChange: Clef | null;
   tuplet: TupletToolState | null;
 }
 
@@ -58,6 +60,7 @@ export const DEFAULT_EDITOR_TOOL_STATE: EditorToolState = {
   voiceIndex: 0,
   showLayoutZones: false,
   showLyricMap: false,
+  clefChange: null,
   tuplet: null,
 };
 

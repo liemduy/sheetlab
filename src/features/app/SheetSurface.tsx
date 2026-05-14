@@ -15,6 +15,7 @@ import type {
 } from '../../domain/score/types';
 import type {
   AnnotationContextMenuState,
+  ClefChangeTarget,
   MeasureContextMenuState,
   MeasureTarget,
 } from './selectionTypes';
@@ -35,6 +36,7 @@ interface SheetSurfaceProps {
   playbackBeat: number | null;
   score: Score;
   selectedEventId: string | null;
+  selectedClefChange: ClefChangeTarget | null;
   selectedMeasure: MeasureTarget | null;
   selectedPitchIndex: number | null;
   toolState: EditorToolState;
@@ -71,9 +73,14 @@ interface SheetSurfaceProps {
     symbolIndex: number,
     position: MusicPosition,
   ) => void;
+  onMoveClefChange: (
+    target: ClefChangeTarget,
+    position: MusicPosition,
+  ) => void;
   onPlaceAtPosition: (position: MusicPosition) => void;
   onRequestDeleteMeasure: () => void;
   onSelectEvent: (eventId: string, pitchIndex?: number | null) => void;
+  onSelectClefChange: (target: ClefChangeTarget) => void;
   onSelectMeasure: (staffId: StaffId, measureIndex: number) => void;
   onSetAnnotationContextMenu: (target: AnnotationContextMenuState | null) => void;
   onSetPendingMeasureClear: (target: MeasureTarget | null) => void;
@@ -101,6 +108,7 @@ export function SheetSurface({
   playbackBeat,
   score,
   selectedEventId,
+  selectedClefChange,
   selectedMeasure,
   selectedPitchIndex,
   toolState,
@@ -117,10 +125,12 @@ export function SheetSurface({
   onInsertMeasureBefore,
   onMeasureContextMenu,
   onMoveEvent,
+  onMoveClefChange,
   onMoveKeySignatureSymbol,
   onPlaceAtPosition,
   onRequestDeleteMeasure,
   onSelectEvent,
+  onSelectClefChange,
   onSelectMeasure,
   onSetAnnotationContextMenu,
   onSetPendingMeasureClear,
@@ -182,6 +192,7 @@ export function SheetSurface({
             hoverPosition={hoverPosition}
             inputCursor={inputCursor}
             isInputArmed={toolState.isInputArmed}
+            clefChange={toolState.clefChange}
             invalidMeasureKeys={activeInvalidMeasureKeys}
             playbackBeat={playbackBeat}
             placementMode={toolState.placementMode}
@@ -198,10 +209,13 @@ export function SheetSurface({
             onPlaceAtPosition={onPlaceAtPosition}
             onDeleteEvent={onDeleteEvent}
             onMoveKeySignatureSymbol={onMoveKeySignatureSymbol}
+            onMoveClefChange={onMoveClefChange}
             onMeasureContextMenu={onMeasureContextMenu}
             onMoveEvent={onMoveEvent}
             onSelectMeasure={onSelectMeasure}
             onSelectEvent={onSelectEvent}
+            onSelectClefChange={onSelectClefChange}
+            selectedClefChangeId={selectedClefChange?.clefChangeId ?? null}
             selectedMeasure={selectedMeasure}
           />
         </div>

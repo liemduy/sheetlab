@@ -4,6 +4,7 @@ import { createScorePdf } from './pdf/createScorePdf.mjs';
 
 const PORT = Number(process.env.PORT ?? 5173);
 const MAX_BODY_BYTES = 1024 * 1024;
+const DISABLE_HMR = process.env.SHEETLAB_DISABLE_HMR === '1';
 
 function readRequestBody(request) {
   return new Promise((resolve, reject) => {
@@ -55,12 +56,7 @@ async function handlePdfExport(request, response) {
   }
 }
 
-const vite = await createViteServer({
-  appType: 'spa',
-  server: {
-    middlewareMode: true,
-  },
-});
+let vite;
 
 const server = http.createServer(async (request, response) => {
   if (request.method === 'POST' && request.url === '/api/export-pdf') {
@@ -72,6 +68,14 @@ const server = http.createServer(async (request, response) => {
     response.statusCode = 404;
     response.end('Not found');
   });
+});
+
+vite = await createViteServer({
+  appType: 'spa',
+  server: {
+    hmr: DISABLE_HMR ? false : { server },
+    middlewareMode: true,
+  },
 });
 
 server.listen(PORT, () => {

@@ -50,7 +50,7 @@ describe('input slot layout', () => {
     const layout = getInputSlotLayout({
       cursor: createCursor({ beat: 0.5 }),
       eventLayouts: {
-        'rest-treble-m1-t240-half': {
+        'rest-treble-m1-t5040-half': {
           beat: 0.5,
           isGeneratedRest: true,
           kind: 'rest',

@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { createEmptyScore } from '../../domain/score/factories';
 import {
+  extremeClefOttavaChromaticFixture,
+  extremeScoreFixtures,
+  extremeTupletRepeatEtudeFixture,
+  extremeVocalPianoFixture,
+  stressPianoHardeningFixture,
+} from '../../domain/score/fixtures';
+import {
+  findScoreEvent,
   placeScoreEvent,
   setMeasureKeySignature,
   setMeasureRepeatJump,
   tryMoveKeySignatureSymbol,
+  tryUpdateScoreEvent,
 } from '../../domain/score/editing';
 import {
   buildPlaybackMeasureOrder,
@@ -16,6 +25,30 @@ import {
   getTimelineDurationSeconds,
 } from './timeline';
 import type { ChordEvent, ScoreEvent } from '../../domain/score/types';
+import { tryToggleTieToNext } from '../../domain/score/noteConnections';
+import { tryToggleOttavaToNext } from '../../domain/score/ottava';
+import { getRepeatPlaybackIssues } from '../../domain/score/repeatJumps';
+
+function roundPlaybackNumber(value: number) {
+  return Number(value.toFixed(4));
+}
+
+function summarizeTimelineEvents(score: Parameters<typeof buildPlaybackTimeline>[0], ids: string[]) {
+  const timeline = buildPlaybackTimeline(score);
+
+  return Object.fromEntries(
+    ids.map((id) => [
+      id,
+      timeline.filter((event) => event.id === id).map((event) => ({
+        articulations: event.articulations,
+        durationSeconds: roundPlaybackNumber(event.durationSeconds),
+        pitches: event.pitches,
+        startSeconds: roundPlaybackNumber(event.startSeconds),
+        sustainedEventIds: event.sustainedEventIds,
+      })),
+    ]),
+  );
+}
 
 describe('playback timeline', () => {
   it('converts quarter notes to beat and second timings', () => {
@@ -170,6 +203,107 @@ describe('playback timeline', () => {
     ]);
   });
 
+  it('keeps notation duration but applies articulation playback length and velocity', () => {
+    const score = placeScoreEvent(createEmptyScore('treble', { tempo: 60 }), {
+      eventId: 'accented-staccato',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const markedScore = tryUpdateScoreEvent(score, 'accented-staccato', {
+      articulations: ['accent', 'staccato'],
+    }).score;
+
+    const timelineEvent = buildPlaybackTimeline(markedScore)[0];
+
+    expect(timelineEvent).toMatchObject({
+      articulations: ['accent', 'staccato'],
+      durationSeconds: 1,
+      soundDurationSeconds: 0.5,
+      velocity: 0.943,
+    });
+  });
+
+  it('applies short articulations and breath marks to sound length without changing notation duration', () => {
+    const score = placeScoreEvent(createEmptyScore('treble', { tempo: 60 }), {
+      eventId: 'breath-staccatissimo',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const markedScore = tryUpdateScoreEvent(score, 'breath-staccatissimo', {
+      articulations: ['breath', 'staccatissimo'],
+    }).score;
+    const timelineEvent = buildPlaybackTimeline(markedScore)[0];
+
+    expect(timelineEvent).toMatchObject({
+      articulations: ['breath', 'staccatissimo'],
+      durationSeconds: 1,
+      soundDurationSeconds: 0.35,
+    });
+  });
+
+  it('extends a tied note and does not retrigger the tie target', () => {
+    const firstScore = placeScoreEvent(createEmptyScore('treble', { tempo: 60 }), {
+      eventId: 'tie-playback-source',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const score = placeScoreEvent(firstScore, {
+      eventId: 'tie-playback-target',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 1,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const tiedScore = tryToggleTieToNext(score, 'tie-playback-source').score;
+    const timeline = buildPlaybackTimeline(tiedScore);
+
+    expect(timeline.map((event) => event.id)).toEqual(['tie-playback-source']);
+    expect(timeline[0]).toMatchObject({
+      durationBeats: 2,
+      durationSeconds: 2,
+      soundDurationSeconds: 2,
+      pitches: [{ step: 'C', octave: 4 }],
+      sustainedEventIds: ['tie-playback-source', 'tie-playback-target'],
+    });
+  });
+
+  it('uses tempo consistently for timeline seconds and cursor beat speed', () => {
+    const slowScore = placeScoreEvent(createEmptyScore('treble', { tempo: 60 }), {
+      eventId: 'tempo-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const fastScore = {
+      ...slowScore,
+      tempo: 120,
+    };
+
+    expect(buildPlaybackTimeline(slowScore)[0]?.durationSeconds).toBe(1);
+    expect(buildPlaybackTimeline(fastScore)[0]?.durationSeconds).toBe(0.5);
+    expect(getPlaybackScoreBeatAtSeconds(buildPlaybackTimeline(slowScore), 60, 0.5))
+      .toBe(0.5);
+    expect(getPlaybackScoreBeatAtSeconds(buildPlaybackTimeline(fastScore), 120, 0.5))
+      .toBe(1);
+  });
+
   it('applies the active key signature to playback pitches', () => {
     const scoreWithKey = setMeasureKeySignature(
       createEmptyScore('treble', { measureCount: 1 }),
@@ -190,6 +324,47 @@ describe('playback timeline', () => {
       accidental: 'sharp',
       octave: 4,
       step: 'F',
+    });
+  });
+
+  it('applies active ottava ranges to playback without changing written pitch data', () => {
+    const firstScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'ottava-playback-1',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const secondScore = placeScoreEvent(firstScore, {
+      eventId: 'ottava-playback-2',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 1,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'D', octave: 4 },
+    });
+    const thirdScore = placeScoreEvent(secondScore, {
+      eventId: 'ottava-playback-3',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 3,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+    const score = tryToggleOttavaToNext(thirdScore, 'ottava-playback-1', '8va')
+      .score;
+
+    expect(buildPlaybackTimeline(score).map((event) => event.pitch)).toEqual([
+      { step: 'C', octave: 5 },
+      { step: 'D', octave: 5 },
+      { step: 'E', octave: 4 },
+    ]);
+    expect(findScoreEvent(score, 'ottava-playback-1')?.event).toMatchObject({
+      pitch: { step: 'C', octave: 4 },
     });
   });
 
@@ -303,5 +478,354 @@ describe('playback timeline', () => {
     const score = setMeasureRepeatJump(scoreWithFine, 3, 'dc-al-fine');
 
     expect(buildPlaybackMeasureOrder(score)).toEqual([0, 1, 2, 3, 0, 1]);
+  });
+
+  it('skips volta ending measures on the wrong repeat pass', () => {
+    const scoreWithRepeatStart = setMeasureRepeatJump(
+      createEmptyScore('treble', { measureCount: 5 }),
+      0,
+      'repeat-start',
+    );
+    const scoreWithFirstEnding = setMeasureRepeatJump(
+      scoreWithRepeatStart,
+      1,
+      'ending-1',
+    );
+    const scoreWithSecondEnding = setMeasureRepeatJump(
+      scoreWithFirstEnding,
+      2,
+      'ending-2',
+    );
+    const score = setMeasureRepeatJump(scoreWithSecondEnding, 3, 'repeat-end');
+
+    expect(buildPlaybackMeasureOrder(score)).toEqual([0, 1, 3, 0, 2, 3, 4]);
+  });
+
+  it('expands D.S. al Fine by replaying from Segno to Fine', () => {
+    const scoreWithSegno = setMeasureRepeatJump(
+      createEmptyScore('treble', { measureCount: 5 }),
+      1,
+      'segno',
+    );
+    const scoreWithFine = setMeasureRepeatJump(scoreWithSegno, 3, 'fine');
+    const score = setMeasureRepeatJump(scoreWithFine, 4, 'ds-al-fine');
+
+    expect(buildPlaybackMeasureOrder(score)).toEqual([
+      0,
+      1,
+      2,
+      3,
+      4,
+      1,
+      2,
+      3,
+    ]);
+  });
+
+  it('expands D.C. al Coda by replaying to To Coda, then jumping to Coda', () => {
+    const scoreWithToCoda = setMeasureRepeatJump(
+      createEmptyScore('treble', { measureCount: 5 }),
+      1,
+      'to-coda',
+    );
+    const scoreWithDc = setMeasureRepeatJump(scoreWithToCoda, 3, 'dc-al-coda');
+    const score = setMeasureRepeatJump(scoreWithDc, 4, 'coda');
+
+    expect(buildPlaybackMeasureOrder(score)).toEqual([0, 1, 2, 3, 0, 1, 4]);
+  });
+
+  it('reports missing playback anchors for repeat jumps', () => {
+    const scoreWithDs = setMeasureRepeatJump(
+      createEmptyScore('treble', { measureCount: 2 }),
+      1,
+      'ds-al-fine',
+    );
+    const score = setMeasureRepeatJump(scoreWithDs, 0, 'dc-al-coda');
+
+    expect(getRepeatPlaybackIssues(score)).toEqual([
+      {
+        kind: 'missing-to-coda',
+        measureIndex: 0,
+        repeatJump: 'dc-al-coda',
+      },
+      {
+        kind: 'missing-coda',
+        measureIndex: 0,
+        repeatJump: 'dc-al-coda',
+      },
+      {
+        kind: 'missing-segno',
+        measureIndex: 1,
+        repeatJump: 'ds-al-fine',
+      },
+      {
+        kind: 'missing-fine',
+        measureIndex: 1,
+        repeatJump: 'ds-al-fine',
+      },
+    ]);
+  });
+
+  it.each(extremeScoreFixtures)(
+    'builds a finite playback timeline for the extreme fixture $title',
+    (score) => {
+      const timeline = buildPlaybackTimeline(score);
+
+      expect(timeline.length).toBeGreaterThan(0);
+      timeline.forEach((event) => {
+        expect(Number.isFinite(event.startSeconds)).toBe(true);
+        expect(Number.isFinite(event.durationSeconds)).toBe(true);
+        expect(event.durationSeconds).toBeGreaterThan(0);
+        expect(event.pitches.length).toBeGreaterThan(0);
+      });
+    },
+  );
+
+  it('keeps hardening fixture tie sustain and ottava pitch shifts stable', () => {
+    expect(
+      summarizeTimelineEvents(stressPianoHardeningFixture, [
+        'stress-cross-source',
+        'stress-m9-d5',
+        'stress-m9-c5',
+      ]),
+    ).toEqual({
+      'stress-cross-source': [
+        {
+          articulations: undefined,
+          durationSeconds: 0.9091,
+          pitches: [{ octave: 4, step: 'C' }],
+          startSeconds: 6.8182,
+          sustainedEventIds: ['stress-cross-source', 'stress-cross-target'],
+        },
+      ],
+      'stress-m9-c5': [
+        {
+          articulations: undefined,
+          durationSeconds: 0.9091,
+          pitches: [{ octave: 6, step: 'C' }],
+          startSeconds: 17.2727,
+          sustainedEventIds: undefined,
+        },
+      ],
+      'stress-m9-d5': [
+        {
+          articulations: undefined,
+          durationSeconds: 0.9091,
+          pitches: [{ octave: 6, step: 'D' }],
+          startSeconds: 16.3636,
+          sustainedEventIds: undefined,
+        },
+      ],
+    });
+  });
+
+  it('keeps extreme tuplets, repeat replay, and chord playback stable', () => {
+    expect(buildPlaybackMeasureOrder(extremeTupletRepeatEtudeFixture)).toEqual([
+      0,
+      1,
+      2,
+      3,
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      5,
+      6,
+      8,
+      9,
+    ]);
+    expect(
+      summarizeTimelineEvents(extremeTupletRepeatEtudeFixture, [
+        'extreme-duplet-opening-1',
+        'extreme-triplet-opening-2',
+        'extreme-repeat-m9-chord',
+      ]),
+    ).toEqual({
+      'extreme-duplet-opening-1': [
+        {
+          articulations: undefined,
+          durationSeconds: 0.4167,
+          pitches: [{ accidental: 'sharp', octave: 5, step: 'C' }],
+          startSeconds: 0,
+          sustainedEventIds: undefined,
+        },
+        {
+          articulations: undefined,
+          durationSeconds: 0.4167,
+          pitches: [{ accidental: 'sharp', octave: 5, step: 'C' }],
+          startSeconds: 8.3333,
+          sustainedEventIds: undefined,
+        },
+      ],
+      'extreme-repeat-m9-chord': [
+        {
+          articulations: undefined,
+          durationSeconds: 0.8333,
+          pitches: [
+            { octave: 5, step: 'D' },
+            { accidental: 'sharp', octave: 5, step: 'F' },
+            { octave: 5, step: 'A' },
+          ],
+          startSeconds: 27.9167,
+          sustainedEventIds: undefined,
+        },
+        {
+          articulations: undefined,
+          durationSeconds: 0.8333,
+          pitches: [
+            { octave: 5, step: 'D' },
+            { accidental: 'sharp', octave: 5, step: 'F' },
+            { octave: 5, step: 'A' },
+          ],
+          startSeconds: 36.25,
+          sustainedEventIds: undefined,
+        },
+      ],
+      'extreme-triplet-opening-2': [
+        {
+          articulations: undefined,
+          durationSeconds: 0.2778,
+          pitches: [{ accidental: 'sharp', octave: 5, step: 'F' }],
+          startSeconds: 1.1111,
+          sustainedEventIds: undefined,
+        },
+        {
+          articulations: undefined,
+          durationSeconds: 0.2778,
+          pitches: [{ accidental: 'sharp', octave: 5, step: 'F' }],
+          startSeconds: 9.4445,
+          sustainedEventIds: undefined,
+        },
+      ],
+    });
+  });
+
+  it('keeps vocal lyric-map triplet timing aligned with the piano staff', () => {
+    const timeline = buildPlaybackTimeline(extremeVocalPianoFixture);
+
+    expect(
+      getActiveTimelineEvents(timeline, 7.1429).map((event) => event.id),
+    ).toEqual(['extreme-vocal-b2-mid', 'extreme-vocal-triplet-word-1']);
+    expect(
+      summarizeTimelineEvents(extremeVocalPianoFixture, [
+        'extreme-vocal-m0-a',
+        'extreme-vocal-triplet-word-2',
+      ]),
+    ).toEqual({
+      'extreme-vocal-m0-a': [
+        {
+          articulations: undefined,
+          durationSeconds: 0.7143,
+          pitches: [{ octave: 4, step: 'D' }],
+          startSeconds: 0,
+          sustainedEventIds: undefined,
+        },
+      ],
+      'extreme-vocal-triplet-word-2': [
+        {
+          articulations: undefined,
+          durationSeconds: 0.4762,
+          pitches: [{ octave: 4, step: 'A' }],
+          startSeconds: 7.6191,
+          sustainedEventIds: undefined,
+        },
+      ],
+    });
+  });
+
+  it('keeps chromatic key signature and ottava playback pitches stable', () => {
+    expect(buildPlaybackMeasureOrder(extremeClefOttavaChromaticFixture)).toEqual([
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      0,
+      1,
+      2,
+    ]);
+    expect(
+      summarizeTimelineEvents(extremeClefOttavaChromaticFixture, [
+        'extreme-clef-ottava-t0-e6',
+        'extreme-clef-ottava-t1-chord',
+        'extreme-clef-ottava-b2-c5',
+        'extreme-clef-ottava-t5-a',
+      ]),
+    ).toEqual({
+      'extreme-clef-ottava-b2-c5': [
+        {
+          articulations: undefined,
+          durationSeconds: 0.5556,
+          pitches: [{ octave: 4, step: 'C' }],
+          startSeconds: 4.4444,
+          sustainedEventIds: undefined,
+        },
+        {
+          articulations: undefined,
+          durationSeconds: 0.5556,
+          pitches: [{ octave: 4, step: 'C' }],
+          startSeconds: 22.2222,
+          sustainedEventIds: undefined,
+        },
+      ],
+      'extreme-clef-ottava-t0-e6': [
+        {
+          articulations: ['marcato'],
+          durationSeconds: 0.5556,
+          pitches: [{ accidental: 'sharp', octave: 8, step: 'E' }],
+          startSeconds: 0,
+          sustainedEventIds: undefined,
+        },
+        {
+          articulations: ['marcato'],
+          durationSeconds: 0.5556,
+          pitches: [{ accidental: 'sharp', octave: 8, step: 'E' }],
+          startSeconds: 17.7778,
+          sustainedEventIds: undefined,
+        },
+      ],
+      'extreme-clef-ottava-t1-chord': [
+        {
+          articulations: undefined,
+          durationSeconds: 0.5556,
+          pitches: [
+            { accidental: 'sharp', octave: 5, step: 'C' },
+            { accidental: 'sharp', octave: 5, step: 'E' },
+            { accidental: 'sharp', octave: 5, step: 'G' },
+          ],
+          startSeconds: 3.8889,
+          sustainedEventIds: undefined,
+        },
+        {
+          articulations: undefined,
+          durationSeconds: 0.5556,
+          pitches: [
+            { accidental: 'sharp', octave: 5, step: 'C' },
+            { accidental: 'sharp', octave: 5, step: 'E' },
+            { accidental: 'sharp', octave: 5, step: 'G' },
+          ],
+          startSeconds: 21.6667,
+          sustainedEventIds: undefined,
+        },
+      ],
+      'extreme-clef-ottava-t5-a': [
+        {
+          articulations: undefined,
+          durationSeconds: 0.5556,
+          pitches: [{ accidental: 'flat', octave: 5, step: 'D' }],
+          startSeconds: 11.1111,
+          sustainedEventIds: undefined,
+        },
+      ],
+    });
   });
 });

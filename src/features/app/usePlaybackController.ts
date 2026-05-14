@@ -116,7 +116,13 @@ export function usePlaybackController({
 
   return {
     activePlaybackEvent,
-    activePlaybackEventIds: activePlaybackEvents.map((event) => event.id),
+    activePlaybackEventIds: [
+      ...new Set(
+        activePlaybackEvents.flatMap((event) =>
+          event.sustainedEventIds ?? [event.id],
+        ),
+      ),
+    ],
     handlePlaybackToggle,
     isPlaying,
     playbackBeat,

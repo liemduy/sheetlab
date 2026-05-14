@@ -1,4 +1,4 @@
-import type { AnnotationKind, Score, StaffId } from '../../domain/score/types';
+import type { AnnotationKind, Clef, Score, StaffId } from '../../domain/score/types';
 import type { DurationValue } from '../../domain/score/types';
 import type { InputCursor } from '../editor/inputCursor';
 import type { EntryMode, PlacementMode } from '../editor/editorState';
@@ -40,7 +40,21 @@ export interface StaffRendererProps {
     symbolIndex: number,
     position: MusicPosition,
   ) => void;
+  onMoveClefChange?: (
+    target: {
+      clefChangeId: string;
+      measureIndex: number;
+      staffId: StaffId;
+    },
+    position: MusicPosition,
+  ) => void;
+  onSelectClefChange?: (target: {
+    clefChangeId: string;
+    measureIndex: number;
+    staffId: StaffId;
+  }) => void;
   onSelectMeasure?: (staffId: StaffId, measureIndex: number) => void;
+  selectedClefChangeId?: string | null;
   selectedEventId?: string | null;
   selectedPitchIndex?: number | null;
   selectedMeasure?: { staffId: StaffId; measureIndex: number } | null;
@@ -49,6 +63,7 @@ export interface StaffRendererProps {
   playbackBeat?: number | null;
   placementMode?: PlacementMode;
   inputCursor?: InputCursor | null;
+  clefChange?: Clef | null;
   invalidMeasureKeys?: readonly string[];
   showLayoutZones?: boolean;
   showLyricMap?: boolean;

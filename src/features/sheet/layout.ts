@@ -8,8 +8,6 @@ import {
   MEASURE_RIGHT_PADDING,
   MEASURE_WIDTH,
   MEASURES_PER_SYSTEM,
-  MIN_FIRST_MEASURE_READABLE_WIDTH,
-  MIN_MEASURE_READABLE_WIDTH,
   STAFF_GAP,
   STAFF_LEFT,
   STAFF_LINE_SPACING,
@@ -33,6 +31,7 @@ import {
   getStaticSystemCount,
   type ScoreSystemLayout,
 } from './systemLayout';
+import { getMeasureReadableMinWidthForLocalIndex } from './measureWidthPolicy';
 
 export {
   FIRST_MEASURE_LEFT_PADDING,
@@ -295,9 +294,15 @@ export function getStaffTop(
 }
 
 function getMeasureReadableMinWidth(measureIndex: number, score?: Score) {
-  return getLocalMeasureIndex(measureIndex, score) === 0
-    ? MIN_FIRST_MEASURE_READABLE_WIDTH
-    : MIN_MEASURE_READABLE_WIDTH;
+  if (!score) {
+    return MEASURE_WIDTH;
+  }
+
+  return getMeasureReadableMinWidthForLocalIndex(
+    score,
+    measureIndex,
+    getLocalMeasureIndex(measureIndex, score),
+  );
 }
 
 function getSystemMeasureIndexes(score: Score, systemIndex: number) {
@@ -332,7 +337,7 @@ function getSystemMeasureWidths(score: Score, systemIndex: number) {
       equalWidth + (weight - averageWeight) * MEASURE_COMPLEXITY_WIDTH_SCALE,
   );
   let widths = rawWidths.map((width, index) =>
-    Math.max(minWidths[index] ?? MIN_MEASURE_READABLE_WIDTH, width),
+    Math.max(minWidths[index] ?? MEASURE_WIDTH, width),
   );
 
   for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -351,7 +356,7 @@ function getSystemMeasureWidths(score: Score, systemIndex: number) {
     }
 
     const reducibleWidths = widths.map((width, index) =>
-      Math.max(0, width - (minWidths[index] ?? MIN_MEASURE_READABLE_WIDTH)),
+      Math.max(0, width - (minWidths[index] ?? MEASURE_WIDTH)),
     );
     const totalReducibleWidth = reducibleWidths.reduce(
       (total, width) => total + width,
@@ -363,7 +368,7 @@ function getSystemMeasureWidths(score: Score, systemIndex: number) {
     }
 
     widths = widths.map((width, index) => {
-      const minimumWidth = minWidths[index] ?? MIN_MEASURE_READABLE_WIDTH;
+      const minimumWidth = minWidths[index] ?? MEASURE_WIDTH;
       const reduction =
         overflow * ((reducibleWidths[index] ?? 0) / totalReducibleWidth);
 

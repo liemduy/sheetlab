@@ -1,6 +1,7 @@
 import type { MouseEvent } from 'react';
 import type { Score, ScoreEvent, Staff } from '../../domain/score/types';
 import { clampPitchToClefRange } from '../../domain/score/pitchRange';
+import { getActiveClef } from '../../domain/score/clefChanges';
 import {
   formatEventPitchList,
   getEventPitches,
@@ -128,18 +129,19 @@ export function EventHitTarget({
   staffIndex,
   voiceIndex,
 }: EventHitTargetProps) {
+  const activeClef = getActiveClef(score, staff.id, measureIndex, event.beat);
   const eventPitches = getEventPitches(event).map((pitch) =>
-    clampPitchToClefRange(pitch, staff.clef),
+    clampPitchToClefRange(pitch, activeClef),
   );
   const primaryPitch = getPrimaryEventPitch(event);
   const displayPrimaryPitch = primaryPitch
-    ? clampPitchToClefRange(primaryPitch, staff.clef)
+    ? clampPitchToClefRange(primaryPitch, activeClef)
     : null;
   const fallbackY =
     displayPrimaryPitch
       ? getPitchYForScore(
           displayPrimaryPitch,
-          staff.clef,
+          activeClef,
           staffIndex,
           score,
           measureIndex,
@@ -195,7 +197,7 @@ export function EventHitTarget({
     ? selectedPitchLayoutY ??
       getPitchYForScore(
         selectedPitch,
-        staff.clef,
+        activeClef,
         staffIndex,
         score,
         measureIndex,
@@ -222,7 +224,7 @@ export function EventHitTarget({
           getPitchLayoutY(eventLayout, pitchIndex) ??
           getPitchYForScore(
             pitch,
-            staff.clef,
+            activeClef,
             staffIndex,
             score,
             measureIndex,
@@ -271,7 +273,7 @@ export function EventHitTarget({
       x,
       y:
         getPitchLayoutY(eventLayout, pitchIndex) ??
-        getPitchYForScore(pitch, staff.clef, staffIndex, score, measureIndex),
+        getPitchYForScore(pitch, activeClef, staffIndex, score, measureIndex),
     };
   }
 

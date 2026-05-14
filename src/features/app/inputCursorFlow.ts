@@ -1,4 +1,5 @@
 import { getMeasureBeats } from '../../domain/score/timeSignatures';
+import { getDurationBeats } from '../../domain/score/durations';
 import type {
   DurationValue,
   Pitch,
@@ -7,7 +8,12 @@ import type {
 import type { InputCursor } from '../editor/inputCursor';
 import { createInputCursorFromPosition } from '../editor/inputCursor';
 import type { MusicPosition } from '../sheet/interaction';
-import { findNextRhythmSlotAfter } from '../sheet/rhythmSlots';
+import {
+  findNextRhythmSlotAfter,
+  findRhythmSlotAtBeat,
+} from '../sheet/rhythmSlots';
+
+const NEXT_SLOT_SEARCH_EPSILON = 0.0002;
 
 export function pitchesMatch(first: Pitch, second: Pitch) {
   return (
@@ -38,11 +44,27 @@ export function createCursorAfterPlacement(
   dots: number,
   voiceIndex = 0,
 ) {
-  const nextSlot = findNextRhythmSlotAfter(
+  const placedSlot = findRhythmSlotAtBeat(
     score,
     placementPosition.staffId,
     placementPosition.measureIndex,
     placementPosition.beat,
+    voiceIndex,
+  );
+  const durationEndBeat =
+    placementPosition.beat + getDurationBeats(duration, dots);
+  const placedEndBeat =
+    placedSlot?.event?.tuplet ? placedSlot.endBeat : durationEndBeat;
+  const beatsPerMeasure = getMeasureBeats(score.timeSignature);
+  const fallbackGlobalBeat =
+    placementPosition.measureIndex * beatsPerMeasure + placedEndBeat;
+  const fallbackMeasureIndex = Math.floor(fallbackGlobalBeat / beatsPerMeasure);
+  const fallbackBeat = Number((fallbackGlobalBeat % beatsPerMeasure).toFixed(4));
+  const nextSlot = findNextRhythmSlotAfter(
+    score,
+    placementPosition.staffId,
+    placementPosition.measureIndex,
+    Math.max(placementPosition.beat, placedEndBeat - NEXT_SLOT_SEARCH_EPSILON),
     voiceIndex,
   );
   const nextPosition = nextSlot
@@ -55,8 +77,10 @@ export function createCursorAfterPlacement(
       }
     : {
         ...placementPosition,
+        beat: fallbackBeat,
         clientX: undefined,
         clientY: undefined,
+        measureIndex: fallbackMeasureIndex,
       };
   const nextDuration = nextSlot?.event?.tuplet ? nextSlot.duration : duration;
   const nextDots = nextSlot?.event?.tuplet ? nextSlot.dots ?? 0 : dots;
@@ -66,15 +90,14 @@ export function createCursorAfterPlacement(
     nextPosition,
     nextDuration,
     'note-input',
-    getMeasureBeats(score.timeSignature),
+    beatsPerMeasure,
     nextDots,
     nextTuplet,
   );
 
-  return nextSlot?.event?.tuplet
-    ? {
-        ...cursor,
-        beat: nextSlot.beat,
-      }
-    : cursor;
+  return {
+    ...cursor,
+    beat: nextSlot?.beat ?? nextPosition.beat,
+    measureIndex: nextSlot?.measureIndex ?? nextPosition.measureIndex,
+  };
 }

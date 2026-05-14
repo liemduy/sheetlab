@@ -5,14 +5,22 @@ import {
   setMeasureKeySignature,
   setMeasureRepeatJump,
   setMeasureSectionMarker,
+  tryFlipScoreEventStemDirection,
   tryPlaceTupletGroup,
   tryUpdateScoreEvent,
 } from '../../domain/score/editing';
+import { trySetClefChange } from '../../domain/score/clefChanges';
+import {
+  tryToggleSlurToNext,
+  tryToggleTieToNext,
+} from '../../domain/score/noteConnections';
+import { tryToggleOttavaToNext } from '../../domain/score/ottava';
 import { createEmptyScore } from '../../domain/score/factories';
 import {
   duChoTanTheExcerptFixture,
   trebleStudyFixture,
 } from '../../domain/score/fixtures';
+import { extremeScoreFixtureCatalog } from '../../domain/score/fixtureCatalog';
 import type {
   ChordEvent,
   Clef,
@@ -56,6 +64,37 @@ const trebleHover: MusicPosition = {
   x: 154,
   y: 130,
 };
+
+function createThreeQuarterNoteScore() {
+  const firstScore = placeScoreEvent(createEmptyScore('treble', { measureCount: 1 }), {
+    beat: 0,
+    duration: 'quarter',
+    entryMode: 'note',
+    eventId: 'event-c',
+    measureIndex: 0,
+    pitch: { step: 'C', octave: 4 },
+    staffId: 'treble',
+  });
+  const secondScore = placeScoreEvent(firstScore, {
+    beat: 1,
+    duration: 'quarter',
+    entryMode: 'note',
+    eventId: 'event-e',
+    measureIndex: 0,
+    pitch: { step: 'E', octave: 4 },
+    staffId: 'treble',
+  });
+
+  return placeScoreEvent(secondScore, {
+    beat: 2,
+    duration: 'quarter',
+    entryMode: 'note',
+    eventId: 'event-g',
+    measureIndex: 0,
+    pitch: { step: 'G', octave: 4 },
+    staffId: 'treble',
+  });
+}
 
 function setVisibleSheetBounds(element: Element) {
   const bounds = {
@@ -129,6 +168,9 @@ describe('StaffRenderer', () => {
       paddingBottom: `${(getScoreSvgHeight('treble') / SVG_WIDTH) * 100}%`,
     });
     expect(screen.getByTestId('staff-treble')).toBeInTheDocument();
+    expect(screen.getByTestId('rendered-tempo-mark')).toHaveTextContent(
+      'Moderato',
+    );
     expect(screen.queryByTestId('staff-bass')).not.toBeInTheDocument();
     expect(screen.getAllByTestId('measure-barline-treble')).toHaveLength(5);
     expect(container.querySelectorAll('.vexflow-output .vf-generated-rest')).toHaveLength(4);
@@ -162,6 +204,151 @@ describe('StaffRenderer', () => {
     expect(container.querySelector('[data-tuplet-id="tuplet-render-triplet"]'))
       .toBeInTheDocument();
     expect(screen.getAllByTestId('rendered-tuplet')).toHaveLength(1);
+  });
+
+  it('renders tie and slur connection marks from score data', () => {
+    const firstScore = placeScoreEvent(
+      createEmptyScore('treble', { measureCount: 1 }),
+      {
+        beat: 0,
+        duration: 'quarter',
+        entryMode: 'note',
+        eventId: 'connection-source',
+        measureIndex: 0,
+        pitch: { step: 'C', octave: 4 },
+        staffId: 'treble',
+      },
+    );
+    const secondScore = placeScoreEvent(firstScore, {
+      beat: 1,
+      duration: 'quarter',
+      entryMode: 'note',
+      eventId: 'connection-target',
+      measureIndex: 0,
+      pitch: { step: 'C', octave: 4 },
+      staffId: 'treble',
+    });
+    const tiedScore = tryToggleTieToNext(secondScore, 'connection-source').score;
+    const score = tryToggleSlurToNext(tiedScore, 'connection-source').score;
+
+    render(<StaffRenderer score={score} />);
+
+    expect(screen.getByTestId('rendered-tie')).toHaveAttribute(
+      'data-target-id',
+      'connection-target',
+    );
+    expect(screen.getByTestId('rendered-slur')).toHaveAttribute(
+      'data-source-id',
+      'connection-source',
+    );
+  });
+
+  it('places tie and slur above notes whose rendered stems point down', () => {
+    const firstScore = placeScoreEvent(
+      createEmptyScore('treble', { measureCount: 1 }),
+      {
+        beat: 0,
+        duration: 'quarter',
+        entryMode: 'note',
+        eventId: 'high-connection-source',
+        measureIndex: 0,
+        pitch: { step: 'A', octave: 5 },
+        staffId: 'treble',
+      },
+    );
+    const secondScore = placeScoreEvent(firstScore, {
+      beat: 1,
+      duration: 'quarter',
+      entryMode: 'note',
+      eventId: 'high-connection-target',
+      measureIndex: 0,
+      pitch: { step: 'A', octave: 5 },
+      staffId: 'treble',
+    });
+    const tiedScore = tryToggleTieToNext(
+      secondScore,
+      'high-connection-source',
+    ).score;
+    const score = tryToggleSlurToNext(
+      tiedScore,
+      'high-connection-source',
+    ).score;
+    const { container } = render(<StaffRenderer score={score} />);
+
+    expect(
+      container.querySelector(
+        '.vf-user-event[data-event-id="high-connection-source"]',
+      ),
+    ).toHaveAttribute('data-stem-direction', 'down');
+    expect(screen.getByTestId('rendered-tie')).toHaveAttribute(
+      'data-connection-side',
+      'above',
+    );
+    expect(screen.getByTestId('rendered-slur')).toHaveAttribute(
+      'data-connection-side',
+      'above',
+    );
+  });
+
+  it('splits VexFlow tie and slur marks across a system break', async () => {
+    const sourceMeasureIndex = MEASURES_PER_SYSTEM - 1;
+    const targetMeasureIndex = MEASURES_PER_SYSTEM;
+    const firstScore = placeScoreEvent(
+      createEmptyScore('treble', { measureCount: MEASURES_PER_SYSTEM * 2 }),
+      {
+        beat: 3,
+        duration: 'quarter',
+        entryMode: 'note',
+        eventId: 'cross-system-connection-source',
+        measureIndex: sourceMeasureIndex,
+        pitch: { step: 'C', octave: 4 },
+        staffId: 'treble',
+      },
+    );
+    const secondScore = placeScoreEvent(firstScore, {
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      eventId: 'cross-system-connection-target',
+      measureIndex: targetMeasureIndex,
+      pitch: { step: 'C', octave: 4 },
+      staffId: 'treble',
+    });
+    const tiedScore = tryToggleTieToNext(
+      secondScore,
+      'cross-system-connection-source',
+    ).score;
+    const score = tryToggleSlurToNext(
+      tiedScore,
+      'cross-system-connection-source',
+    ).score;
+
+    render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('rendered-tie')).toHaveLength(2);
+      expect(screen.getAllByTestId('rendered-slur')).toHaveLength(2);
+    });
+    screen.getAllByTestId('rendered-tie').forEach((tie) => {
+      expect(tie).toHaveAttribute(
+        'data-source-id',
+        'cross-system-connection-source',
+      );
+      expect(tie).toHaveAttribute(
+        'data-target-id',
+        'cross-system-connection-target',
+      );
+    });
+    screen.getAllByTestId('rendered-slur').forEach((slur) => {
+      expect(slur).toHaveAttribute(
+        'data-source-id',
+        'cross-system-connection-source',
+      );
+      expect(slur).toHaveAttribute(
+        'data-target-id',
+        'cross-system-connection-target',
+      );
+    });
   });
 
   it('renders only the active rhythm slot instead of every possible beat', () => {
@@ -653,9 +840,107 @@ describe('StaffRenderer', () => {
     );
 
     expect(Number(screen.getByTestId('insertion-cursor').getAttribute('x1'))).toBeCloseTo(
-      getBeatX(0, 0, trebleStudyFixture.timeSignature.beats),
+      Number(
+        screen
+          .getByRole('button', { name: 'Note C4 measure 1 beat 1' })
+          .getAttribute('data-layout-x'),
+      ),
       2,
     );
+  });
+
+  it('nudges the existing note at the insert point without drawing fake noteheads', async () => {
+    const score = createThreeQuarterNoteScore();
+
+    const { container } = render(
+      <StaffRenderer
+        duration="quarter"
+        entryMode="note"
+        hoverPosition={{
+          ...trebleHover,
+          beat: 1,
+          pitch: { step: 'D', octave: 4 },
+          x: getBeatX(0, 1, score.timeSignature.beats, score),
+        }}
+        placementMode="insert"
+        score={score}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(
+        container.querySelector(
+          '.vf-score-event[data-event-id="event-e"].vf-insert-preview-nudge',
+        ),
+      ).not.toBeNull(),
+    );
+
+    const shiftedE = container.querySelector(
+      '.vf-score-event[data-event-id="event-e"].vf-insert-preview-nudge',
+    ) as SVGElement;
+    const unchangedC = container.querySelector(
+      '.vf-score-event[data-event-id="event-c"].vf-insert-preview-nudge',
+    );
+    const unchangedG = container.querySelector(
+      '.vf-score-event[data-event-id="event-g"].vf-insert-preview-nudge',
+    );
+    const shiftMatch = /translateX\(([-\d.]+)px\)/.exec(
+      shiftedE.getAttribute('style') ?? '',
+    );
+
+    expect(shiftMatch).not.toBeNull();
+    expect(Number(shiftMatch?.[1])).toBeGreaterThan(0);
+    expect(unchangedC).toBeNull();
+    expect(unchangedG).toBeNull();
+    expect(screen.queryByTestId('insert-preview-layer')).not.toBeInTheDocument();
+  });
+
+  it('aligns insert cursor, ghost note, and rhythm box to the same rendered anchor', async () => {
+    const score = createThreeQuarterNoteScore();
+    const pitch = { step: 'D', octave: 4 } as const;
+
+    render(
+      <StaffRenderer
+        duration="quarter"
+        entryMode="note"
+        hoverPosition={{
+          ...trebleHover,
+          beat: 1,
+          pitch,
+          x: getBeatX(0, 1, score.timeSignature.beats, score),
+        }}
+        inputCursor={{
+          beat: 1,
+          duration: 'quarter',
+          measureIndex: 0,
+          mode: 'note-input',
+          pitchPreview: pitch,
+          staffId: 'treble',
+          staffIndex: 0,
+        }}
+        placementMode="insert"
+        score={score}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId('rhythm-slot')).toHaveAttribute(
+        'data-layout-source',
+        'vexflow',
+      ),
+    );
+
+    const cursorX = Number(screen.getByTestId('insertion-cursor').getAttribute('x1'));
+    const slotCenterX = Number(
+      screen.getByTestId('rhythm-slot').getAttribute('data-slot-center-x'),
+    );
+    const ghostNotehead = screen
+      .getByTestId('ghost-event')
+      .querySelector('.score-event-notehead');
+    const ghostX = Number(ghostNotehead?.getAttribute('cx'));
+
+    expect(cursorX).toBeCloseTo(slotCenterX, 2);
+    expect(ghostX).toBeCloseTo(slotCenterX, 2);
   });
 
   it('renders a ghost rest when rest mode is active', () => {
@@ -2024,9 +2309,20 @@ describe('StaffRenderer', () => {
       entryMode: 'note',
       pitch: { step: 'E', octave: 4 },
     });
-    const score = tryUpdateScoreEvent(secondNoteScore, 'lyric-map-start', {
+    const thirdNoteScore = placeScoreEvent(secondNoteScore, {
+      eventId: 'lyric-map-end',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 2,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'G', octave: 4 },
+    });
+    const score = tryUpdateScoreEvent(thirdNoteScore, 'lyric-map-start', {
       lyric: 'sing',
-      lyricMap: { eventIds: ['lyric-map-start', 'lyric-map-follow'] },
+      lyricMap: {
+        eventIds: ['lyric-map-start', 'lyric-map-follow', 'lyric-map-end'],
+      },
     }).score;
     const { rerender } = render(<StaffRenderer score={score} />);
 
@@ -2040,7 +2336,7 @@ describe('StaffRenderer', () => {
     await waitFor(() => {
       expect(screen.getByTestId('lyric-map-connector')).toHaveAttribute(
         'data-target-event-ids',
-        'lyric-map-start lyric-map-follow',
+        'lyric-map-start lyric-map-follow lyric-map-end',
       );
     });
     expect(screen.getByTestId('lyric-map-connector')).toHaveAttribute(
@@ -2052,7 +2348,7 @@ describe('StaffRenderer', () => {
       .map((dot) => Number(dot.getAttribute('cx')));
     const lyricX = Number(screen.getByTestId('rendered-lyric').getAttribute('x'));
 
-    expect(targetDotXs).toHaveLength(2);
+    expect(targetDotXs).toHaveLength(3);
     expect(lyricX).toBeCloseTo(
       (Math.min(...targetDotXs) + Math.max(...targetDotXs)) / 2,
       1,
@@ -2172,6 +2468,225 @@ describe('StaffRenderer', () => {
     expect(Number(trebleBelowZone?.getAttribute('y1'))).toBeCloseTo(
       voiceBottom,
       1,
+    );
+  });
+
+  it('renders an inline clef change and places following notes in the active clef', async () => {
+    const scoreWithClef = trySetClefChange(
+      createEmptyScore('grand'),
+      'bass',
+      0,
+      1,
+      'treble',
+    ).score;
+    const score = placeScoreEvent(scoreWithClef, {
+      eventId: 'bass-staff-treble-clef-note',
+      staffId: 'bass',
+      measureIndex: 0,
+      beat: 1,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'A', octave: 5 },
+    });
+    const { container } = render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-clef-change')).toHaveAttribute(
+        'data-clef',
+        'treble',
+      );
+      expect(
+        container.querySelector(
+          '.vf-user-event[data-event-id="bass-staff-treble-clef-note"]',
+        ),
+      ).toBeInTheDocument();
+    });
+
+    const noteheadY = Number(
+      container
+        .querySelector(
+          '.vf-user-notehead[data-event-id="bass-staff-treble-clef-note"]',
+        )
+        ?.getAttribute('data-notehead-y'),
+    );
+
+    expect(noteheadY).toBeCloseTo(
+      getPitchY(
+        { step: 'A', octave: 5 },
+        'treble',
+        1,
+        getScoreStaffGap(score, 0),
+      ),
+    );
+  });
+
+  it('exposes inline clef changes as selectable overlay targets', async () => {
+    const scoreWithClef = trySetClefChange(
+      createEmptyScore('grand'),
+      'bass',
+      0,
+      1,
+      'treble',
+    ).score;
+    const clefChangeId =
+      scoreWithClef.parts[0]?.staves
+        .find((staff) => staff.id === 'bass')
+        ?.measures[0]?.clefChanges?.[0]?.id ?? '';
+    const score = placeScoreEvent(scoreWithClef, {
+      eventId: 'bass-staff-target-note',
+      staffId: 'bass',
+      measureIndex: 0,
+      beat: 1,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'A', octave: 5 },
+    });
+    const { container } = render(
+      <StaffRenderer
+        isInputArmed={false}
+        score={score}
+        selectedClefChangeId={clefChangeId}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('clef-change-target')).toHaveAttribute(
+        'data-clef-change-id',
+        clefChangeId,
+      );
+      expect(
+        container.querySelector(
+          `.sheetlab-clef-change.is-selected[data-clef-change-id="${clefChangeId}"]`,
+        ),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('exposes system-start clef changes without drawing a duplicate inline clef', async () => {
+    const score = trySetClefChange(
+      createEmptyScore('grand'),
+      'bass',
+      0,
+      0,
+      'treble',
+    ).score;
+    const clefChangeId =
+      score.parts[0]?.staves
+        .find((staff) => staff.id === 'bass')
+        ?.measures[0]?.clefChanges?.[0]?.id ?? '';
+    const { container } = render(
+      <StaffRenderer
+        isInputArmed={false}
+        score={score}
+        selectedClefChangeId={clefChangeId}
+      />,
+    );
+
+    await waitFor(() => {
+      const target = screen.getByTestId('clef-change-target');
+      const marker = container.querySelector(
+        `.sheetlab-system-start-clef-change-marker[data-clef-change-id="${clefChangeId}"]`,
+      );
+
+      expect(target).toHaveAttribute('data-clef-change-id', clefChangeId);
+      expect(target).toHaveAttribute('data-system-start', 'true');
+      expect(target).toHaveAttribute('data-beat', '0');
+      expect(marker).toHaveAttribute('data-testid', 'rendered-clef-change');
+      expect(marker).toHaveAttribute('data-system-start', 'true');
+      expect(marker).toHaveClass('is-selected');
+      expect(
+        container.querySelectorAll(
+          `.sheetlab-clef-change[data-clef-change-id="${clefChangeId}"]`,
+        ),
+      ).toHaveLength(1);
+    });
+  });
+
+  it('drags a selected clef change to another note boundary', async () => {
+    const scoreWithClef = trySetClefChange(
+      createEmptyScore('grand'),
+      'bass',
+      0,
+      1,
+      'treble',
+    ).score;
+    const firstNoteScore = placeScoreEvent(scoreWithClef, {
+      eventId: 'bass-staff-source-note',
+      staffId: 'bass',
+      measureIndex: 0,
+      beat: 1,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'A', octave: 5 },
+    });
+    const score = placeScoreEvent(firstNoteScore, {
+      eventId: 'bass-staff-drop-note',
+      staffId: 'bass',
+      measureIndex: 0,
+      beat: 2,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'B', octave: 5 },
+    });
+    const clefChangeId =
+      score.parts[0]?.staves
+        .find((staff) => staff.id === 'bass')
+        ?.measures[0]?.clefChanges?.[0]?.id ?? '';
+    const onMoveClefChange = vi.fn();
+    const onSelectClefChange = vi.fn();
+
+    render(
+      <StaffRenderer
+        isInputArmed={false}
+        onMoveClefChange={onMoveClefChange}
+        onSelectClefChange={onSelectClefChange}
+        score={score}
+        selectedClefChangeId={clefChangeId}
+      />,
+    );
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    await waitFor(() =>
+      expect(screen.getByTestId('clef-change-target')).toBeInTheDocument(),
+    );
+
+    const target = screen.getByTestId('clef-change-target');
+    fireEvent.mouseDown(target, {
+      clientX: getBeatX(0, 1, score.timeSignature.beats, score),
+      clientY: getPitchY({ step: 'A', octave: 5 }, 'treble', 1),
+    });
+    fireEvent.mouseMove(overlay, {
+      clientX: getBeatX(0, 2, score.timeSignature.beats, score),
+      clientY: getPitchY({ step: 'B', octave: 5 }, 'treble', 1),
+    });
+
+    expect(screen.getByTestId('clef-change-preview')).toHaveAttribute(
+      'data-clef',
+      'treble',
+    );
+
+    fireEvent.mouseUp(overlay, {
+      clientX: getBeatX(0, 2, score.timeSignature.beats, score),
+      clientY: getPitchY({ step: 'B', octave: 5 }, 'treble', 1),
+    });
+
+    expect(onSelectClefChange).toHaveBeenCalledWith({
+      clefChangeId,
+      measureIndex: 0,
+      staffId: 'bass',
+    });
+    expect(onMoveClefChange).toHaveBeenCalledWith(
+      {
+        clefChangeId,
+        measureIndex: 0,
+        staffId: 'bass',
+      },
+      expect.objectContaining({
+        beat: 2,
+        measureIndex: 0,
+        staffId: 'bass',
+      }),
     );
   });
 
@@ -2345,16 +2860,20 @@ describe('StaffRenderer', () => {
       eventId: 'marked-note-2',
       staffId: 'treble',
       measureIndex: 0,
-      beat: 1,
+      beat: 3,
       duration: 'quarter',
       entryMode: 'note',
       pitch: { step: 'G', octave: 4 },
     });
-    const score = tryUpdateScoreEvent(secondNoteScore, 'marked-note-1', {
+    const markedStartScore = tryUpdateScoreEvent(secondNoteScore, 'marked-note-1', {
       dynamic: 'mf',
       fermata: true,
       glissando: true,
+      hairpin: 'crescendo',
       pedal: 'start',
+    }).score;
+    const score = tryUpdateScoreEvent(markedStartScore, 'marked-note-2', {
+      pedal: 'release',
     }).score;
 
     render(<StaffRenderer score={score} />);
@@ -2362,8 +2881,469 @@ describe('StaffRenderer', () => {
     await waitFor(() => {
       expect(screen.getByTestId('rendered-dynamic')).toHaveTextContent('mf');
       expect(screen.getByTestId('rendered-fermata')).toBeInTheDocument();
-      expect(screen.getByTestId('rendered-pedal')).toHaveTextContent('Ped.');
+      expect(screen.getAllByTestId('rendered-pedal')[0]).toHaveTextContent('Ped.');
+      expect(screen.getByTestId('rendered-pedal-line')).toHaveAttribute(
+        'data-source-id',
+        'marked-note-1',
+      );
       expect(screen.getByTestId('rendered-glissando')).toBeInTheDocument();
+      expect(screen.getByTestId('rendered-hairpin')).toHaveAttribute(
+        'data-hairpin',
+        'crescendo',
+      );
+    });
+  });
+
+  it('continues a VexFlow hairpin across a system break', async () => {
+    const sourceMeasureIndex = MEASURES_PER_SYSTEM - 1;
+    const targetMeasureIndex = MEASURES_PER_SYSTEM;
+    const firstNoteScore = placeScoreEvent(
+      createEmptyScore('treble', { measureCount: MEASURES_PER_SYSTEM * 2 }),
+      {
+        eventId: 'cross-system-hairpin-source',
+        staffId: 'treble',
+        measureIndex: sourceMeasureIndex,
+        beat: 0,
+        duration: 'quarter',
+        entryMode: 'note',
+        pitch: { step: 'C', octave: 4 },
+      },
+    );
+    const secondNoteScore = placeScoreEvent(firstNoteScore, {
+      eventId: 'cross-system-hairpin-target',
+      staffId: 'treble',
+      measureIndex: targetMeasureIndex,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'G', octave: 4 },
+    });
+    const score = tryUpdateScoreEvent(
+      secondNoteScore,
+      'cross-system-hairpin-source',
+      {
+        hairpin: 'crescendo',
+      },
+    ).score;
+
+    render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('rendered-hairpin')).toHaveLength(2);
+    });
+
+    const continuations = screen
+      .getAllByTestId('rendered-hairpin')
+      .map((hairpin) => hairpin.getAttribute('data-continuation'));
+
+    expect(continuations).toEqual(['start', 'end']);
+    screen.getAllByTestId('rendered-hairpin').forEach((hairpin) => {
+      expect(hairpin).toHaveAttribute(
+        'data-source-id',
+        'cross-system-hairpin-source',
+      );
+      expect(hairpin).toHaveAttribute(
+        'data-target-id',
+        'cross-system-hairpin-target',
+      );
+    });
+  });
+
+  it('continues a sustain pedal bracket across a system break', async () => {
+    const sourceMeasureIndex = MEASURES_PER_SYSTEM - 1;
+    const targetMeasureIndex = MEASURES_PER_SYSTEM;
+    const firstNoteScore = placeScoreEvent(
+      createEmptyScore('treble', { measureCount: MEASURES_PER_SYSTEM * 2 }),
+      {
+        eventId: 'cross-system-pedal-source',
+        staffId: 'treble',
+        measureIndex: sourceMeasureIndex,
+        beat: 0,
+        duration: 'quarter',
+        entryMode: 'note',
+        pitch: { step: 'C', octave: 4 },
+      },
+    );
+    const secondNoteScore = placeScoreEvent(firstNoteScore, {
+      eventId: 'cross-system-pedal-target',
+      staffId: 'treble',
+      measureIndex: targetMeasureIndex,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'G', octave: 4 },
+    });
+    const pedalStartScore = tryUpdateScoreEvent(
+      secondNoteScore,
+      'cross-system-pedal-source',
+      {
+        pedal: 'start',
+      },
+    ).score;
+    const score = tryUpdateScoreEvent(pedalStartScore, 'cross-system-pedal-target', {
+      pedal: 'release',
+    }).score;
+
+    render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('rendered-pedal-line')).toHaveLength(2);
+    });
+
+    const continuations = screen
+      .getAllByTestId('rendered-pedal-line')
+      .map((pedalLine) => pedalLine.getAttribute('data-continuation'));
+
+    expect(continuations).toEqual(['start', 'end']);
+    screen.getAllByTestId('rendered-pedal-line').forEach((pedalLine) => {
+      expect(pedalLine).toHaveAttribute(
+        'data-source-id',
+        'cross-system-pedal-source',
+      );
+      expect(pedalLine).toHaveAttribute(
+        'data-target-id',
+        'cross-system-pedal-target',
+      );
+    });
+  });
+
+  it('renders ottava range brackets from explicit score marks', async () => {
+    const firstNoteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'ottava-render-source',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 5 },
+    });
+    const secondNoteScore = placeScoreEvent(firstNoteScore, {
+      eventId: 'ottava-render-target',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 1,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'D', octave: 5 },
+    });
+    const score = tryToggleOttavaToNext(
+      secondNoteScore,
+      'ottava-render-source',
+      '8va',
+    ).score;
+
+    render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-ottava')).toHaveAttribute(
+        'data-ottava',
+        '8va',
+      );
+      expect(screen.getByTestId('rendered-ottava')).toHaveAttribute(
+        'data-source-id',
+        'ottava-render-source',
+      );
+      expect(screen.getByTestId('rendered-ottava')).toHaveAttribute(
+        'data-target-id',
+        'ottava-render-target',
+      );
+    });
+  });
+
+  it('does not draw glissando across a system break until cross-system semantics are supported', async () => {
+    const sourceMeasureIndex = MEASURES_PER_SYSTEM - 1;
+    const targetMeasureIndex = MEASURES_PER_SYSTEM;
+    const firstNoteScore = placeScoreEvent(
+      createEmptyScore('treble', { measureCount: MEASURES_PER_SYSTEM * 2 }),
+      {
+        eventId: 'cross-system-glissando-source',
+        staffId: 'treble',
+        measureIndex: sourceMeasureIndex,
+        beat: 0,
+        duration: 'quarter',
+        entryMode: 'note',
+        pitch: { step: 'C', octave: 4 },
+      },
+    );
+    const secondNoteScore = placeScoreEvent(firstNoteScore, {
+      eventId: 'cross-system-glissando-target',
+      staffId: 'treble',
+      measureIndex: targetMeasureIndex,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'G', octave: 4 },
+    });
+    const score = tryUpdateScoreEvent(
+      secondNoteScore,
+      'cross-system-glissando-source',
+      {
+        glissando: true,
+      },
+    ).score;
+    const { container } = render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(
+        container.querySelector(
+          '.vexflow-output .vf-user-event[data-event-id="cross-system-glissando-target"]',
+        ),
+      ).toBeInTheDocument();
+    });
+
+    expect(screen.queryByTestId('rendered-glissando')).not.toBeInTheDocument();
+  });
+
+  it('keeps notation marks in the VexFlow layer and interaction maps in the overlay layer', async () => {
+    const firstNoteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'boundary-note-1',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const secondNoteScore = placeScoreEvent(firstNoteScore, {
+      eventId: 'boundary-note-2',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 1,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const thirdNoteScore = placeScoreEvent(secondNoteScore, {
+      eventId: 'boundary-note-3',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 3,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'G', octave: 4 },
+    });
+    const tiedScore = tryToggleTieToNext(thirdNoteScore, 'boundary-note-1').score;
+    const slurredScore = tryToggleSlurToNext(tiedScore, 'boundary-note-1').score;
+    const annotatedFirstScore = tryUpdateScoreEvent(
+      slurredScore,
+      'boundary-note-1',
+      {
+        chordSymbol: 'C',
+        dynamic: 'mf',
+        fermata: true,
+        lyric: 'map',
+        lyricMap: { eventIds: ['boundary-note-1', 'boundary-note-2'] },
+        pedal: 'start',
+      },
+    ).score;
+    const annotatedSecondScore = tryUpdateScoreEvent(
+      annotatedFirstScore,
+      'boundary-note-2',
+      {
+        glissando: true,
+        hairpin: 'crescendo',
+      },
+    ).score;
+    const score = tryUpdateScoreEvent(annotatedSecondScore, 'boundary-note-3', {
+      pedal: 'release',
+    }).score;
+    const { container } = render(<StaffRenderer score={score} showLyricMap />);
+
+    await waitFor(() => {
+      expect(
+        container.querySelector(
+          '.vexflow-output [data-testid="rendered-hairpin"]',
+        ),
+      ).toBeInTheDocument();
+      expect(
+        container.querySelector(
+          '.notation-overlay [data-testid="lyric-map-connector"]',
+        ),
+      ).toBeInTheDocument();
+    });
+
+    [
+      'rendered-chord-symbol',
+      'rendered-dynamic',
+      'rendered-fermata',
+      'rendered-glissando',
+      'rendered-hairpin',
+      'rendered-lyric',
+      'rendered-pedal',
+      'rendered-pedal-line',
+      'rendered-slur',
+      'rendered-tie',
+    ].forEach((testId) => {
+      expect(
+        container.querySelector(`.vexflow-output [data-testid="${testId}"]`),
+      ).toBeInTheDocument();
+      expect(
+        container.querySelector(`.notation-overlay [data-testid="${testId}"]`),
+      ).not.toBeInTheDocument();
+    });
+    expect(
+      container.querySelector('.vexflow-output [data-testid="lyric-map-connector"]'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('renders multiple articulations on the same pitched event', async () => {
+    const noteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'articulated-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const score = tryUpdateScoreEvent(noteScore, 'articulated-note', {
+      articulations: ['accent', 'staccato'],
+    }).score;
+    const { container } = render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(
+        container.querySelector(
+          '.vexflow-output .vf-user-event[data-event-id="articulated-note"]',
+        ),
+      ).toHaveAttribute('data-articulations', 'accent staccato');
+    });
+  });
+
+  it.each(extremeScoreFixtureCatalog)(
+    'renders the extreme fixture $label without leaking notation marks into the overlay',
+    async (fixture) => {
+      const score = fixture.score;
+      const hasTuplet = fixture.capabilities.includes('tuplets');
+      const hasLyricMap = fixture.capabilities.includes('lyric-map');
+      const expectedOttavaCount = (score.marks ?? []).filter(
+        (mark) => mark.scope === 'range' && mark.kind === 'ottava',
+      ).length;
+      const expectedRangeLyricMaps = score.parts.reduce(
+        (total, part) =>
+          total +
+          part.staves.reduce(
+            (staffTotal, staff) =>
+              staffTotal +
+              staff.measures.reduce(
+                (measureTotal, measure) =>
+                  measureTotal +
+                  measure.voices.reduce(
+                    (voiceTotal, voice) =>
+                      voiceTotal +
+                      voice.events.filter(
+                        (event) =>
+                          event.lyricMap && event.lyricMap.eventIds.length > 1,
+                      ).length,
+                    0,
+                  ),
+                0,
+              ),
+            0,
+          ),
+        0,
+      );
+      const hasVoiceTwo = score.parts.some((part) =>
+        part.staves.some((staff) =>
+          staff.measures.some((measure) =>
+            measure.voices.some((voice, voiceIndex) => voiceIndex > 0 && voice.events.length > 0),
+          ),
+        ),
+      );
+      const { container } = render(
+        <StaffRenderer score={score} showLayoutZones showLyricMap />,
+      );
+
+      await waitFor(() => {
+        expect(
+          container.querySelectorAll('.vexflow-output .vf-user-event').length,
+        ).toBe(fixture.expectedEventCount);
+      });
+
+      expect(
+        container.querySelectorAll('.notation-overlay [data-testid^="rendered-"]'),
+      ).toHaveLength(0);
+      if (hasTuplet) {
+        expect(
+          container.querySelectorAll('.vexflow-output [data-testid="rendered-tuplet"]').length,
+        ).toBeGreaterThan(0);
+      }
+      expect(
+        container.querySelectorAll('.vexflow-output [data-testid="rendered-ottava"]').length,
+      ).toBeGreaterThanOrEqual(expectedOttavaCount);
+      if (hasLyricMap) {
+        expect(
+          container.querySelectorAll('[data-testid="lyric-map-connector"]').length,
+        ).toBeGreaterThanOrEqual(expectedRangeLyricMaps);
+      }
+      if (hasVoiceTwo) {
+        expect(
+          container.querySelectorAll('.vexflow-output .vf-user-event[data-voice-index="1"]').length,
+        ).toBeGreaterThan(0);
+      }
+      expect(container.querySelectorAll('[data-testid="voice-zone-debug"]').length)
+        .toBeGreaterThan(0);
+    },
+  );
+
+  it('renders manual stem direction overrides on the attached beam group only', async () => {
+    const firstScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'flipped-beam-1',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const secondScore = placeScoreEvent(firstScore, {
+      eventId: 'flipped-beam-2',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0.5,
+      duration: 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'D', octave: 4 },
+    });
+    const thirdScore = placeScoreEvent(secondScore, {
+      eventId: 'flipped-beam-3',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 1,
+      duration: 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+    const score = tryFlipScoreEventStemDirection(
+      thirdScore,
+      'flipped-beam-2',
+    ).score;
+    const { container } = render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      const flippedEvents = [
+        'flipped-beam-1',
+        'flipped-beam-2',
+      ].map((eventId) =>
+        container.querySelector(
+          `.vexflow-output .vf-user-event[data-event-id="${eventId}"]`,
+        ),
+      );
+      const nextBeatEvent = container.querySelector(
+        '.vexflow-output .vf-user-event[data-event-id="flipped-beam-3"]',
+      );
+
+      flippedEvents.forEach((element) => {
+        expect(element).toHaveAttribute('data-stem-direction', 'down');
+        expect(element).toHaveAttribute(
+          'data-stem-direction-source',
+          'manual',
+        );
+      });
+      expect(nextBeatEvent).toHaveAttribute(
+        'data-stem-direction-source',
+        'auto',
+      );
     });
   });
 

@@ -1,6 +1,8 @@
 import type { Score } from '../../domain/score/types';
 import type { DurationValue } from '../../domain/score/types';
+import { isGeneratedRestEvent } from '../../domain/score/events';
 import { getMeasureBeats } from '../../domain/score/timeSignatures';
+import { getActiveClef } from '../../domain/score/clefChanges';
 import type { InputCursor } from '../editor/inputCursor';
 import { createInputCursorFromPosition } from '../editor/inputCursor';
 import type { MusicPosition } from './interaction';
@@ -18,18 +20,28 @@ import {
 
 const BEAT_MATCH_EPSILON = 0.0001;
 
-function findRenderedRhythmSlotAtPosition(
+interface SnapPositionOptions {
+  preferRenderedPosition?: boolean;
+}
+
+type RenderedRhythmSlotMatch = {
+  hitKind: 'boundary' | 'direct';
+  slot: ReturnType<typeof getRhythmSlotsForMeasure>[number];
+};
+
+function getRenderedRhythmSlotsForPosition(
   position: MusicPosition,
   score: Score,
   eventLayouts: Record<string, RenderedEventLayout>,
   voiceIndex: number,
 ) {
-  const slotsWithLayouts = getRhythmSlotsForMeasure(
+  const slots = getRhythmSlotsForMeasure(
     score,
     position.staffId,
     position.measureIndex,
     voiceIndex,
-  )
+  );
+  return slots
     .map((slot) => ({
       layout: eventLayouts[slot.eventId],
       slot,
@@ -40,18 +52,62 @@ function findRenderedRhythmSlotAtPosition(
         slot: ReturnType<typeof getRhythmSlotsForMeasure>[number];
       } =>
         Boolean(entry.layout) &&
-        Boolean(entry.slot.event?.tuplet) &&
         entry.layout.staffId === position.staffId &&
         entry.layout.measureIndex === position.measureIndex &&
         entry.layout.voiceIndex === voiceIndex,
     )
     .sort((a, b) => a.layout.x - b.layout.x);
+}
+
+function findRenderedRhythmSlotAtPosition(
+  position: MusicPosition,
+  score: Score,
+  eventLayouts: Record<string, RenderedEventLayout>,
+  voiceIndex: number,
+): RenderedRhythmSlotMatch | null {
+  const slotsWithLayouts = getRenderedRhythmSlotsForPosition(
+    position,
+    score,
+    eventLayouts,
+    voiceIndex,
+  );
 
   if (slotsWithLayouts.length === 0) {
     return null;
   }
 
-  return slotsWithLayouts.find((entry, index) => {
+  const directNoteheadHit = slotsWithLayouts
+    .filter(({ layout }) => {
+      const xBounds =
+        layout.pitchLayouts.length > 0
+          ? {
+              maxX: Math.max(
+                ...layout.pitchLayouts.map((pitchLayout) => pitchLayout.maxX),
+              ),
+              minX: Math.min(
+                ...layout.pitchLayouts.map((pitchLayout) => pitchLayout.minX),
+              ),
+            }
+          : {
+              maxX: layout.maxX,
+              minX: layout.minX,
+            };
+
+      return position.x >= xBounds.minX - 4 && position.x <= xBounds.maxX + 4;
+    })
+    .sort(
+      (a, b) =>
+        Math.abs(a.layout.x - position.x) - Math.abs(b.layout.x - position.x),
+    )[0];
+
+  if (directNoteheadHit) {
+    return {
+      hitKind: 'direct',
+      slot: directNoteheadHit.slot,
+    };
+  }
+
+  const boundaryHit = slotsWithLayouts.find((entry, index) => {
     const previous = slotsWithLayouts[index - 1];
     const next = slotsWithLayouts[index + 1];
     const leftBoundary = previous
@@ -62,7 +118,24 @@ function findRenderedRhythmSlotAtPosition(
       : entry.layout.maxX + 24;
 
     return position.x >= leftBoundary && position.x < rightBoundary;
-  })?.slot ?? null;
+  });
+
+  return boundaryHit
+    ? {
+        hitKind: 'boundary',
+        slot: boundaryHit.slot,
+      }
+      : null;
+}
+
+function isWrittenNonTupletSlot(
+  slot: ReturnType<typeof getRhythmSlotsForMeasure>[number] | null | undefined,
+) {
+  return Boolean(
+    slot?.event &&
+      !slot.event.tuplet &&
+      !isGeneratedRestEvent(slot.event),
+  );
 }
 
 export function inputCursorToMusicPosition(
@@ -89,7 +162,7 @@ export function inputCursorToMusicPosition(
     cursor.mode === 'note-input'
       ? getPitchYForScore(
           cursor.pitchPreview,
-          staff.clef,
+          getActiveClef(score, staff.id, cursor.measureIndex, cursor.beat),
           cursor.staffIndex,
           score,
           cursor.measureIndex,
@@ -117,7 +190,15 @@ export function snapPositionToInputGrid(
   score: Score,
   eventLayouts: Record<string, RenderedEventLayout> = {},
   voiceIndex = 0,
+  options: SnapPositionOptions = {},
 ) {
+  const measureHasRenderedRhythmColumns =
+    getRenderedRhythmSlotsForPosition(
+      position,
+      score,
+      eventLayouts,
+      voiceIndex,
+    ).length > 0;
   const beatMatchedSlot = findRhythmSlotAtBeat(
     score,
     position.staffId,
@@ -125,22 +206,50 @@ export function snapPositionToInputGrid(
     position.beat,
     voiceIndex,
   );
-  const exactBeatMatchedTupletSlot =
-    beatMatchedSlot?.event?.tuplet &&
+  const exactBeatMatchedRenderedSlot =
+    beatMatchedSlot &&
+    (beatMatchedSlot.event?.tuplet || measureHasRenderedRhythmColumns) &&
     Math.abs(beatMatchedSlot.beat - position.beat) <= BEAT_MATCH_EPSILON
       ? beatMatchedSlot
       : null;
+  const renderedSlot = findRenderedRhythmSlotAtPosition(
+    position,
+    score,
+    eventLayouts,
+    voiceIndex,
+  );
+  const fallbackSlot = findRhythmSlotAtPosition(score, position, voiceIndex);
+  const usableRenderedSlot =
+    renderedSlot?.hitKind === 'boundary' &&
+    isWrittenNonTupletSlot(renderedSlot.slot)
+      ? null
+      : renderedSlot;
+  const usableFallbackSlot = isWrittenNonTupletSlot(fallbackSlot)
+    ? null
+    : fallbackSlot;
+  const canRenderedDirectHitOverrideBeat =
+    renderedSlot?.hitKind === 'direct' &&
+    (!renderedSlot.slot.event ||
+      !isGeneratedRestEvent(renderedSlot.slot.event) ||
+      Boolean(renderedSlot.slot.event.tuplet));
   const activeSlot =
-    exactBeatMatchedTupletSlot
-      ? exactBeatMatchedTupletSlot
-      : findRenderedRhythmSlotAtPosition(
-          position,
-          score,
-          eventLayouts,
-          voiceIndex,
-        ) ??
-    findRhythmSlotAtPosition(score, position, voiceIndex);
-  const activeSlotLayout = activeSlot ? eventLayouts[activeSlot.eventId] : undefined;
+    options.preferRenderedPosition && measureHasRenderedRhythmColumns
+      ? canRenderedDirectHitOverrideBeat
+        ? renderedSlot.slot
+        : usableFallbackSlot ??
+          exactBeatMatchedRenderedSlot ??
+          usableRenderedSlot?.slot
+      : exactBeatMatchedRenderedSlot ??
+        usableRenderedSlot?.slot ??
+        usableFallbackSlot;
+  const activeSlotIsRenderedDirect =
+    canRenderedDirectHitOverrideBeat && activeSlot === renderedSlot?.slot;
+  const activeSlotIsExactRendered =
+    Boolean(exactBeatMatchedRenderedSlot) &&
+    activeSlot === exactBeatMatchedRenderedSlot;
+  const shouldPreserveActiveSlotBeat =
+    Boolean(activeSlot && eventLayouts[activeSlot.eventId]) &&
+    (activeSlotIsRenderedDirect || activeSlotIsExactRendered);
   const rhythmSlotPosition = activeSlot
     ? {
         ...position,
@@ -151,7 +260,7 @@ export function snapPositionToInputGrid(
     ? activeSlot.duration
     : duration;
   const cursorDots = activeSlot?.event?.tuplet ? activeSlot.dots ?? 0 : dots;
-  const snappedPosition =
+  const cursorSnappedPosition =
     inputCursorToMusicPosition(
       createInputCursorFromPosition(
         rhythmSlotPosition,
@@ -163,20 +272,30 @@ export function snapPositionToInputGrid(
       ),
       score,
     ) ?? rhythmSlotPosition;
-  const snappedSlot = activeSlot?.event?.tuplet
+  const snappedPosition = shouldPreserveActiveSlotBeat && activeSlot
+    ? {
+        ...cursorSnappedPosition,
+        beat: activeSlot.beat,
+      }
+    : cursorSnappedPosition;
+  const shouldUseActiveSlotLayout =
+    shouldPreserveActiveSlotBeat || Boolean(activeSlot?.event?.tuplet);
+  const snappedSlot = shouldUseActiveSlotLayout
     ? activeSlot
     : getRhythmSlotsForMeasure(
-      score,
-      snappedPosition.staffId,
-      snappedPosition.measureIndex,
-      voiceIndex,
-    ).find((slot) => Math.abs(slot.beat - snappedPosition.beat) <= BEAT_MATCH_EPSILON);
+        score,
+        snappedPosition.staffId,
+        snappedPosition.measureIndex,
+        voiceIndex,
+      ).find(
+        (slot) => Math.abs(slot.beat - snappedPosition.beat) <= BEAT_MATCH_EPSILON,
+      );
   const snappedSlotLayout = snappedSlot ? eventLayouts[snappedSlot.eventId] : undefined;
 
-  return snappedSlotLayout
+  return snappedSlot && snappedSlotLayout
     ? {
         ...snappedPosition,
-        beat: snappedSlot?.event?.tuplet
+        beat: shouldUseActiveSlotLayout
           ? snappedSlot.beat
           : snappedPosition.beat,
         x: snappedSlotLayout.x,

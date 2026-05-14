@@ -26,6 +26,7 @@ import {
   getStaffTop,
 } from './layout';
 import { getMeasureBeats } from '../../domain/score/timeSignatures';
+import { getActiveClef } from '../../domain/score/clefChanges';
 
 export interface SvgPoint {
   x: number;
@@ -271,9 +272,10 @@ export function mapPointToMusicPosition(
     beatsPerMeasure,
     options.dots ?? 0,
   );
+  const activeClef = getActiveClef(score, staff.id, measureIndex, beat);
   const pitch = mapScoreStaffYToPitch(
     point.y,
-    staff.clef,
+    activeClef,
     staffIndex,
     score,
     measureIndex,

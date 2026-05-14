@@ -1,6 +1,7 @@
 import type { Score } from '../../domain/score/types';
-import type { DurationValue } from '../../domain/score/types';
+import type { Clef, DurationValue } from '../../domain/score/types';
 import { getMeasureBeats } from '../../domain/score/timeSignatures';
+import { getActiveClef } from '../../domain/score/clefChanges';
 import type { EntryMode } from '../editor/editorState';
 import type { InputCursor } from '../editor/inputCursor';
 import type { MusicPosition } from './interaction';
@@ -42,9 +43,15 @@ export function GhostEvent({
   const currentStaffGap = getScoreStaffGap(score, position.measureIndex);
   const systemGap = getScoreSystemGap(score, position.measureIndex);
   const x = position.x;
+  const activeClef = getActiveClef(
+    score,
+    staff.id,
+    position.measureIndex,
+    position.beat,
+  );
   const noteY = getPitchYForScore(
     position.pitch,
-    staff.clef,
+    activeClef,
     position.staffIndex,
     score,
     position.measureIndex,
@@ -57,6 +64,7 @@ export function GhostEvent({
     <g
       aria-label={`Ghost ${entryMode}`}
       className="ghost-event"
+      data-anchor-x={x}
       data-duration={duration}
       data-entry-mode={entryMode}
       data-testid="ghost-event"
@@ -93,6 +101,43 @@ export function GhostEvent({
   );
 }
 
+export function ClefChangePreview({
+  clef,
+  isInvalid = false,
+  position,
+  score,
+}: {
+  clef: Clef;
+  isInvalid?: boolean;
+  position: MusicPosition;
+  score: Score;
+}) {
+  const staffTop = getScoreStaffTop(
+    score,
+    position.staffIndex,
+    position.measureIndex,
+  );
+  const symbol = clef === 'treble' ? '\uD834\uDD1E' : '\uD834\uDD22';
+
+  return (
+    <g
+      className={`clef-change-preview${isInvalid ? ' is-invalid' : ''}`}
+      data-clef={clef}
+      data-invalid={isInvalid ? 'true' : undefined}
+      data-testid="clef-change-preview"
+    >
+      <text
+        dominantBaseline="middle"
+        textAnchor="middle"
+        x={position.x}
+        y={staffTop + STAFF_LINE_SPACING * 2}
+      >
+        {symbol}
+      </text>
+    </g>
+  );
+}
+
 export function InsertionCursor({
   position,
   score,
@@ -106,12 +151,7 @@ export function InsertionCursor({
     return null;
   }
 
-  const x = getBeatX(
-    position.measureIndex,
-    position.beat,
-    getMeasureBeats(score.timeSignature),
-    score,
-  );
+  const x = position.x;
   const yRange = getTimelineYRange(
     score,
     position.staffIndex,
@@ -121,6 +161,7 @@ export function InsertionCursor({
   return (
     <line
       className="insertion-cursor"
+      data-anchor-x={x}
       data-testid="insertion-cursor"
       x1={x}
       x2={x}

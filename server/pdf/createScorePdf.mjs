@@ -160,6 +160,41 @@ function getEventPitches(event) {
   return [];
 }
 
+function getSortedClefChanges(measure) {
+  return [...(measure?.clefChanges ?? [])].sort(
+    (first, second) => first.beat - second.beat,
+  );
+}
+
+function getActiveClef(score, staff, measureIndex, beat = 0, includeAtBeat = true) {
+  let clef = staff.clef;
+
+  for (const measure of staff.measures ?? []) {
+    if (measure.index > measureIndex) {
+      break;
+    }
+
+    for (const change of getSortedClefChanges(measure)) {
+      const isBeforeTargetMeasure = measure.index < measureIndex;
+      const isAtTargetBeat = includeAtBeat
+        ? change.beat <= beat + 0.0001
+        : change.beat < beat - 0.0001;
+
+      if (isBeforeTargetMeasure || isAtTargetBeat) {
+        clef = change.clef;
+      }
+    }
+  }
+
+  return clef;
+}
+
+function getMeasureClefChanges(staff, measureIndex) {
+  const measure = staff.measures.find((candidate) => candidate.index === measureIndex);
+
+  return getSortedClefChanges(measure);
+}
+
 function getEventDots(event) {
   return event.dots ?? 0;
 }
@@ -182,27 +217,29 @@ function getAccidentalSymbol(accidental) {
 
 function getStaffPitchBounds(score, staffIndex) {
   const staff = score.parts[0]?.staves[staffIndex];
-  const eventPitches =
+  const eventPitchYs =
     staff?.measures.flatMap((measure) =>
       measure.voices.flatMap((voice) =>
-        voice.events.flatMap((event) => getEventPitches(event)),
+        voice.events.flatMap((event) => {
+          const activeClef = getActiveClef(score, staff, measure.index, event.beat);
+
+          return getEventPitches(event).map((pitch) =>
+            getPitchY(clampPitchToClefRange(pitch, activeClef), activeClef, 0),
+          );
+        }),
       ),
     ) ?? [];
 
-  if (!staff || eventPitches.length === 0) {
+  if (!staff || eventPitchYs.length === 0) {
     return {
       maxY: STAFF_LINE_SPACING * 4,
       minY: 0,
     };
   }
 
-  const pitchYs = eventPitches.map((pitch) =>
-    getPitchY(clampPitchToClefRange(pitch, staff.clef), staff.clef, 0),
-  );
-
   return {
-    maxY: Math.max(STAFF_LINE_SPACING * 4, ...pitchYs),
-    minY: Math.min(0, ...pitchYs),
+    maxY: Math.max(STAFF_LINE_SPACING * 4, ...eventPitchYs),
+    minY: Math.min(0, ...eventPitchYs),
   };
 }
 
@@ -318,7 +355,7 @@ function createLayout(score) {
   };
 }
 
-function getEventDrawing(event, staff, staffIndex, measureIndex, layout) {
+function getEventDrawing(score, event, staff, staffIndex, measureIndex, layout) {
   const measureLayout = getMeasureLayout(measureIndex, layout);
   const measureWidth = measureLayout.measureWidth;
   const contentLeft =
@@ -332,15 +369,16 @@ function getEventDrawing(event, staff, staffIndex, measureIndex, layout) {
     staffIndex,
     measureLayout.systemIndex,
   );
+  const activeClef = getActiveClef(score, staff, measureIndex, event.beat);
   const eventPitches = getEventPitches(event).map((pitch) =>
-    clampPitchToClefRange(pitch, staff.clef),
+    clampPitchToClefRange(pitch, activeClef),
   );
   const primaryPitch = eventPitches[0];
   const y = primaryPitch
-    ? getPitchY(primaryPitch, staff.clef, staffTop)
+    ? getPitchY(primaryPitch, activeClef, staffTop)
     : staffTop + STAFF_LINE_SPACING * 2;
   const ledgerYs = eventPitches.flatMap((pitch) =>
-    getLedgerLineYs(getPitchY(pitch, staff.clef, staffTop), staffTop),
+    getLedgerLineYs(getPitchY(pitch, activeClef, staffTop), staffTop),
   );
   const middleLineY = staffTop + STAFF_LINE_SPACING * 2;
   const stemDirection = y <= middleLineY ? 'down' : 'up';
@@ -360,7 +398,7 @@ function getEventDrawing(event, staff, staffIndex, measureIndex, layout) {
   };
 
   for (const pitch of eventPitches) {
-    const pitchY = getPitchY(pitch, staff.clef, staffTop);
+    const pitchY = getPitchY(pitch, activeClef, staffTop);
 
     bounds.minX = Math.min(bounds.minX, x - NOTEHEAD_RX);
     bounds.maxX = Math.max(bounds.maxX, x + NOTEHEAD_RX);
@@ -384,6 +422,7 @@ function getEventDrawing(event, staff, staffIndex, measureIndex, layout) {
 
   return {
     bounds,
+    clef: activeClef,
     ledgerYs,
     staffId: staff.id,
     staffIndex,
@@ -402,11 +441,14 @@ export function createScorePdfLayout(score) {
   return {
     events: staves.flatMap((staff, staffIndex) =>
       staff.measures.flatMap((measure) =>
-        measure.voices[0]?.events.map((event) => ({
-          ...getEventDrawing(event, staff, staffIndex, measure.index, layout),
-          event,
-          measureIndex: measure.index,
-        })) ?? [],
+        measure.voices.flatMap((voice, voiceIndex) =>
+          voice.events.map((event) => ({
+            ...getEventDrawing(score, event, staff, staffIndex, measure.index, layout),
+            event,
+            measureIndex: measure.index,
+            voiceIndex,
+          })),
+        ),
       ),
     ),
     layout,
@@ -414,10 +456,11 @@ export function createScorePdfLayout(score) {
     staves: Array.from({ length: getSystemCount(layout) }, (_, systemIndex) =>
       staves.map((staff, staffIndex) => {
         const top = getStaffTopForSystem(layout, staffIndex, systemIndex);
+        const firstMeasureIndex = systemIndex * MEASURES_PER_SYSTEM;
 
         return {
           bottom: top + STAFF_LINE_SPACING * 4,
-          clef: staff.clef,
+          clef: getActiveClef(score, staff, firstMeasureIndex, 0),
           id: staff.id,
           systemIndex,
           top,
@@ -427,7 +470,7 @@ export function createScorePdfLayout(score) {
   };
 }
 
-function drawKeySignature(doc, keySignature, staff, x, staffTop) {
+function drawKeySignature(doc, keySignature, clef, x, staffTop) {
   const count = getKeySignatureAccidentalCount(keySignature);
 
   if (count === 0) {
@@ -437,18 +480,44 @@ function drawKeySignature(doc, keySignature, staff, x, staffTop) {
   const accidental = count > 0 ? 'sharp' : 'flat';
   const symbol = count > 0 ? '#' : 'b';
   const pitches =
-    KEY_SIGNATURE_PITCHES[staff.clef][accidental].slice(0, Math.abs(count));
+    KEY_SIGNATURE_PITCHES[clef][accidental].slice(0, Math.abs(count));
 
   doc.font('Times-Roman').fontSize(12).fillColor('#111111');
 
   pitches.forEach((pitch, index) => {
-    doc.text(symbol, x + index * 7, getPitchY(pitch, staff.clef, staffTop) - 7, {
+    doc.text(symbol, x + index * 7, getPitchY(pitch, clef, staffTop) - 7, {
       width: 7,
       align: 'center',
     });
   });
 
   return pitches.length * 7 + 4;
+}
+
+function drawClefSymbol(doc, clef, x, staffTop, size = 'default') {
+  const isTreble = clef === 'treble';
+  const fontSize =
+    size === 'small' ? (isTreble ? 18 : 14) : isTreble ? 24 : 18;
+
+  doc
+    .font('Times-Roman')
+    .fontSize(fontSize)
+    .fillColor('#111111')
+    .text(isTreble ? 'G' : 'F', x, staffTop - (isTreble ? 8 : 5));
+}
+
+function getClefChangeX(measureIndex, beat, layout) {
+  const measureLayout = getMeasureLayout(measureIndex, layout);
+  const measureWidth = measureLayout.measureWidth;
+  const contentLeft =
+    measureLayout.x + (measureLayout.localMeasureIndex === 0 ? 58 : 18);
+  const contentWidth = measureWidth - 66;
+
+  return (
+    contentLeft +
+    (beat / layout.timeSignature.beats) * Math.max(1, contentWidth) -
+    12
+  );
 }
 
 function drawStaff(doc, score, staff, staffIndex, systemIndex, layout) {
@@ -477,16 +546,15 @@ function drawStaff(doc, score, staff, staffIndex, systemIndex, layout) {
       .stroke();
   }
 
-  doc
-    .font('Times-Roman')
-    .fontSize(staff.clef === 'treble' ? 24 : 18)
-    .text(staff.clef === 'treble' ? 'G' : 'F', layout.staffLeft + 8, staffTop - 8);
+  const systemStartClef = getActiveClef(score, staff, firstMeasureIndex, 0);
+
+  drawClefSymbol(doc, systemStartClef, layout.staffLeft + 8, staffTop);
 
   const activeKeySignature = getActiveKeySignature(score, firstMeasureIndex);
   const keySignatureWidth = drawKeySignature(
     doc,
     activeKeySignature,
-    staff,
+    systemStartClef,
     layout.staffLeft + 34,
     staffTop,
   );
@@ -513,10 +581,29 @@ function drawStaff(doc, score, staff, staffIndex, systemIndex, layout) {
     drawKeySignature(
       doc,
       getActiveKeySignature(score, measureIndex),
-      staff,
+      getActiveClef(score, staff, measureIndex, 0),
       layout.staffLeft + offset * measureWidth + 8,
       staffTop,
     );
+  }
+
+  for (let offset = 0; offset < measureCountForSystem; offset += 1) {
+    const measureIndex = firstMeasureIndex + offset;
+    const localMeasureIndex = measureIndex % MEASURES_PER_SYSTEM;
+
+    getMeasureClefChanges(staff, measureIndex).forEach((change) => {
+      if (localMeasureIndex === 0 && Math.abs(change.beat) <= 0.0001) {
+        return;
+      }
+
+      drawClefSymbol(
+        doc,
+        change.clef,
+        getClefChangeX(measureIndex, change.beat, layout),
+        staffTop,
+        'small',
+      );
+    });
   }
 }
 
@@ -541,8 +628,9 @@ function drawGrandConnectors(doc, layout, staffCount, systemIndex) {
     .text('{', layout.staffLeft - 23, top + 7, { height: bottom - top });
 }
 
-function drawNote(doc, event, staff, staffIndex, measureIndex, layout) {
-  const { ledgerYs, staffTop, stem, x, y } = getEventDrawing(
+function drawNote(doc, score, event, staff, staffIndex, measureIndex, layout) {
+  const { clef, ledgerYs, staffTop, stem, x, y } = getEventDrawing(
+    score,
     event,
     staff,
     staffIndex,
@@ -561,8 +649,8 @@ function drawNote(doc, event, staff, staffIndex, measureIndex, layout) {
   doc.lineWidth(0.7).strokeColor('#111111').fillColor('#111111');
 
   getEventPitches(event).forEach((rawPitch) => {
-    const pitch = clampPitchToClefRange(rawPitch, staff.clef);
-    const pitchY = getPitchY(pitch, staff.clef, staffTop);
+    const pitch = clampPitchToClefRange(rawPitch, clef);
+    const pitchY = getPitchY(pitch, clef, staffTop);
     const accidental = getAccidentalSymbol(pitch.accidental);
 
     for (const ledgerY of getLedgerLineYs(pitchY, staffTop)) {
@@ -623,8 +711,10 @@ function drawScore(doc, score) {
 
   staves.forEach((staff, staffIndex) => {
     staff.measures.forEach((measure) => {
-      measure.voices[0]?.events.forEach((event) =>
-        drawNote(doc, event, staff, staffIndex, measure.index, layout),
+      measure.voices.forEach((voice) =>
+        voice.events.forEach((event) =>
+          drawNote(doc, score, event, staff, staffIndex, measure.index, layout),
+        ),
       );
     });
   });

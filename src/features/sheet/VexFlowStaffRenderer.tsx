@@ -1,34 +1,28 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Accidental as VexFlowAccidental,
-  Barline,
   Beam,
-  Dot,
+  ClefNote,
   Formatter,
-  Repetition,
   Renderer,
   Stave,
   StaveConnector,
   StaveNote,
   Stem,
-  Tuplet,
-  Volta,
   Voice as VexFlowVoice,
 } from 'vexflow';
-import type { ScoreEvent, Staff } from '../../domain/score/types';
-import { getDurationBeats } from '../../domain/score/durations';
+import type {
+  Clef,
+  Staff,
+} from '../../domain/score/types';
 import {
-  getEventDots,
-  getEventPitches,
-  isGeneratedRestEvent,
-} from '../../domain/score/events';
+  getActiveClef,
+  getMeasureClefChanges,
+} from '../../domain/score/clefChanges';
 import {
   getActiveKeySignature,
   measureStartsKeySignatureChange,
 } from '../../domain/score/keySignatures';
 import { getMeasureBeats } from '../../domain/score/timeSignatures';
-import { getMeasureRepeatJump } from '../../domain/score/repeatJumps';
-import { clampPitchToClefRange } from '../../domain/score/pitchRange';
 import type { StaffRendererProps } from './StaffRenderer';
 import { NotationOverlay } from './NotationOverlay';
 import type {
@@ -37,7 +31,6 @@ import type {
   RenderedVoiceZoneLayout,
 } from './renderedEventLayout';
 import {
-  STAFF_LINE_SPACING,
   SVG_WIDTH,
   VEXFLOW_STAVE_TOP_LINE_OFFSET,
   getLocalMeasureIndex,
@@ -50,305 +43,49 @@ import {
   getSystemIndex,
 } from './layout';
 import {
-  accidentalToVexFlow,
-  durationToVexFlowDuration,
-  pitchToVexFlowKey,
-  splitBeatsIntoDurations,
-} from './vexflowAdapter';
-import { getBeatX, getPitchYForScore } from './notationGeometry';
+  createEmptyMeasureDisplayRests,
+  createVexFlowNote,
+} from './vexflowNoteFactory';
+import { getBeatX } from './notationGeometry';
 import { getMeasureKey } from './measureKey';
-import { getKeySignatureSymbolLayouts } from './keySignatureLayout';
 import { drawTextAnnotations } from './vexflowAnnotationRenderer';
 import { computeRenderedVoiceZones } from './renderedVoiceZones';
-import { NOTEHEAD_ANNOTATION_INK_PADDING } from './annotationLayoutPolicy';
+import {
+  getInsertPreviewItems,
+  resolveInsertDisplayPosition,
+} from './insertPreview';
+import { getEffectiveStemDirection } from '../../domain/score/stemDirection';
+import {
+  drawVexFlowConnectionMarks,
+  type RenderedNoteRef,
+} from './vexflowConnectionRenderer';
+import { drawVexFlowExpressionMarks } from './vexflowExpressionRenderer';
+import { createVexFlowTuplets } from './vexflowTupletRenderer';
+import { drawKeySignatureSymbols } from './vexflowKeySignatureRenderer';
+import { applyRepeatJumpToStave } from './vexflowRepeatRenderer';
+import {
+  CLEF_CHANGE_BEAT_EPSILON,
+  SVG_NAMESPACE,
+  drawSystemStartClefChangeMarkers,
+  tagRenderedClefChangeElement,
+  tagRenderedFermataElements,
+} from './vexflowSvgTagging';
+import { collectRenderedMeasureEventLayouts } from './vexflowLayoutCollector';
 
-const REST_KEY_BY_CLEF = {
-  treble: 'b/4',
-  bass: 'd/3',
-} satisfies Record<Staff['clef'], string>;
-const STEM_RENDERED_INK_ESTIMATE = STAFF_LINE_SPACING * 3;
-const KEY_SIGNATURE_SYMBOL_TEXT = {
-  flat: '♭',
-  sharp: '♯',
-} as const;
-const REPETITION_TYPE_BY_REPEAT_JUMP = {
-  coda: Repetition.type.CODA_LEFT,
-  dc: Repetition.type.DC,
-  'dc-al-coda': Repetition.type.DC_AL_CODA,
-  'dc-al-fine': Repetition.type.DC_AL_FINE,
-  ds: Repetition.type.DS,
-  'ds-al-coda': Repetition.type.DS_AL_CODA,
-  'ds-al-fine': Repetition.type.DS_AL_FINE,
-  fine: Repetition.type.FINE,
-  segno: Repetition.type.SEGNO_LEFT,
-  'to-coda': Repetition.type.TO_CODA,
-} as const;
-
-interface RenderedBounds {
-  maxX: number;
-  maxY: number;
-  minX: number;
-  minY: number;
-}
-
-function getVexFlowEventClasses(event: ScoreEvent) {
-  return isGeneratedRestEvent(event)
-    ? 'vf-score-event vf-generated-rest'
-    : 'vf-score-event vf-user-event';
-}
-
-function combineRenderedBounds(bounds: RenderedBounds[]) {
-  if (bounds.length === 0) {
-    return null;
-  }
-
-  return bounds.reduce<RenderedBounds>(
-    (combined, candidate) => ({
-      maxX: Math.max(combined.maxX, candidate.maxX),
-      maxY: Math.max(combined.maxY, candidate.maxY),
-      minX: Math.min(combined.minX, candidate.minX),
-      minY: Math.min(combined.minY, candidate.minY),
-    }),
-    bounds[0],
-  );
-}
-
-function getRenderedNoteBounds(note: StaveNote, svgElement: SVGElement) {
-  const bounds: RenderedBounds[] = [];
-
-  try {
-    const vexFlowBounds = note.getBoundingBox();
-    const x = vexFlowBounds.getX();
-    const y = vexFlowBounds.getY();
-    const width = vexFlowBounds.getW();
-    const height = vexFlowBounds.getH();
-
-    if (
-      Number.isFinite(x) &&
-      Number.isFinite(y) &&
-      Number.isFinite(width) &&
-      Number.isFinite(height)
-    ) {
-      bounds.push({
-        maxX: x + width,
-        maxY: y + height,
-        minX: x,
-        minY: y,
-      });
-    }
-  } catch {
-    // VexFlow can omit bounding boxes for some generated SVG fragments.
-  }
-
-  try {
-    const svgGraphicsElement = svgElement as SVGGraphicsElement;
-    const svgBounds =
-      typeof svgGraphicsElement.getBBox === 'function'
-        ? svgGraphicsElement.getBBox()
-        : null;
-
-    if (
-      svgBounds &&
-      Number.isFinite(svgBounds.x) &&
-      Number.isFinite(svgBounds.y) &&
-      Number.isFinite(svgBounds.width) &&
-      Number.isFinite(svgBounds.height)
-    ) {
-      bounds.push({
-        maxX: svgBounds.x + svgBounds.width,
-        maxY: svgBounds.y + svgBounds.height,
-        minX: svgBounds.x,
-        minY: svgBounds.y,
-      });
-    }
-  } catch {
-    // JSDOM does not implement SVG getBBox; the VexFlow bounds above cover tests.
-  }
-
-  return combineRenderedBounds(bounds);
-}
-
-function createVexFlowNote(
-  event: ScoreEvent,
-  staff: Staff,
-  stemDirection?: number,
-) {
-  const eventDots = getEventDots(event);
-  const eventPitches = getEventPitches(event).map((pitch) =>
-    clampPitchToClefRange(pitch, staff.clef),
-  );
-  const staveNote =
-    event.kind === 'rest'
-      ? new StaveNote({
-          clef: staff.clef,
-          dots: eventDots || undefined,
-          duration: durationToVexFlowDuration(event.duration, true),
-          keys: [REST_KEY_BY_CLEF[staff.clef]],
-          stemDirection,
-        })
-      : new StaveNote({
-          clef: staff.clef,
-          dots: eventDots || undefined,
-          duration: durationToVexFlowDuration(event.duration),
-          keys: eventPitches.map(pitchToVexFlowKey),
-          stemDirection,
-        });
-
-  staveNote.addClass(getVexFlowEventClasses(event));
-  staveNote.setAttribute('data-event-id', event.id);
-  staveNote.setAttribute('data-duration', event.duration);
-
-  if (event.kind !== 'rest') {
-    eventPitches.forEach((pitch, pitchIndex) => {
-      if (pitch.accidental) {
-        staveNote.addModifier(
-          new VexFlowAccidental(accidentalToVexFlow(pitch.accidental)),
-          pitchIndex,
-        );
-      }
-    });
-  }
-
-  if (eventDots > 0) {
-    for (let dotIndex = 0; dotIndex < eventDots; dotIndex += 1) {
-      Dot.buildAndAttach([staveNote], { all: true });
-    }
-  }
-
-  return staveNote;
-}
-
-function createEmptyMeasureDisplayRests(
-  staffId: Staff['id'],
-  measureIndex: number,
-  beatsPerMeasure: number,
-): ScoreEvent[] {
-  let cursorBeat = 0;
-
-  return splitBeatsIntoDurations(beatsPerMeasure).map((duration) => {
-    const event: ScoreEvent = {
-      id: `rest-${staffId}-m${measureIndex + 1}-display-${cursorBeat}-${duration}`,
-      kind: 'rest',
-      beat: cursorBeat,
-      duration,
-    };
-    cursorBeat += getDurationBeats(duration);
-
-    return event;
-  });
-}
-
-function applyRepeatJumpToStave(
-  stave: Stave,
-  score: StaffRendererProps['score'],
-  measureIndex: number,
-  staffIndex: number,
-) {
-  const repeatJump = getMeasureRepeatJump(score, measureIndex);
-
-  if (!repeatJump) {
-    return;
-  }
-
-  if (repeatJump === 'repeat-start') {
-    stave.setBegBarType(Barline.type.REPEAT_BEGIN);
-    return;
-  }
-
-  if (repeatJump === 'repeat-end') {
-    stave.setEndBarType(Barline.type.REPEAT_END);
-    return;
-  }
-
-  if (repeatJump === 'repeat-both') {
-    stave.setBegBarType(Barline.type.REPEAT_BEGIN);
-    stave.setEndBarType(Barline.type.REPEAT_END);
-    return;
-  }
-
-  if (staffIndex !== 0) {
-    return;
-  }
-
-  if (repeatJump === 'ending-1' || repeatJump === 'ending-2' || repeatJump === 'ending-3') {
-    stave.setVoltaType(
-      Volta.type.BEGIN_END,
-      `${repeatJump.replace('ending-', '')}.`,
-      -20,
-    );
-    return;
-  }
-
-  const repetitionType =
-    REPETITION_TYPE_BY_REPEAT_JUMP[
-      repeatJump as keyof typeof REPETITION_TYPE_BY_REPEAT_JUMP
-    ];
-
-  if (repetitionType !== undefined) {
-    stave.setRepetitionType(repetitionType, -8);
-  }
-}
-
-function createVexFlowTuplets(
-  events: ScoreEvent[],
-  notes: StaveNote[],
-  voiceIndex: number,
-) {
-  const groups = new Map<
-    string,
-    {
-      actualNotes: number;
-      normalNotes: number;
-      notesByIndex: Map<number, StaveNote>;
-    }
-  >();
-
-  events.forEach((event, eventIndex) => {
-    if (!event.tuplet) {
-      return;
-    }
-
-    const note = notes[eventIndex];
-
-    if (!note) {
-      return;
-    }
-
-    const group = groups.get(event.tuplet.id) ?? {
-      actualNotes: event.tuplet.actualNotes,
-      normalNotes: event.tuplet.normalNotes,
-      notesByIndex: new Map<number, StaveNote>(),
-    };
-
-    group.notesByIndex.set(event.tuplet.index, note);
-    groups.set(event.tuplet.id, group);
-  });
-
-  return [...groups.entries()].flatMap(([tupletId, group]) => {
-    const tupletNotes = [...group.notesByIndex.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([, note]) => note);
-
-    if (tupletNotes.length < 2) {
-      return [];
-    }
-
-    const tuplet = new Tuplet(tupletNotes, {
-      bracketed: true,
-      location:
-        voiceIndex === 1 ? Tuplet.LOCATION_BOTTOM : Tuplet.LOCATION_TOP,
-      notesOccupied: group.normalNotes,
-      numNotes: group.actualNotes,
-    });
-
-    return [{ id: tupletId, tuplet }];
-  });
-}
+const CLEF_CHANGE_GLYPH_CODEPOINT = {
+  bass: 0xe062,
+  treble: 0xe050,
+} satisfies Record<Clef, number>;
+const CLEF_CHANGE_STAVE_LINE = {
+  bass: 1,
+  treble: 3,
+} satisfies Record<Clef, number>;
 
 function drawVexFlowMeasureEvents({
   beatsPerMeasure,
   context,
   measureIndex,
+  noteRefs,
   score,
   staff,
   staffIndex,
@@ -357,6 +94,7 @@ function drawVexFlowMeasureEvents({
   beatsPerMeasure: number;
   context: ReturnType<Renderer['getContext']>;
   measureIndex: number;
+  noteRefs: Map<string, RenderedNoteRef>;
   score: StaffRendererProps['score'];
   staff: Staff;
   staffIndex: number;
@@ -384,24 +122,78 @@ function drawVexFlowMeasureEvents({
           },
         ];
   const hasMultipleVoices = renderGroups.length > 1;
-  const renderedVoices = renderGroups.map((voiceGroup) => {
-    const stemDirection =
-      hasMultipleVoices
-        ? voiceGroup.voiceIndex === 0
-          ? Stem.UP
-          : Stem.DOWN
-        : undefined;
-    const notes = voiceGroup.events.map((event) =>
-      createVexFlowNote(event, staff, stemDirection),
-    );
+  const inlineClefChanges = getMeasureClefChanges(
+    score,
+    staff.id,
+    measureIndex,
+  ).filter(
+    (change) =>
+      !(
+        getLocalMeasureIndex(measureIndex, score) === 0 &&
+        Math.abs(change.beat) <= CLEF_CHANGE_BEAT_EPSILON
+      ),
+  );
+  const renderedVoices = renderGroups.map((voiceGroup, renderGroupIndex) => {
+    const clefNotes =
+      renderGroupIndex === 0
+        ? inlineClefChanges.map((change) => ({
+            change,
+            note: new ClefNote(change.clef, 'small'),
+          }))
+        : [];
+    const notes = voiceGroup.events.map((event) => {
+      const activeClef = getActiveClef(score, staff.id, measureIndex, event.beat);
+      const effectiveStemDirection = getEffectiveStemDirection({
+        clef: activeClef,
+        event,
+        hasMultipleVoices,
+        voiceIndex: voiceGroup.voiceIndex,
+      });
+      const manualOrVoiceStemDirection =
+        event.stemDirection ?? (hasMultipleVoices ? effectiveStemDirection : null);
+
+      return createVexFlowNote(event, staff, {
+        clef: activeClef,
+        modifierDirection: effectiveStemDirection,
+        stemDirection:
+          manualOrVoiceStemDirection === 'up'
+            ? Stem.UP
+            : manualOrVoiceStemDirection === 'down'
+              ? Stem.DOWN
+              : undefined,
+      });
+    });
     const tuplets = createVexFlowTuplets(
       voiceGroup.events,
       notes,
+      score,
+      staff,
+      measureIndex,
+      hasMultipleVoices,
       voiceGroup.voiceIndex,
     );
+    const pendingClefNotes = [...clefNotes];
+    const tickables: Array<StaveNote | ClefNote> = [];
+
+    voiceGroup.events.forEach((event, eventIndex) => {
+      const clefNotesBeforeEvent = pendingClefNotes.filter(
+        ({ change }) => change.beat <= event.beat + 0.0001,
+      );
+
+      tickables.push(...clefNotesBeforeEvent.map(({ note }) => note));
+      pendingClefNotes.splice(0, clefNotesBeforeEvent.length);
+
+      const note = notes[eventIndex];
+
+      if (note) {
+        tickables.push(note);
+      }
+    });
+    tickables.push(...pendingClefNotes.map(({ note }) => note));
 
     return {
       ...voiceGroup,
+      clefNotes,
       notes,
       tuplets,
       vexFlowVoice: new VexFlowVoice({
@@ -409,17 +201,21 @@ function drawVexFlowMeasureEvents({
         numBeats: score.timeSignature.beats,
       })
         .setMode(VexFlowVoice.Mode.SOFT)
-        .addTickables(notes),
+        .addTickables(tickables),
     };
   });
-  const eventLayouts: Record<string, RenderedEventLayout> = {};
+  const shouldMaintainStemDirections =
+    hasMultipleVoices ||
+    renderedVoices.some(({ events }) =>
+      events.some((event) => Boolean(event.stemDirection)),
+    );
   const beams = renderedVoices.flatMap(({ notes }) =>
     Beam.generateBeams(notes, {
       beamRests: false,
       groups: Beam.getDefaultBeamGroups(
         `${score.timeSignature.beats}/${score.timeSignature.beatUnit}`,
       ),
-      maintainStemDirections: hasMultipleVoices,
+      maintainStemDirections: shouldMaintainStemDirections,
     }),
   );
   const vexFlowVoices = renderedVoices.map((voice) => voice.vexFlowVoice);
@@ -431,6 +227,61 @@ function drawVexFlowMeasureEvents({
       context,
     });
   vexFlowVoices.forEach((voice) => voice.draw(context, stave));
+  tagRenderedFermataElements({ context, renderedVoices });
+  renderedVoices
+    .flatMap(({ clefNotes }) => clefNotes)
+    .forEach(({ change, note }) => {
+      const svgElement = note.getClef().getSVGElement();
+
+      if (svgElement) {
+        tagRenderedClefChangeElement({
+          change,
+          element: svgElement,
+          measureIndex,
+          staffId: staff.id,
+        });
+
+        return;
+      }
+
+      const svg = (context as { svg?: SVGSVGElement }).svg;
+
+      if (!svg) {
+        return;
+      }
+
+      const clefText = document.createElementNS(SVG_NAMESPACE, 'text');
+      const absoluteX = note.getAbsoluteX();
+      const fallbackX = getBeatX(
+        measureIndex,
+        change.beat,
+        beatsPerMeasure,
+        score,
+      );
+      const x =
+        Number.isFinite(absoluteX) && absoluteX > 0
+          ? absoluteX
+          : Math.max(getMeasureContentLeft(measureIndex, score), fallbackX - 14);
+
+      clefText.textContent = String.fromCodePoint(
+        CLEF_CHANGE_GLYPH_CODEPOINT[change.clef],
+      );
+      clefText.setAttribute('font-family', 'Bravura, Academico');
+      clefText.setAttribute('font-size', '24pt');
+      clefText.setAttribute('stroke', 'none');
+      clefText.setAttribute('x', x.toFixed(2));
+      clefText.setAttribute(
+        'y',
+        stave.getYForLine(CLEF_CHANGE_STAVE_LINE[change.clef]).toFixed(2),
+      );
+      tagRenderedClefChangeElement({
+        change,
+        element: clefText,
+        measureIndex,
+        staffId: staff.id,
+      });
+      svg.appendChild(clefText);
+    });
   beams.forEach((beam) => beam.setContext(context).draw());
   renderedVoices
     .flatMap((voice) => voice.tuplets)
@@ -444,138 +295,15 @@ function drawVexFlowMeasureEvents({
       }
     });
 
-  renderedVoices.forEach(({ events, notes, voiceIndex }) => {
-    notes.forEach((note, noteIndex) => {
-      const event = events[noteIndex];
-      const svgElement = note.getSVGElement();
-
-      if (!event || !svgElement) {
-        return;
-      }
-
-      svgElement.classList.add(...getVexFlowEventClasses(event).split(' '));
-      svgElement.setAttribute('data-event-id', event.id);
-      svgElement.setAttribute('data-duration', event.duration);
-      svgElement.setAttribute('data-measure-index', String(measureIndex));
-      svgElement.setAttribute('data-pitch-count', String(getEventPitches(event).length));
-      svgElement.setAttribute('data-staff-id', staff.id);
-      if (event.tuplet) {
-        svgElement.setAttribute('data-tuplet-id', event.tuplet.id);
-        svgElement.setAttribute('data-tuplet-index', String(event.tuplet.index));
-      }
-      svgElement.setAttribute('data-voice-index', String(voiceIndex));
-
-      const eventPitches = getEventPitches(event);
-      const fallbackX = getBeatX(
-        measureIndex,
-        event.beat,
-        beatsPerMeasure,
-        score,
-      );
-      const minX = note.getNoteHeadBeginX();
-      const maxX = note.getNoteHeadEndX();
-      const renderedX =
-        Number.isFinite(minX) && Number.isFinite(maxX)
-          ? (minX + maxX) / 2
-          : fallbackX;
-      const noteBounds = getRenderedNoteBounds(note, svgElement);
-      const pitchYs =
-        eventPitches.length > 0
-          ? eventPitches.map((pitch) =>
-              getPitchYForScore(
-                clampPitchToClefRange(pitch, staff.clef),
-                staff.clef,
-                staffIndex,
-                score,
-                measureIndex,
-              ),
-            )
-          : [
-              getScoreStaffTop(score, staffIndex, measureIndex) +
-                STAFF_LINE_SPACING * 2,
-            ];
-      const pitchLayouts = eventPitches.map((_, pitchIndex) => {
-        const noteHead = note.noteHeads[pitchIndex];
-        const noteHeadMinX = noteHead?.getAbsoluteX();
-        const noteHeadWidth = noteHead?.getWidth();
-        const pitchY =
-          pitchYs[pitchIndex] ??
-          getScoreStaffTop(score, staffIndex, measureIndex) +
-            STAFF_LINE_SPACING * 2;
-        const minPitchX =
-          noteHead &&
-          noteHeadMinX !== undefined &&
-          Number.isFinite(noteHeadMinX)
-            ? noteHeadMinX
-            : renderedX - 6;
-        const pitchWidth =
-          noteHeadWidth !== undefined && Number.isFinite(noteHeadWidth)
-            ? noteHeadWidth
-            : 12;
-        const maxPitchX = minPitchX + pitchWidth;
-        const pitchLayout = {
-          isDisplaced: noteHead?.isDisplaced() ?? false,
-          maxX: maxPitchX,
-          minX: minPitchX,
-          pitchIndex,
-          x: (minPitchX + maxPitchX) / 2,
-          y: pitchY,
-        };
-        const noteHeadElement = noteHead?.getSVGElement();
-
-        if (noteHeadElement) {
-          noteHeadElement.classList.add('vf-user-notehead');
-          noteHeadElement.setAttribute('data-event-id', event.id);
-          noteHeadElement.setAttribute('data-pitch-index', String(pitchIndex));
-          noteHeadElement.setAttribute('data-notehead-x', pitchLayout.x.toFixed(2));
-          noteHeadElement.setAttribute('data-notehead-y', pitchLayout.y.toFixed(2));
-        }
-
-        return pitchLayout;
-      });
-      const minPitchY = Math.min(...pitchYs);
-      const maxPitchY = Math.max(...pitchYs);
-      const stemDirection =
-        eventPitches.length > 0 && event.duration !== 'whole'
-          ? note.getStemDirection()
-          : null;
-      const minY =
-        stemDirection === Stem.UP
-          ? minPitchY - STEM_RENDERED_INK_ESTIMATE
-          : minPitchY - NOTEHEAD_ANNOTATION_INK_PADDING;
-      const maxY =
-        stemDirection === Stem.DOWN
-          ? maxPitchY + STEM_RENDERED_INK_ESTIMATE
-          : maxPitchY + NOTEHEAD_ANNOTATION_INK_PADDING;
-
-      eventLayouts[event.id] = {
-        beat: event.beat,
-        isGeneratedRest: isGeneratedRestEvent(event),
-        kind: event.kind,
-        maxX: Math.max(
-          Number.isFinite(maxX) ? maxX : renderedX + 10,
-          noteBounds?.maxX ?? Number.NEGATIVE_INFINITY,
-        ),
-        maxY: Math.max(maxY, noteBounds?.maxY ?? Number.NEGATIVE_INFINITY),
-        measureIndex,
-        minX: Math.min(
-          Number.isFinite(minX) ? minX : renderedX - 10,
-          noteBounds?.minX ?? Number.POSITIVE_INFINITY,
-        ),
-        minY: Math.min(minY, noteBounds?.minY ?? Number.POSITIVE_INFINITY),
-        pitchLayouts,
-        staffId: staff.id,
-        voiceIndex,
-        x: renderedX,
-        y:
-          (Math.min(minY, noteBounds?.minY ?? Number.POSITIVE_INFINITY) +
-            Math.max(maxY, noteBounds?.maxY ?? Number.NEGATIVE_INFINITY)) /
-          2,
-      };
-    });
+  return collectRenderedMeasureEventLayouts({
+    beatsPerMeasure,
+    measureIndex,
+    noteRefs,
+    renderedVoices,
+    score,
+    staff,
+    staffIndex,
   });
-
-  return eventLayouts;
 }
 
 function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps['score']) {
@@ -589,6 +317,7 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
   renderer.resize(SVG_WIDTH, height);
   const context = renderer.getContext();
   const eventLayouts: Record<string, RenderedEventLayout> = {};
+  const noteRefs = new Map<string, RenderedNoteRef>();
   const renderedStaves = staves.map((staff, staffIndex) =>
     staff.measures.map((measure) => {
       const stave = new Stave(
@@ -602,7 +331,7 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
       );
 
       if (getLocalMeasureIndex(measure.index, score) === 0) {
-        stave.addClef(staff.clef);
+        stave.addClef(getActiveClef(score, staff.id, measure.index, 0));
         const activeKeySignature = getActiveKeySignature(score, measure.index);
 
         if (activeKeySignature !== 'C') {
@@ -671,6 +400,7 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
           beatsPerMeasure,
           context,
           measureIndex,
+          noteRefs,
           score,
           staff,
           staffIndex,
@@ -680,7 +410,10 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
     });
   });
 
+  drawVexFlowConnectionMarks(context, score, noteRefs);
+  drawVexFlowExpressionMarks({ context, noteRefs, score });
   drawKeySignatureSymbols(container, score);
+  drawSystemStartClefChangeMarkers(container, score);
   const annotationLayouts = drawTextAnnotations(container, score, eventLayouts);
   const voiceZoneLayouts = computeRenderedVoiceZones({
     annotationLayouts,
@@ -695,49 +428,11 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
   };
 }
 
-function drawKeySignatureSymbols(
-  container: HTMLDivElement,
-  score: StaffRendererProps['score'],
-) {
-  const svg = container.querySelector('svg');
-
-  if (!svg) {
-    return;
-  }
-
-  svg
-    .querySelectorAll('.sheetlab-key-signature-symbol')
-    .forEach((element) => element.remove());
-  svg
-    .querySelectorAll('.vf-keysignature')
-    .forEach((element) =>
-      element.setAttribute('data-sheetlab-hidden-standard-key-signature', 'true'),
-    );
-
-  getKeySignatureSymbolLayouts(score).forEach((layout) => {
-    const symbol = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-
-    symbol.classList.add('sheetlab-key-signature-symbol');
-    symbol.setAttribute('data-testid', 'rendered-key-signature-symbol');
-    symbol.setAttribute('data-source-measure-index', String(layout.sourceMeasureIndex));
-    symbol.setAttribute('data-measure-index', String(layout.measureIndex));
-    symbol.setAttribute('data-staff-id', layout.staffId);
-    symbol.setAttribute('data-symbol-index', String(layout.symbolIndex));
-    symbol.setAttribute('data-step', layout.pitch.step);
-    symbol.setAttribute('data-accidental', layout.accidental);
-    symbol.setAttribute('x', layout.x.toFixed(2));
-    symbol.setAttribute('y', layout.y.toFixed(2));
-    symbol.setAttribute('dominant-baseline', 'central');
-    symbol.setAttribute('text-anchor', 'middle');
-    symbol.textContent = KEY_SIGNATURE_SYMBOL_TEXT[layout.accidental];
-    svg.appendChild(symbol);
-  });
-}
-
 function syncVexFlowSelection(
   container: HTMLDivElement,
   selectedEventId?: string | null,
   selectedPitchIndex?: number | null,
+  selectedClefChangeId?: string | null,
   activeEventId?: string | null,
   activeEventIds: readonly string[] = [],
   invalidMeasureKeys: readonly string[] = [],
@@ -784,6 +479,77 @@ function syncVexFlowSelection(
 
     element.classList.toggle('is-selected-notehead', isSelectedPitch);
   });
+
+  container.querySelectorAll('.sheetlab-clef-change').forEach((element) => {
+    element.classList.toggle(
+      'is-selected',
+      element.getAttribute('data-clef-change-id') === selectedClefChangeId,
+    );
+  });
+}
+
+function escapeDataAttributeValue(value: string) {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function clearInsertPreviewNudge(container: HTMLDivElement) {
+  container.querySelectorAll('.vf-insert-preview-nudge').forEach((element) => {
+    if (!(element instanceof SVGElement)) {
+      return;
+    }
+
+    element.classList.remove('vf-insert-preview-nudge');
+    element.style.removeProperty('transform');
+    element.style.removeProperty('transform-box');
+    element.style.removeProperty('transform-origin');
+  });
+}
+
+function syncInsertPreviewNudge(
+  container: HTMLDivElement,
+  props: StaffRendererProps,
+  eventLayouts: Record<string, RenderedEventLayout>,
+) {
+  clearInsertPreviewNudge(container);
+
+  if (props.placementMode !== 'insert' || !props.hoverPosition) {
+    return;
+  }
+
+  const voiceIndex = props.voiceIndex ?? 0;
+  const insertPosition = resolveInsertDisplayPosition({
+    dots: props.dots ?? 0,
+    duration: props.duration ?? 'quarter',
+    eventLayouts,
+    position: props.hoverPosition,
+    score: props.score,
+    voiceIndex,
+  });
+  const previewItems = getInsertPreviewItems({
+    dots: props.dots ?? 0,
+    duration: props.duration ?? 'quarter',
+    eventLayouts,
+    insertPosition,
+    score: props.score,
+    voiceIndex,
+  });
+
+  previewItems.forEach(({ event, shiftX }) => {
+    container
+      .querySelectorAll(
+        `.vf-score-event[data-event-id="${escapeDataAttributeValue(event.id)}"]`,
+      )
+      .forEach((element) => {
+        if (!(element instanceof SVGElement)) {
+          return;
+        }
+
+        element.classList.add('vf-insert-preview-nudge');
+        element.style.transform = `translateX(${shiftX}px)`;
+        element.style.transformBox = 'fill-box';
+        element.style.transformOrigin = 'center';
+      });
+  });
 }
 
 export function VexFlowStaffRenderer(props: StaffRendererProps) {
@@ -813,6 +579,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         containerRef.current,
         props.selectedEventId,
         props.selectedPitchIndex,
+        props.selectedClefChangeId,
         props.activeEventId,
         props.activeEventIds,
         props.invalidMeasureKeys,
@@ -826,6 +593,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         containerRef.current,
         props.selectedEventId,
         props.selectedPitchIndex,
+        props.selectedClefChangeId,
         props.activeEventId,
         props.activeEventIds,
         props.invalidMeasureKeys,
@@ -835,9 +603,32 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
     eventLayouts,
     props.activeEventId,
     props.invalidMeasureKeys,
+    props.selectedClefChangeId,
     props.selectedEventId,
     props.selectedPitchIndex,
     props.activeEventIds,
+  ]);
+
+  useEffect(() => {
+    if (!containerRef.current) {
+      return;
+    }
+
+    syncInsertPreviewNudge(containerRef.current, props, eventLayouts);
+
+    return () => {
+      if (containerRef.current) {
+        clearInsertPreviewNudge(containerRef.current);
+      }
+    };
+  }, [
+    eventLayouts,
+    props.dots,
+    props.duration,
+    props.hoverPosition,
+    props.placementMode,
+    props.score,
+    props.voiceIndex,
   ]);
 
   return (
@@ -855,6 +646,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
       <NotationOverlay
         activeEventId={props.activeEventId}
         activeEventIds={props.activeEventIds}
+        clefChange={props.clefChange}
         duration={props.duration ?? 'quarter'}
         dots={props.dots ?? 0}
         entryMode={props.entryMode ?? 'note'}
@@ -872,14 +664,17 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         onMeasureContextMenu={props.onMeasureContextMenu}
         onAnnotationContextMenu={props.onAnnotationContextMenu}
         onMoveEvent={props.onMoveEvent}
+        onMoveClefChange={props.onMoveClefChange}
         onMoveKeySignatureSymbol={props.onMoveKeySignatureSymbol}
         onPlaceAtPosition={props.onPlaceAtPosition}
         onSelectMeasure={props.onSelectMeasure}
         onSelectEvent={props.onSelectEvent}
+        onSelectClefChange={props.onSelectClefChange}
         playbackBeat={props.playbackBeat}
         placementMode={props.placementMode}
         score={props.score}
         selectedEventId={props.selectedEventId}
+        selectedClefChangeId={props.selectedClefChangeId}
         selectedMeasure={props.selectedMeasure}
         selectedPitchIndex={props.selectedPitchIndex}
         showLayoutZones={props.showLayoutZones ?? false}

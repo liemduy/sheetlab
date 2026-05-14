@@ -7,6 +7,16 @@ export interface RepeatJumpOption {
   symbol: string;
 }
 
+export interface RepeatPlaybackIssue {
+  kind:
+    | 'missing-coda'
+    | 'missing-fine'
+    | 'missing-segno'
+    | 'missing-to-coda';
+  measureIndex: number;
+  repeatJump: RepeatJumpKind;
+}
+
 export const REPEAT_JUMP_OPTIONS = [
   {
     description: 'Start repeat barline at this measure',
@@ -125,4 +135,83 @@ function findMeasureAtIndex(score: Score, measureIndex: number): Measure | undef
 
 export function getMeasureRepeatJump(score: Score, measureIndex: number) {
   return findMeasureAtIndex(score, measureIndex)?.repeatJump ?? null;
+}
+
+function getRepeatJumpMeasureIndexes(score: Score, kind: RepeatJumpKind) {
+  return (
+    score.parts[0]?.staves[0]?.measures
+      .filter((measure) => measure.repeatJump === kind)
+      .map((measure) => measure.index) ?? []
+  );
+}
+
+function hasRepeatJump(score: Score, kind: RepeatJumpKind) {
+  return getRepeatJumpMeasureIndexes(score, kind).length > 0;
+}
+
+function getMarkedMeasures(score: Score) {
+  return score.parts[0]?.staves[0]?.measures.filter(
+    (measure): measure is Measure & { repeatJump: RepeatJumpKind } =>
+      Boolean(measure.repeatJump),
+  ) ?? [];
+}
+
+export function getRepeatPlaybackIssues(score: Score): RepeatPlaybackIssue[] {
+  const issues: RepeatPlaybackIssue[] = [];
+  const hasFine = hasRepeatJump(score, 'fine');
+  const hasSegno = hasRepeatJump(score, 'segno');
+  const hasToCoda = hasRepeatJump(score, 'to-coda');
+  const hasCoda = hasRepeatJump(score, 'coda');
+
+  getMarkedMeasures(score).forEach((measure) => {
+    const repeatJump = measure.repeatJump;
+
+    if (
+      (repeatJump === 'ds' ||
+        repeatJump === 'ds-al-fine' ||
+        repeatJump === 'ds-al-coda') &&
+      !hasSegno
+    ) {
+      issues.push({
+        kind: 'missing-segno',
+        measureIndex: measure.index,
+        repeatJump,
+      });
+    }
+
+    if (
+      (repeatJump === 'dc-al-fine' || repeatJump === 'ds-al-fine') &&
+      !hasFine
+    ) {
+      issues.push({
+        kind: 'missing-fine',
+        measureIndex: measure.index,
+        repeatJump,
+      });
+    }
+
+    if (
+      (repeatJump === 'dc-al-coda' || repeatJump === 'ds-al-coda') &&
+      !hasToCoda
+    ) {
+      issues.push({
+        kind: 'missing-to-coda',
+        measureIndex: measure.index,
+        repeatJump,
+      });
+    }
+
+    if (
+      (repeatJump === 'dc-al-coda' || repeatJump === 'ds-al-coda') &&
+      !hasCoda
+    ) {
+      issues.push({
+        kind: 'missing-coda',
+        measureIndex: measure.index,
+        repeatJump,
+      });
+    }
+  });
+
+  return issues;
 }

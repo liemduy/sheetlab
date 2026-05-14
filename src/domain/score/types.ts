@@ -57,6 +57,19 @@ export type DurationValue =
 
 export type PedalMark = 'start' | 'release' | 'start-release';
 
+export type HairpinMark = 'crescendo' | 'diminuendo';
+
+export type ArticulationKind =
+  | 'accent'
+  | 'marcato'
+  | 'staccatissimo'
+  | 'tenuto'
+  | 'staccato'
+  | 'breath'
+  | 'caesura';
+
+export type StemDirection = 'up' | 'down';
+
 export type AnnotationKind =
   | 'chordSymbol'
   | 'dynamic'
@@ -81,6 +94,83 @@ export interface TupletInfo {
   normalNotes: number;
 }
 
+export interface TieMark {
+  pitchIndex: number;
+  targetEventId: string;
+  targetPitchIndex: number;
+}
+
+export interface SlurMark {
+  id: string;
+  targetEventId: string;
+}
+
+export interface ScorePosition {
+  beat: number;
+  measureIndex: number;
+  staffId: StaffId;
+  voiceIndex?: number;
+}
+
+export type OttavaKind = '8va' | '8vb' | '15ma' | '15mb';
+
+export type NoteNotationMarkKind =
+  | 'articulation'
+  | 'chordSymbol'
+  | 'dynamic'
+  | 'fermata'
+  | 'glissando'
+  | 'hairpin'
+  | 'lyric'
+  | 'pedal';
+
+export type RangeNotationMarkKind = 'ottava' | 'slur' | 'tie';
+
+export type MeasureNotationMarkKind = 'repeatJump' | 'sectionMarker';
+
+export type BarlineNotationMarkKind = 'repeatStart' | 'repeatEnd';
+
+export interface NoteNotationMark {
+  eventId: string;
+  id: string;
+  kind: NoteNotationMarkKind;
+  scope: 'note';
+  value?: string;
+}
+
+export interface RangeNotationMark {
+  end: ScorePosition;
+  id: string;
+  kind: RangeNotationMarkKind;
+  ottava?: OttavaKind;
+  placement?: AnnotationPlacementSide;
+  scope: 'range';
+  sourceEventId?: string;
+  start: ScorePosition;
+  targetEventId?: string;
+}
+
+export interface MeasureNotationMark {
+  id: string;
+  kind: MeasureNotationMarkKind;
+  measureIndex: number;
+  scope: 'measure';
+  value: string;
+}
+
+export interface BarlineNotationMark {
+  id: string;
+  kind: BarlineNotationMarkKind;
+  measureIndex: number;
+  scope: 'barline';
+}
+
+export type NotationMark =
+  | NoteNotationMark
+  | RangeNotationMark
+  | MeasureNotationMark
+  | BarlineNotationMark;
+
 export interface TimeSignature {
   beats: number;
   beatUnit: number;
@@ -98,19 +188,30 @@ export interface KeySignatureSymbol {
   step: NoteStep;
 }
 
+export interface ClefChange {
+  id: string;
+  beat: number;
+  clef: Clef;
+}
+
 export interface BaseScoreEvent {
   id: string;
   duration: DurationValue;
   beat: number;
+  articulations?: ArticulationKind[];
   dots?: number;
+  stemDirection?: StemDirection;
   chordSymbol?: string;
   dynamic?: string;
   fermata?: boolean;
   glissando?: boolean;
+  hairpin?: HairpinMark;
   annotationPlacements?: AnnotationPlacements;
   lyric?: string;
   lyricMap?: LyricMap;
   pedal?: PedalMark;
+  slurs?: SlurMark[];
+  ties?: TieMark[];
   tuplet?: TupletInfo;
 }
 
@@ -138,6 +239,7 @@ export interface Voice {
 export interface Measure {
   id: string;
   index: number;
+  clefChanges?: ClefChange[];
   keySignature?: KeySignature;
   keySignatureSymbols?: KeySignatureSymbol[];
   repeatJump?: RepeatJumpKind;
@@ -165,6 +267,7 @@ export interface Score {
   pageSize: PageSize;
   tempo: number;
   timeSignature: TimeSignature;
+  marks?: NotationMark[];
   parts: ScorePart[];
 }
 

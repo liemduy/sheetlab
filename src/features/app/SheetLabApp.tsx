@@ -3,7 +3,31 @@ import type {
   MouseEvent as ReactMouseEvent,
 } from 'react';
 import { findScoreEvent } from '../../domain/score/editing';
+import {
+  deleteClefChange,
+  findClefChange,
+  tryMoveClefChange,
+  trySetClefChange,
+} from '../../domain/score/clefChanges';
+import {
+  getScoreFixtureById,
+  scoreFixtureCatalog,
+} from '../../domain/score/fixtureCatalog';
 import { findLyricMapSourceEventId } from '../../domain/score/lyricMapping';
+import { isStemmedScoreEvent } from '../../domain/score/stemDirection';
+import {
+  ARTICULATION_LABEL,
+  toggleArticulationKind,
+} from '../../domain/score/articulations';
+import {
+  tryToggleSlurToNext,
+  tryToggleTieToNext,
+} from '../../domain/score/noteConnections';
+import {
+  OTTAVA_LABEL,
+  tryClearOttavaForEvent,
+  tryToggleOttavaToNext,
+} from '../../domain/score/ottava';
 import type {
   EditableVoiceIndex,
   EditorToolState,
@@ -16,9 +40,19 @@ import {
   type ToolbarPalette,
 } from '../editor/EditorToolbar';
 import { ScoreSettingsPanel } from '../editor/ScoreSettingsPanel';
-import type { Score, StaffId } from '../../domain/score/types';
-import { getScoreRhythmIssues } from '../../domain/score/rhythm';
+import type { Clef, OttavaKind, Score, StaffId } from '../../domain/score/types';
+import {
+  getScoreRhythmIssues,
+  type RhythmIssue,
+} from '../../domain/score/rhythm';
+import {
+  getScoreMusicIssues,
+  type ScoreMusicIssue,
+} from '../../domain/score/musicIssues';
 import { getMeasureKey } from '../sheet/measureKey';
+import { snapInsertPositionToEventBoundary } from '../sheet/insertPosition';
+import { getInsertTargetEvent } from '../sheet/insertPreview';
+import type { MusicPosition } from '../sheet/interaction';
 import { usePlaybackController } from './usePlaybackController';
 import { useProjectActions } from './useProjectActions';
 import { SheetSurface } from './SheetSurface';
@@ -32,11 +66,49 @@ import { useScoreHistory } from './useScoreHistory';
 import { useUndoRedoControls } from './useUndoRedoControls';
 import { useAnnotationCommands } from './useAnnotationCommands';
 import { useScoreCommands } from './useScoreCommands';
-import type { AnnotationContextMenuState } from './selectionTypes';
+import type {
+  AnnotationContextMenuState,
+  ClefChangeTarget,
+} from './selectionTypes';
 import {
   isPdfExportMode,
   loadInitialScoreForApp,
 } from './appBootstrap';
+
+function getExportPreflightMessage(issues: RhythmIssue[]) {
+  const issueCount = issues.length;
+  const firstIssue = issues[0];
+  const issueLabel = issueCount === 1 ? 'issue' : 'issues';
+
+  if (!firstIssue) {
+    return 'Ready to export PDF';
+  }
+
+  return `Export blocked: fix ${issueCount} rhythm ${issueLabel} before PDF (first: ${firstIssue.staffId} measure ${
+    firstIssue.measureIndex + 1
+  } ${firstIssue.reason})`;
+}
+
+function getMusicIssuePreflightMessage(issues: ScoreMusicIssue[]) {
+  const issueCount = issues.length;
+  const firstIssue = issues[0];
+  const issueLabel = issueCount === 1 ? 'issue' : 'issues';
+
+  if (!firstIssue) {
+    return 'Ready to export PDF';
+  }
+
+  return `Export blocked: fix ${issueCount} music ${issueLabel} before PDF (first: ${firstIssue.message})`;
+}
+
+function cloneDemoScore(score: Score): Score {
+  return JSON.parse(JSON.stringify(score)) as Score;
+}
+
+const DEMO_SCORE_OPTIONS = scoreFixtureCatalog.map((fixture) => ({
+  id: fixture.id,
+  label: fixture.label,
+}));
 
 function SheetLabApp() {
   const [initialScore] = useState(loadInitialScoreForApp);
@@ -63,11 +135,13 @@ function SheetLabApp() {
   } = useScoreHistory(initialScore);
   const {
     clearSelection,
+    selectedClefChange,
     selectedEventId,
     selectedEventSource,
     selectedMeasure,
     selectedPitchIndex,
     selectEvent,
+    selectClefChange,
     selectMeasure,
     setSelectedMeasure,
   } = useEditorSelection();
@@ -154,6 +228,7 @@ function SheetLabApp() {
     handleDeleteSelected,
     handleDottedChange,
     handleDurationChange,
+    handleFlipSelectedDirection,
     handleMoveEvent,
     handleTransposeSelectedPitch,
     handleTupletChange,
@@ -209,7 +284,7 @@ function SheetLabApp() {
   });
 
   function handleClearInteraction() {
-    updateToolState({ isInputArmed: false, tuplet: null });
+    updateToolState({ clefChange: null, isInputArmed: false, tuplet: null });
     clearTransientInteraction();
     setEditorMessage('Select mode');
   }
@@ -238,14 +313,14 @@ function SheetLabApp() {
     clientX: number,
     clientY: number,
   ) {
-    updateToolState({ isInputArmed: false });
+    updateToolState({ clefChange: null, isInputArmed: false });
     clearPointerState();
     openMeasureContextMenu({ staffId, measureIndex }, clientX, clientY);
     setEditorMessage('Measure selected');
   }
 
   function handleEntryModeChange(entryMode: EntryMode) {
-    updateToolState({ entryMode });
+    updateToolState({ clefChange: null, entryMode });
   }
 
   function handleVoiceIndexChange(voiceIndex: EditableVoiceIndex) {
@@ -256,8 +331,173 @@ function SheetLabApp() {
     updateToolState({ placementMode });
   }
 
+  function handleClefChangeToolChange(clef: Clef) {
+    if (selectedClefChange) {
+      const foundClefChange = findClefChange(
+        score,
+        selectedClefChange.staffId,
+        selectedClefChange.clefChangeId,
+      );
+
+      if (foundClefChange) {
+        const result = trySetClefChange(
+          score,
+          selectedClefChange.staffId,
+          foundClefChange.measureIndex,
+          foundClefChange.change.beat,
+          clef,
+        );
+
+        updateToolState({
+          clefChange: null,
+          isInputArmed: false,
+          tuplet: null,
+        });
+        clearPointerState();
+        clearMeasureUiState();
+
+        if (result.updated) {
+          commitScoreChange(result.score, 'Clef change updated');
+          selectClefChange({
+            clefChangeId: selectedClefChange.clefChangeId,
+            measureIndex: foundClefChange.measureIndex,
+            staffId: selectedClefChange.staffId,
+          });
+          setEditorMessage(`Clef change set to ${clef}`);
+        } else {
+          markInvalidMeasure(
+            selectedClefChange.staffId,
+            foundClefChange.measureIndex,
+            `Cannot replace clef: ${result.reason}`,
+          );
+        }
+
+        return;
+      }
+
+      clearSelection();
+    }
+
+    updateToolState({
+      clefChange: clef,
+      isInputArmed: true,
+      placementMode: 'insert',
+      tuplet: null,
+    });
+    clearPointerState();
+    clearMeasureUiState();
+    clearSelection();
+    setEditorMessage(`Insert ${clef} clef`);
+  }
+
+  function handleSelectClefChange(target: ClefChangeTarget) {
+    const foundClefChange = findClefChange(
+      score,
+      target.staffId,
+      target.clefChangeId,
+    );
+
+    updateToolState({ clefChange: null, isInputArmed: false, tuplet: null });
+    clearPointerState();
+    clearMeasureUiState();
+    selectClefChange(target);
+    setEditorMessage(
+      foundClefChange
+        ? `${foundClefChange.change.clef} clef change selected`
+        : 'Clef change selected',
+    );
+  }
+
+  function handleDeleteClefChange(target = selectedClefChange) {
+    if (!target) {
+      return;
+    }
+
+    const foundClefChange = findClefChange(
+      score,
+      target.staffId,
+      target.clefChangeId,
+    );
+
+    if (!foundClefChange) {
+      clearSelection();
+      setEditorMessage('Clef change not found');
+      return;
+    }
+
+    commitScoreChange(
+      deleteClefChange(score, target.staffId, target.clefChangeId),
+      'Clef change deleted',
+    );
+    updateToolState({ clefChange: null, isInputArmed: false, tuplet: null });
+    clearPointerState();
+    clearSelection();
+  }
+
+  function handleDeleteCurrentSelection() {
+    if (selectedClefChange) {
+      handleDeleteClefChange(selectedClefChange);
+      return;
+    }
+
+    handleDeleteSelected();
+  }
+
+  function handleMoveClefChange(
+    target: ClefChangeTarget,
+    position: MusicPosition,
+  ) {
+    const dropPosition = snapInsertPositionToEventBoundary(
+      score,
+      position,
+      toolState.voiceIndex,
+    );
+    const targetEvent = getInsertTargetEvent(
+      score,
+      dropPosition,
+      toolState.voiceIndex,
+    );
+
+    if (!targetEvent) {
+      markInvalidMeasure(
+        dropPosition.staffId,
+        dropPosition.measureIndex,
+        'Cannot move clef: target-note-required',
+      );
+      clearPointerState();
+      return;
+    }
+
+    const result = tryMoveClefChange(
+      score,
+      target.staffId,
+      target.clefChangeId,
+      dropPosition.staffId,
+      dropPosition.measureIndex,
+      targetEvent.beat,
+    );
+
+    updateToolState({ clefChange: null, isInputArmed: false, tuplet: null });
+    clearPointerState();
+
+    if (result.updated) {
+      commitScoreChange(result.score, 'Clef change moved');
+      selectClefChange({
+        clefChangeId: target.clefChangeId,
+        measureIndex: dropPosition.measureIndex,
+        staffId: dropPosition.staffId,
+      });
+    } else {
+      markInvalidMeasure(
+        dropPosition.staffId,
+        dropPosition.measureIndex,
+        `Cannot move clef: ${result.reason}`,
+      );
+    }
+  }
+
   function handleSelectMeasure(staffId: StaffId, measureIndex: number) {
-    updateToolState({ isInputArmed: false, tuplet: null });
+    updateToolState({ clefChange: null, isInputArmed: false, tuplet: null });
     clearPointerState();
     clearMeasureUiState();
     selectMeasure({ staffId, measureIndex });
@@ -289,6 +529,7 @@ function SheetLabApp() {
       selectionEventId === eventId ? pitchIndex ?? null : null;
 
     updateToolState({
+      clefChange: null,
       isInputArmed: false,
       tuplet: null,
       voiceIndex:
@@ -305,6 +546,70 @@ function SheetLabApp() {
           ? 'Event selected'
           : 'Mapped lyric selected',
     );
+  }
+
+  function handleTieToNextToggle() {
+    if (!selectedEventId) {
+      return;
+    }
+
+    const result = tryToggleTieToNext(
+      score,
+      selectedEventId,
+      selectedPitchIndex,
+    );
+
+    if (result.updated) {
+      commitScoreChange(result.score, 'Tie updated');
+      selectEvent(selectedEventId, selectedPitchIndex);
+    } else {
+      setEditorMessage(`Cannot tie: ${result.reason}`);
+    }
+  }
+
+  function handleSlurToNextToggle() {
+    if (!selectedEventId) {
+      return;
+    }
+
+    const result = tryToggleSlurToNext(score, selectedEventId);
+
+    if (result.updated) {
+      commitScoreChange(result.score, 'Slur updated');
+      selectEvent(selectedEventId, selectedPitchIndex);
+    } else {
+      setEditorMessage(`Cannot slur: ${result.reason}`);
+    }
+  }
+
+  function handleOttavaToggle(ottava: OttavaKind) {
+    if (!selectedEventId) {
+      return;
+    }
+
+    const result = tryToggleOttavaToNext(score, selectedEventId, ottava);
+
+    if (result.updated) {
+      commitScoreChange(result.score, `${OTTAVA_LABEL[ottava]} updated`);
+      selectEvent(selectedEventId, selectedPitchIndex);
+    } else {
+      setEditorMessage(`Cannot set ${OTTAVA_LABEL[ottava]}: ${result.reason}`);
+    }
+  }
+
+  function handleOttavaClear() {
+    if (!selectedEventId) {
+      return;
+    }
+
+    const result = tryClearOttavaForEvent(score, selectedEventId);
+
+    if (result.updated) {
+      commitScoreChange(result.score, 'Ottava cleared');
+      selectEvent(selectedEventId, selectedPitchIndex);
+    } else {
+      setEditorMessage('No ottava range on selected note');
+    }
   }
 
   const { handleRedo, handleUndo } = useUndoRedoControls({
@@ -330,6 +635,7 @@ function SheetLabApp() {
       ...current,
       scoreType: loadedScore.type,
       tempo: loadedScore.tempo,
+      clefChange: null,
       isInputArmed: false,
       tuplet: null,
     }));
@@ -365,24 +671,123 @@ function SheetLabApp() {
     setEditorMessage,
   });
   const rhythmIssues = getScoreRhythmIssues(score);
+  const musicIssues = getScoreMusicIssues(score);
+  const blockingMusicIssues = musicIssues.filter(
+    (issue) => issue.severity === 'error',
+  );
+  const selectedScoreEvent = selectedEventId
+    ? findScoreEvent(score, selectedEventId)
+    : null;
+  const canFlipSelection = Boolean(
+    selectedEventSource === 'manual' &&
+      selectedScoreEvent &&
+      isStemmedScoreEvent(selectedScoreEvent.event),
+  );
   const activeInvalidMeasureKeys = [
     ...new Set([
       ...invalidMeasureKeys,
       ...rhythmIssues.map((issue) =>
         getMeasureKey(issue.staffId, issue.measureIndex),
       ),
+      ...blockingMusicIssues.flatMap((issue) =>
+        issue.staffId !== undefined && issue.measureIndex !== undefined
+          ? [getMeasureKey(issue.staffId, issue.measureIndex)]
+          : [],
+      ),
     ]),
   ];
 
+  function handleDemoScoreLoad(fixtureId: string) {
+    const fixture = getScoreFixtureById(fixtureId);
+
+    if (!fixture) {
+      setEditorMessage('Demo score not found');
+      return;
+    }
+
+    handleLoadedScoreFromFile(
+      cloneDemoScore(fixture.score),
+      `Demo loaded: ${fixture.label}`,
+      { closePalette: true },
+    );
+  }
+
+  function handleReviewFirstRhythmIssue() {
+    const firstIssue = rhythmIssues[0];
+
+    if (!firstIssue) {
+      setEditorMessage('Rhythm OK');
+      return;
+    }
+
+    selectMeasure({
+      measureIndex: firstIssue.measureIndex,
+      staffId: firstIssue.staffId,
+    });
+    setInvalidMeasureKeys(activeInvalidMeasureKeys);
+    scrollNotationIntoView();
+    setEditorMessage(
+      `Review rhythm issue: ${firstIssue.staffId} measure ${
+        firstIssue.measureIndex + 1
+      } ${firstIssue.reason}`,
+    );
+  }
+
+  function handleReviewFirstMusicIssue() {
+    const firstIssue = musicIssues[0];
+
+    if (!firstIssue) {
+      setEditorMessage('Music validation OK');
+      return;
+    }
+
+    if (firstIssue.staffId !== undefined && firstIssue.measureIndex !== undefined) {
+      selectMeasure({
+        measureIndex: firstIssue.measureIndex,
+        staffId: firstIssue.staffId,
+      });
+    }
+    setInvalidMeasureKeys(activeInvalidMeasureKeys);
+    scrollNotationIntoView();
+    setEditorMessage(`Review music issue: ${firstIssue.message}`);
+  }
+
+  function handleExportPdfWithPreflight() {
+    if (blockingMusicIssues.length > 0) {
+      const firstIssue = blockingMusicIssues[0];
+
+      if (
+        firstIssue?.staffId !== undefined &&
+        firstIssue.measureIndex !== undefined
+      ) {
+        selectMeasure({
+          measureIndex: firstIssue.measureIndex,
+          staffId: firstIssue.staffId,
+        });
+        scrollNotationIntoView();
+      }
+
+      setInvalidMeasureKeys(activeInvalidMeasureKeys);
+      setEditorMessage(getMusicIssuePreflightMessage(blockingMusicIssues));
+      return;
+    }
+
+    void handleExportPdf();
+  }
+
   useEditorShortcuts({
     futureScores,
+    onDeleteClefChange: handleDeleteClefChange,
     onDeleteEvent: handleDeleteEvent,
+    onFlipDirection: handleFlipSelectedDirection,
     onRedo: handleRedo,
     onRequestClearMeasureContent: handleRequestClearMeasureContent,
     onTransposeSelectedPitch: handleTransposeSelectedPitch,
+    onTupletShortcut: handleTupletChange,
     onUndo: handleUndo,
     pastScores,
     score,
+    selectedClefChange,
     selectedEventId,
     selectedMeasure,
     selectedPitchIndex,
@@ -415,19 +820,27 @@ function SheetLabApp() {
           openPalette={openPalette}
           pastScoreCount={pastScores.length}
           scoreTimeSignature={score.timeSignature}
-          canDeleteSelection={Boolean(selectedEventId || selectedMeasure)}
+          demoScoreOptions={DEMO_SCORE_OPTIONS}
+          canDeleteSelection={Boolean(
+            selectedEventId || selectedMeasure || selectedClefChange,
+          )}
+          canFlipSelection={canFlipSelection}
+          inputCursor={inputCursor}
           toolState={toolState}
           onAccidentalChange={handleAccidentalChange}
           onAddMeasure={handleAddMeasure}
           onCanvasZoomChange={handleCanvasZoomChange}
+          onClefChangeToolChange={handleClefChangeToolChange}
           onClearInteraction={handleClearInteraction}
-          onDeleteSelected={handleDeleteSelected}
+          onDeleteSelected={handleDeleteCurrentSelection}
           onDottedChange={handleDottedChange}
           onDownloadAbc={handleDownloadAbc}
           onDownloadProject={handleDownloadProject}
           onDurationChange={handleDurationChange}
+          onDemoScoreLoad={handleDemoScoreLoad}
           onEntryModeChange={handleEntryModeChange}
-          onExportPdf={() => void handleExportPdf()}
+          onExportPdf={handleExportPdfWithPreflight}
+          onFlipDirection={handleFlipSelectedDirection}
           onImportAbcFile={handleImportAbcFile}
           onImportProjectFile={handleImportProjectFile}
           onKeySignatureChange={handleKeySignatureChange}
@@ -458,12 +871,36 @@ function SheetLabApp() {
           hoverPosition={hoverPosition}
           inputCursor={inputCursor}
           pastScoreCount={pastScores.length}
+          musicIssueCount={musicIssues.length}
           rhythmIssueCount={rhythmIssues.length}
           score={score}
           selectedEventId={selectedEventId}
+          selectedClefChange={selectedClefChange}
           selectedMeasure={selectedMeasure}
           selectedPitchIndex={selectedPitchIndex}
           toolState={toolState}
+          onArticulationClear={() =>
+            handleSelectedEventAnnotationChange(
+              { articulations: null },
+              'Articulations cleared',
+            )
+          }
+          onArticulationToggle={(articulation) => {
+            const selectedEvent = selectedEventId
+              ? findScoreEvent(score, selectedEventId)?.event
+              : null;
+            const nextArticulations = toggleArticulationKind(
+              selectedEvent?.articulations,
+              articulation,
+            );
+
+            handleSelectedEventAnnotationChange(
+              { articulations: nextArticulations },
+              nextArticulations?.includes(articulation)
+                ? `${ARTICULATION_LABEL[articulation]} enabled`
+                : `${ARTICULATION_LABEL[articulation]} disabled`,
+            );
+          }}
           onChordSymbolChange={(chordSymbol) =>
             handleSelectedEventAnnotationChange(
               { chordSymbol },
@@ -488,6 +925,12 @@ function SheetLabApp() {
               glissando ? 'Glissando enabled' : 'Glissando disabled',
             )
           }
+          onHairpinChange={(hairpin) =>
+            handleSelectedEventAnnotationChange(
+              { hairpin },
+              hairpin ? 'Hairpin updated' : 'Hairpin cleared',
+            )
+          }
           onPageSizeChange={handlePageSizeChange}
           onLyricChange={(lyric) =>
             handleSelectedEventAnnotationChange(
@@ -495,15 +938,21 @@ function SheetLabApp() {
               lyric ? 'Lyric updated' : 'Lyric cleared',
             )
           }
+          onOttavaClear={handleOttavaClear}
+          onOttavaToggle={handleOttavaToggle}
           onPedalChange={(pedal) =>
             handleSelectedEventAnnotationChange(
               { pedal },
               pedal ? 'Pedal mark updated' : 'Pedal mark cleared',
             )
           }
+          onReviewMusicIssue={handleReviewFirstMusicIssue}
+          onReviewRhythmIssue={handleReviewFirstRhythmIssue}
           onScoreTypeChange={handleScoreTypeChange}
           onSectionMarkerChange={handleSectionMarkerChange}
+          onSlurToNextToggle={handleSlurToNextToggle}
           onTempoChange={handleTempoChange}
+          onTieToNextToggle={handleTieToNextToggle}
           onTimeSignatureChange={handleTimeSignatureChange}
         />
 
@@ -523,6 +972,7 @@ function SheetLabApp() {
           pendingMeasureDelete={pendingMeasureDelete}
           playbackBeat={playbackBeat}
           score={score}
+          selectedClefChange={selectedClefChange}
           selectedEventId={selectedEventId}
           selectedMeasure={selectedMeasure}
           selectedPitchIndex={selectedPitchIndex}
@@ -541,9 +991,11 @@ function SheetLabApp() {
           onMeasureContextMenu={handleMeasureContextMenu}
           onMoveEvent={handleMoveEvent}
           onMoveKeySignatureSymbol={handleMoveKeySignatureSymbol}
+          onMoveClefChange={handleMoveClefChange}
           onPlaceAtPosition={handlePlaceAtPosition}
           onRequestDeleteMeasure={handleRequestDeleteMeasure}
           onSelectEvent={handleSelectEvent}
+          onSelectClefChange={handleSelectClefChange}
           onSelectMeasure={handleSelectMeasure}
           onSetPendingMeasureClear={setPendingMeasureClear}
           onSetPendingMeasureDelete={setPendingMeasureDelete}

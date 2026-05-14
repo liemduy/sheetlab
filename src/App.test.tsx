@@ -1,4 +1,11 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./features/playback/audioEngine', () => ({
@@ -64,6 +71,19 @@ function startWriting(duration = 'Quarter') {
   fireEvent.click(screen.getByRole('button', { name: duration }));
 }
 
+function chooseTuplet(label: string) {
+  fireEvent.click(screen.getByRole('button', { name: 'Tuplet menu' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: label }));
+}
+
+function getTupletMenuButton() {
+  return screen.getByRole('button', { name: 'Tuplet menu' });
+}
+
+function getRenderedSlotX(label: string) {
+  return Number(screen.getByLabelText(label).getAttribute('data-layout-x'));
+}
+
 describe('App editor state', () => {
   it('renders the editor shell with default tool state', () => {
     render(<App />);
@@ -98,7 +118,8 @@ describe('App editor state', () => {
     expect(screen.getByLabelText('Score title')).toHaveValue(
       'Untitled Piano Exercise',
     );
-    expect(screen.getByText('Moderato ♩ = 96')).toBeInTheDocument();
+    expect(screen.getAllByText('Moderato ♩ = 96')).toHaveLength(2);
+    expect(screen.getByTestId('rendered-tempo-mark')).toHaveTextContent('96');
     expect(screen.getByLabelText('Composer')).toHaveAttribute(
       'placeholder',
       'Composer',
@@ -118,6 +139,39 @@ describe('App editor state', () => {
     expect(document.querySelector('.paper-a4')).not.toBeNull();
     expect(screen.queryByText(/notation surface/i)).not.toBeInTheDocument();
     expect(screen.getByText('96 BPM')).toBeInTheDocument();
+  });
+
+  it('loads an extreme demo score and reports music validation status in the panel', async () => {
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText('Load demo score'), {
+      target: { value: 'extreme-vocal-piano' },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Score title')).toHaveValue(
+        'Extreme Vocal Piano Map Study',
+      );
+    });
+
+    const stateSummary = within(screen.getByLabelText('Current editor state'));
+
+    expect(stateSummary.getByText('84 BPM')).toBeInTheDocument();
+    expect(stateSummary.getByText('49')).toBeInTheDocument();
+    expect(stateSummary.getAllByText('OK').length).toBeGreaterThanOrEqual(2);
+    expect(
+      screen.getByText('Demo loaded: Extreme Vocal Piano'),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        document.querySelector(
+          '.vexflow-output .vf-user-event[data-event-id="extreme-vocal-triplet-word-2"]',
+        ),
+      ).not.toBeNull();
+    });
+    expect(
+      screen.queryByRole('button', { name: 'Review first music issue' }),
+    ).not.toBeInTheDocument();
   });
 
   it('keeps the cursor in select mode until a duration is chosen and clears write mode outside the staff', () => {
@@ -233,9 +287,9 @@ describe('App editor state', () => {
   it('enables triplet entry by switching to the matching slot duration', () => {
     render(<App />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Triplet' }));
+    chooseTuplet('Triplet');
 
-    expect(screen.getByRole('button', { name: 'Triplet' })).toHaveAttribute(
+    expect(getTupletMenuButton()).toHaveAttribute(
       'aria-pressed',
       'true',
     );
@@ -250,6 +304,117 @@ describe('App editor state', () => {
     expect(
       within(screen.getByLabelText('Current editor state')).getByText('Eighth'),
     ).toBeInTheDocument();
+  });
+
+  it('enables quintuplet entry by switching to the matching slot duration', () => {
+    render(<App />);
+
+    chooseTuplet('Tuplet 5');
+
+    expect(getTupletMenuButton()).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Sixteenth' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Quarter' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText('Sixteenth'),
+    ).toBeInTheDocument();
+  });
+
+  it('uses modifier-number shortcuts to arm and clear tuplet entry', () => {
+    render(<App />);
+
+    fireEvent.keyDown(window, { ctrlKey: true, key: '5' });
+
+    expect(getTupletMenuButton()).toHaveTextContent('T5');
+    expect(getTupletMenuButton()).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Sixteenth' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'Tuplet 5 entry enabled',
+      ),
+    ).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { metaKey: true, key: '0' });
+
+    expect(getTupletMenuButton()).toHaveAttribute('aria-pressed', 'false');
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'Tuplet entry cleared',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('rejects triplet entry while the dotted modifier is active', () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Quarter' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Dotted note' }));
+    chooseTuplet('Triplet');
+
+    expect(getTupletMenuButton()).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(screen.getByRole('button', { name: 'Dotted note' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Quarter' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'Cannot create triplet from dotted duration',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('clears triplet entry when the user changes duration, then enables it again cleanly', () => {
+    render(<App />);
+
+    chooseTuplet('Triplet');
+    expect(getTupletMenuButton()).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Eighth' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Quarter' }));
+
+    expect(getTupletMenuButton()).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(screen.getByRole('button', { name: 'Quarter' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    chooseTuplet('Triplet');
+
+    expect(getTupletMenuButton()).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Eighth' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
   });
 
   it('does not recenter the notation viewport when changing write toolbar options', () => {
@@ -298,7 +463,8 @@ describe('App editor state', () => {
       target: { value: '120' },
     });
 
-    expect(screen.getByText('Moderato ♩ = 120')).toBeInTheDocument();
+    expect(screen.getAllByText('Moderato ♩ = 120')).toHaveLength(2);
+    expect(screen.getByTestId('rendered-tempo-mark')).toHaveTextContent('120');
     expect(
       within(screen.getByLabelText('Current editor state')).getByText('Sharp'),
     ).toBeInTheDocument();
@@ -523,18 +689,22 @@ describe('App editor state', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Half' }));
     fireEvent.click(overlay, {
-      clientX: getBeatX(0, 2, 4),
+      clientX: getBeatX(0, 1, 4),
       clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
     });
 
+    expect(screen.getByLabelText('Note G4 measure 1 beat 2')).toHaveAttribute(
+      'data-duration',
+      'half',
+    );
     expect(
       within(screen.getByLabelText('Current editor state')).getByText(
-        'treble M2 B1 G4',
+        'treble M1 B4 G4',
       ),
     ).toBeInTheDocument();
   });
 
-  it('places same-staff clicks on the pointed rhythm slot instead of the advanced cursor', () => {
+  it('snaps gap-creating place clicks to the next sequential slot', () => {
     render(<App />);
     startWriting('Eighth');
 
@@ -550,8 +720,8 @@ describe('App editor state', () => {
     });
 
     expect(screen.getByLabelText('Note G4 measure 1 beat 1')).toBeInTheDocument();
-    expect(screen.getByLabelText('Note A4 measure 1 beat 3.5')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Note A4 measure 1 beat 1.5')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Note A4 measure 1 beat 3.5')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Note A4 measure 1 beat 1.5')).toBeInTheDocument();
   });
 
   it('snaps an empty measure to its first rhythm slot instead of free-clicking the middle', () => {
@@ -643,6 +813,47 @@ describe('App editor state', () => {
 
     expect(screen.getByLabelText('Chord E4 G4 measure 1 beat 1')).toBeInTheDocument();
     expect(screen.queryByLabelText('Note G4 measure 1 beat 1.5')).not.toBeInTheDocument();
+  });
+
+  it('does not expose smaller-duration input slots inside an occupied event', () => {
+    render(<App />);
+    startWriting('Half');
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 2, 4),
+      clientY: getPitchY({ step: 'A', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Eighth' }));
+    fireEvent.mouseMove(overlay, {
+      clientX: getBeatX(0, 1, 4),
+      clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.queryByTestId('ghost-event')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('active-input-cursor')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('rhythm-slot')).not.toBeInTheDocument();
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 1, 4),
+      clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.getByText('Cannot place: next-slot-required')).toBeInTheDocument();
+    expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toHaveAttribute(
+      'data-duration',
+      'half',
+    );
+    expect(screen.getByLabelText('Note A4 measure 1 beat 3')).toHaveAttribute(
+      'data-duration',
+      'half',
+    );
+    expect(screen.queryByLabelText('Note G4 measure 1 beat 2')).not.toBeInTheDocument();
   });
 
   it('clears the advanced cursor when the pointer moves into the grand-staff dead zone', () => {
@@ -842,6 +1053,168 @@ describe('App editor state', () => {
     });
   });
 
+  it('toggles combinable articulations on the selected note', async () => {
+    const { container } = render(<App />);
+    startWriting();
+
+    const overlay = screen.getByTestId('staff-renderer');
+    const bounds = setVisibleSheetBounds(overlay);
+    const notePoint = svgToClientPoint(
+      bounds,
+      getBeatX(0, 0, 4),
+      getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+      getOverlaySvgHeight(overlay),
+    );
+
+    fireEvent.mouseMove(overlay, notePoint);
+    fireEvent.click(overlay, notePoint);
+    await waitFor(() => {
+      expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select tool' }));
+    fireEvent.click(screen.getByLabelText('Note E4 measure 1 beat 1'));
+
+    const accentToggle = screen.getByRole('button', {
+      name: 'Toggle Accent articulation',
+    });
+    const staccatoToggle = screen.getByRole('button', {
+      name: 'Toggle Staccato articulation',
+    });
+
+    fireEvent.click(accentToggle);
+    fireEvent.click(staccatoToggle);
+
+    await waitFor(() => {
+      expect(accentToggle).toHaveAttribute('aria-pressed', 'true');
+      expect(staccatoToggle).toHaveAttribute('aria-pressed', 'true');
+      expect(
+        container.querySelector('.vf-user-event[data-event-id="event-1"]'),
+      ).toHaveAttribute('data-articulations', 'accent staccato');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear articulations' }));
+
+    await waitFor(() => {
+      expect(accentToggle).toHaveAttribute('aria-pressed', 'false');
+      expect(staccatoToggle).toHaveAttribute('aria-pressed', 'false');
+      expect(
+        container.querySelector('.vf-user-event[data-event-id="event-1"]'),
+      ).not.toHaveAttribute('data-articulations');
+    });
+  });
+
+  it('toggles tie and slur connection marks on the selected note', async () => {
+    render(<App />);
+    startWriting();
+
+    const overlay = screen.getByTestId('staff-renderer');
+    const bounds = setVisibleSheetBounds(overlay);
+    const svgHeight = getOverlaySvgHeight(overlay);
+    const firstPoint = svgToClientPoint(
+      bounds,
+      getBeatX(0, 0, 4),
+      getPitchY({ step: 'C', octave: 4 }, 'treble', 0),
+      svgHeight,
+    );
+    const secondPoint = svgToClientPoint(
+      bounds,
+      getBeatX(0, 1, 4),
+      getPitchY({ step: 'C', octave: 4 }, 'treble', 0),
+      svgHeight,
+    );
+
+    fireEvent.mouseMove(overlay, firstPoint);
+    fireEvent.click(overlay, firstPoint);
+    fireEvent.mouseMove(overlay, secondPoint);
+    fireEvent.click(overlay, secondPoint);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Note C4 measure 1 beat 1')).toBeInTheDocument();
+      expect(screen.getByLabelText('Note C4 measure 1 beat 2')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select tool' }));
+    fireEvent.click(screen.getByLabelText('Note C4 measure 1 beat 1'));
+
+    const tieButton = screen.getByRole('button', {
+      name: 'Toggle tie to next note',
+    });
+    const slurButton = screen.getByRole('button', {
+      name: 'Toggle slur to next note',
+    });
+
+    fireEvent.click(tieButton);
+    fireEvent.click(slurButton);
+    fireEvent.change(screen.getByLabelText('Hairpin'), {
+      target: { value: 'crescendo' },
+    });
+
+    await waitFor(() => {
+      expect(tieButton).toHaveAttribute('aria-pressed', 'true');
+      expect(slurButton).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByTestId('rendered-tie')).toHaveAttribute(
+        'data-target-id',
+        'event-2',
+      );
+      expect(screen.getByTestId('rendered-slur')).toHaveAttribute(
+        'data-source-id',
+        'event-1',
+      );
+      expect(screen.getByTestId('rendered-hairpin')).toHaveAttribute(
+        'data-hairpin',
+        'crescendo',
+      );
+    });
+  });
+
+  it('flips the selected note direction from toolbar and X shortcut', async () => {
+    const { container } = render(<App />);
+    startWriting('Eighth');
+
+    const overlay = screen.getByTestId('staff-renderer');
+    const bounds = setVisibleSheetBounds(overlay);
+    const notePoint = svgToClientPoint(
+      bounds,
+      getBeatX(0, 0, 4),
+      getPitchY({ step: 'C', octave: 4 }, 'treble', 0),
+      getOverlaySvgHeight(overlay),
+    );
+
+    fireEvent.mouseMove(overlay, notePoint);
+    fireEvent.click(overlay, notePoint);
+    await waitFor(() => {
+      expect(screen.getByLabelText('Note C4 measure 1 beat 1')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select tool' }));
+    fireEvent.click(screen.getByLabelText('Note C4 measure 1 beat 1'));
+
+    const flipButton = screen.getByRole('button', { name: 'Flip direction' });
+    expect(flipButton).toBeEnabled();
+    fireEvent.click(flipButton);
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('.vf-user-event[data-event-id="event-1"]'),
+      ).toHaveAttribute('data-stem-direction', 'down');
+      expect(
+        container.querySelector('.vf-user-event[data-event-id="event-1"]'),
+      ).toHaveAttribute('data-stem-direction-source', 'manual');
+    });
+
+    fireEvent.keyDown(flipButton, { key: 'x' });
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('.vf-user-event[data-event-id="event-1"]'),
+      ).toHaveAttribute('data-stem-direction', 'up');
+      expect(
+        container.querySelector('.vf-user-event[data-event-id="event-1"]'),
+      ).toHaveAttribute('data-stem-direction-source', 'manual');
+    });
+  });
+
   it('selects the lyric source when clicking a note inside a multi-note lyric map', async () => {
     const { container } = render(<App />);
     startWriting();
@@ -861,9 +1234,16 @@ describe('App editor state', () => {
       getPitchY({ step: 'D', octave: 4 }, 'treble', 0),
       svgHeight,
     );
+    const thirdPoint = svgToClientPoint(
+      bounds,
+      getBeatX(0, 2, 4),
+      getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+      svgHeight,
+    );
 
     fireEvent.click(overlay, firstPoint);
     fireEvent.click(overlay, secondPoint);
+    fireEvent.click(overlay, thirdPoint);
     fireEvent.click(screen.getByRole('button', { name: 'Select tool' }));
     fireEvent.click(screen.getByRole('button', { name: 'Note C4 measure 1 beat 1' }));
     fireEvent.change(screen.getByLabelText('Lyric'), {
@@ -876,22 +1256,22 @@ describe('App editor state', () => {
       expect(screen.getByTestId('lyric-map-connector')).toBeInTheDocument();
     });
 
-    const lyricMapHitTarget = container.querySelector('.lyric-map-hit-target');
+    const lyricMapHitTarget = screen.getByTestId('lyric-map-hit-target');
 
     expect(lyricMapHitTarget).not.toBeNull();
-    fireEvent.mouseDown(lyricMapHitTarget as Element, firstPoint);
-    fireEvent.mouseMove(overlay, secondPoint);
-    fireEvent.mouseUp(overlay, secondPoint);
+    fireEvent.mouseDown(lyricMapHitTarget, firstPoint);
+    fireEvent.mouseMove(overlay, thirdPoint);
+    fireEvent.mouseUp(overlay, thirdPoint);
 
     await waitFor(() => {
       expect(screen.getByTestId('lyric-map-connector')).toHaveAttribute(
         'data-target-event-ids',
-        'event-1 event-2',
+        'event-1 event-2 event-3',
       );
     });
 
     const mappedTargetNote = container.querySelector(
-      '[data-testid="score-event"][data-event-id="event-2"]',
+      '[data-testid="score-event"][data-event-id="event-3"]',
     );
 
     expect(mappedTargetNote).not.toBeNull();
@@ -1000,6 +1380,18 @@ describe('App editor state', () => {
         ),
       ).toHaveLength(4);
     });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review first rhythm issue' }));
+
+    expect(screen.getByTestId('selected-measure')).toHaveAttribute(
+      'data-measure-key',
+      'treble:0',
+    );
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'Review rhythm issue: treble measure 1 overlap',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('deletes a selected score event from the small x target', () => {
@@ -1161,6 +1553,225 @@ describe('App editor state', () => {
     expect(screen.getByText('Cannot place: measure-overflow')).toBeInTheDocument();
   });
 
+  it('marks the resolved append measure when an overflowed note is clicked from the next measure', () => {
+    render(<App />);
+    startWriting('Quarter');
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'C', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 1, 4),
+      clientY: getPitchY({ step: 'D', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 2, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Half' }));
+    fireEvent.click(overlay, {
+      clientX: getBeatX(1, 0, 4),
+      clientY: getPitchY({ step: 'F', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.getByText('Cannot place: measure-overflow')).toBeInTheDocument();
+    expect(screen.getByTestId('invalid-measure-warning')).toHaveAttribute(
+      'data-measure-key',
+      'treble:0',
+    );
+    expect(screen.queryByLabelText('Note F4 measure 2 beat 1')).not.toBeInTheDocument();
+  });
+
+  it('flashes and clears measure red when a rejected triplet would overlap an existing note', () => {
+    vi.useFakeTimers();
+
+    try {
+      render(<App />);
+      startWriting();
+      const overlay = screen.getByTestId('staff-renderer');
+
+      fireEvent.click(overlay, {
+        clientX: getBeatX(0, 0, 4),
+        clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+      });
+      chooseTuplet('Triplet');
+      fireEvent.click(overlay, {
+        clientX: getBeatX(0, 0, 4),
+        clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
+      });
+
+      expect(screen.getByText('Cannot place triplet: event-overlap'))
+        .toBeInTheDocument();
+      expect(screen.getByTestId('invalid-measure-warning')).toHaveAttribute(
+        'data-measure-key',
+        'treble:0',
+      );
+      expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Note G4 measure 1 beat 1')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Rest measure 1 beat 1.3333')).not.toBeInTheDocument();
+      expect(getTupletMenuButton()).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
+      expect(screen.getByRole('button', { name: 'Select tool' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+
+      chooseTuplet('Triplet');
+      expect(getTupletMenuButton()).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+
+      act(() => {
+        vi.advanceTimersByTime(701);
+      });
+
+      expect(screen.queryByTestId('invalid-measure-warning')).not.toBeInTheDocument();
+      expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('uses existing tuplet-slot context when the selected toolbar duration differs', () => {
+    render(<App />);
+    chooseTuplet('Triplet');
+    const overlay = screen.getByTestId('staff-renderer');
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Quarter' }));
+    const secondTripletSlotX = getRenderedSlotX('Rest measure 1 beat 1.3333');
+
+    fireEvent.mouseMove(overlay, {
+      clientX: secondTripletSlotX,
+      clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
+    });
+
+    expect(getTupletMenuButton()).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Eighth' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Quarter' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+
+    fireEvent.click(overlay, {
+      clientX: secondTripletSlotX,
+      clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.queryByTestId('invalid-measure-warning')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Note G4 measure 1 beat 1.3333')).toHaveAttribute(
+      'data-duration',
+      'eighth',
+    );
+  });
+
+  it('places and fills a quintuplet slot using rendered tuplet context', () => {
+    render(<App />);
+    chooseTuplet('Tuplet 5');
+    const overlay = screen.getByTestId('staff-renderer');
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.getAllByTestId('rendered-tuplet')).toHaveLength(1);
+    expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toHaveAttribute(
+      'data-duration',
+      'sixteenth',
+    );
+    expect(screen.getByLabelText('Rest measure 1 beat 1.2')).toHaveAttribute(
+      'data-duration',
+      'sixteenth',
+    );
+
+    const secondQuintupletSlotX = getRenderedSlotX('Rest measure 1 beat 1.2');
+
+    fireEvent.mouseMove(overlay, {
+      clientX: secondQuintupletSlotX,
+      clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
+    });
+
+    expect(getTupletMenuButton()).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Sixteenth' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    fireEvent.click(overlay, {
+      clientX: secondQuintupletSlotX,
+      clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.queryByTestId('invalid-measure-warning')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Note G4 measure 1 beat 1.2')).toHaveAttribute(
+      'data-duration',
+      'sixteenth',
+    );
+  });
+
+  it('re-enters existing tuplet-slot context after undo clears the write cursor', () => {
+    render(<App />);
+    chooseTuplet('Triplet');
+    const overlay = screen.getByTestId('staff-renderer');
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Quarter' }));
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 2, 4),
+      clientY: getPitchY({ step: 'A', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Quarter' }));
+    const secondTripletSlotX = getRenderedSlotX('Rest measure 1 beat 1.3333');
+
+    fireEvent.mouseMove(overlay, {
+      clientX: secondTripletSlotX,
+      clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
+    });
+
+    expect(getTupletMenuButton()).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Eighth' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    fireEvent.click(overlay, {
+      clientX: secondTripletSlotX,
+      clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.getByLabelText('Note G4 measure 1 beat 1.3333')).toHaveAttribute(
+      'data-duration',
+      'eighth',
+    );
+    expect(screen.queryByLabelText('Note A4 measure 1 beat 3')).not.toBeInTheDocument();
+  });
+
   it('applies repeat and jump symbols to the selected measure', () => {
     render(<App />);
 
@@ -1248,7 +1859,7 @@ describe('App editor state', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Half' }));
     fireEvent.click(overlay, {
-      clientX: getBeatX(0, 2, 4),
+      clientX: getBeatX(0, 1, 4),
       clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
     });
 
@@ -1256,7 +1867,7 @@ describe('App editor state', () => {
       'data-duration',
       'quarter',
     );
-    expect(screen.getByLabelText('Note G4 measure 1 beat 3')).toHaveAttribute(
+    expect(screen.getByLabelText('Note G4 measure 1 beat 2')).toHaveAttribute(
       'data-duration',
       'half',
     );
@@ -1322,6 +1933,222 @@ describe('App editor state', () => {
     expect(
       within(screen.getByLabelText('Current editor state')).getByText(
         'Event inserted',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('previews insert nudge on hover without committing until click', async () => {
+    const { container } = render(<App />);
+    startWriting();
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'C', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 1, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 2, 4),
+      clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Insert' }));
+    fireEvent.mouseMove(overlay, {
+      clientX: getBeatX(0, 1, 4),
+      clientY: getPitchY({ step: 'D', octave: 4 }, 'treble', 0),
+    });
+
+    await waitFor(() =>
+      expect(
+        container.querySelector(
+          '.vf-score-event[data-event-id="event-2"].vf-insert-preview-nudge',
+        ),
+      ).not.toBeNull(),
+    );
+
+    expect(screen.queryByLabelText('Note D4 measure 1 beat 2')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Note E4 measure 1 beat 2')).toBeInTheDocument();
+    expect(screen.queryByTestId('insert-preview-layer')).not.toBeInTheDocument();
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 1, 4),
+      clientY: getPitchY({ step: 'D', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.getByLabelText('Note D4 measure 1 beat 2')).toBeInTheDocument();
+    expect(screen.getByLabelText('Note E4 measure 1 beat 3')).toBeInTheDocument();
+    expect(screen.getByLabelText('Note G4 measure 1 beat 4')).toBeInTheDocument();
+  });
+
+  it('rejects insert into an empty slot instead of using insert like place mode', () => {
+    render(<App />);
+    startWriting();
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'C', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 1, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Insert' }));
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 3, 4),
+      clientY: getPitchY({ step: 'D', octave: 4 }, 'treble', 0),
+    });
+
+    expect(screen.getByText('Cannot insert: target-note-required')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Note D4 measure 1 beat 4')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Note C4 measure 1 beat 1')).toBeInTheDocument();
+    expect(screen.getByLabelText('Note E4 measure 1 beat 2')).toBeInTheDocument();
+  });
+
+  it('inserts a real clef change before an existing note and uses it for later pitch entry', async () => {
+    const { container } = render(<App />);
+    startWriting();
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'C', octave: 3 }, 'bass', 1),
+    });
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 1, 4),
+      clientY: getPitchY({ step: 'E', octave: 3 }, 'bass', 1),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Insert Treble clef' }));
+    fireEvent.mouseMove(overlay, {
+      clientX: getBeatX(0, 1, 4),
+      clientY: getPitchY({ step: 'E', octave: 3 }, 'bass', 1),
+    });
+
+    expect(screen.getByTestId('clef-change-preview')).toHaveAttribute(
+      'data-clef',
+      'treble',
+    );
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 1, 4),
+      clientY: getPitchY({ step: 'E', octave: 3 }, 'bass', 1),
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('rendered-clef-change')).toHaveAttribute(
+        'data-clef',
+        'treble',
+      ),
+    );
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'Clef change inserted',
+      ),
+    ).toBeInTheDocument();
+
+    const bassTopLine = Number(
+      container
+        .querySelector('.vf-stave[data-staff-id="bass"][data-measure-index="0"] path')
+        ?.getAttribute('d')
+        ?.match(/^M[\d.]+ ([\d.]+)/)?.[1] ?? Number.NaN,
+    );
+    const d5InTrebleClefOnBassStaffY = Number.isFinite(bassTopLine)
+      ? bassTopLine + STAFF_LINE_SPACING
+      : getPitchY({ step: 'D', octave: 5 }, 'treble', 1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Quarter' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Place' }));
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 2, 4),
+      clientY: d5InTrebleClefOnBassStaffY,
+    });
+
+    expect(screen.getByLabelText('Note C3 measure 1 beat 1')).toBeInTheDocument();
+    expect(screen.getByLabelText('Note E3 measure 1 beat 2')).toBeInTheDocument();
+    expect(screen.getByLabelText('Note D5 measure 1 beat 3')).toBeInTheDocument();
+  });
+
+  it('selects, moves, and deletes an inline clef change like a score element', async () => {
+    render(<App />);
+    startWriting();
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'C', octave: 3 }, 'bass', 1),
+    });
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 1, 4),
+      clientY: getPitchY({ step: 'E', octave: 3 }, 'bass', 1),
+    });
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 2, 4),
+      clientY: getPitchY({ step: 'G', octave: 3 }, 'bass', 1),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Insert Treble clef' }));
+    fireEvent.click(overlay, {
+      clientX: getBeatX(0, 1, 4),
+      clientY: getPitchY({ step: 'E', octave: 3 }, 'bass', 1),
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('rendered-clef-change')).toHaveAttribute(
+        'data-beat',
+        '1',
+      ),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select tool' }));
+
+    const target = screen.getByTestId('clef-change-target');
+    fireEvent.click(target);
+
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'treble clef M1 B2',
+      ),
+    ).toBeInTheDocument();
+
+    fireEvent.mouseDown(target, {
+      clientX: getBeatX(0, 1, 4),
+      clientY: getPitchY({ step: 'E', octave: 3 }, 'bass', 1),
+    });
+    fireEvent.mouseMove(overlay, {
+      clientX: getBeatX(0, 2, 4),
+      clientY: getPitchY({ step: 'G', octave: 3 }, 'bass', 1),
+    });
+    fireEvent.mouseUp(overlay, {
+      clientX: getBeatX(0, 2, 4),
+      clientY: getPitchY({ step: 'G', octave: 3 }, 'bass', 1),
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('rendered-clef-change')).toHaveAttribute(
+        'data-beat',
+        '2',
+      ),
+    );
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'Clef change moved',
+      ),
+    ).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'Delete' });
+
+    await waitFor(() =>
+      expect(screen.queryByTestId('rendered-clef-change')).not.toBeInTheDocument(),
+    );
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'Clef change deleted',
       ),
     ).toBeInTheDocument();
   });
@@ -1603,6 +2430,48 @@ C8 D8 z4 | [EGB]8 |`,
     expect(menu.querySelector('.repeat-thumbnail-svg')).toBeInTheDocument();
     expect(menu.querySelector('.repeat-thumbnail-thick-bar')).toBeInTheDocument();
     expect(menu.querySelector('.repeat-thumbnail-volta')).toBeInTheDocument();
+  });
+
+  it('blocks PDF export and selects the first invalid measure when rhythm issues remain', async () => {
+    const fetchSpy = vi.fn();
+
+    vi.stubGlobal('fetch', fetchSpy);
+    render(<App />);
+    startWriting();
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    ([
+      { beat: 0, pitch: { step: 'C', octave: 4 } },
+      { beat: 1, pitch: { step: 'D', octave: 4 } },
+      { beat: 2, pitch: { step: 'E', octave: 4 } },
+      { beat: 3, pitch: { step: 'F', octave: 4 } },
+    ] as const).forEach(({ beat, pitch }) => {
+      fireEvent.click(overlay, {
+        clientX: getBeatX(0, beat, 4),
+        clientY: getPitchY(pitch, 'treble', 0),
+      });
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Note C4 measure 1 beat 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Whole' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Export PDF' }));
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId('selected-measure')).toHaveAttribute(
+      'data-measure-key',
+      'treble:0',
+    );
+    expect(screen.getByTestId('invalid-measure-warning')).toHaveAttribute(
+      'data-measure-key',
+      'treble:0',
+    );
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'Export blocked: fix 1 music issue before PDF (first: Voice voice-treble-1-main has rhythm overlap)',
+      ),
+    ).toBeInTheDocument();
+
+    vi.unstubAllGlobals();
   });
 
   it('exports PDF through the backend endpoint', async () => {

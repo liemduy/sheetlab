@@ -1,5 +1,9 @@
 import { countScoreEvents, findScoreEvent } from '../../domain/score/editing';
+import { findClefChange } from '../../domain/score/clefChanges';
 import type {
+  ArticulationKind,
+  HairpinMark,
+  OttavaKind,
   PageSize,
   PedalMark,
   Score,
@@ -7,12 +11,24 @@ import type {
   StaffId,
 } from '../../domain/score/types';
 import {
+  ARTICULATION_KINDS,
+  ARTICULATION_LABEL,
+  ARTICULATION_SYMBOL,
+} from '../../domain/score/articulations';
+import {
+  getOttavaMarkForSource,
+  OTTAVA_KINDS,
+  OTTAVA_LABEL,
+} from '../../domain/score/ottava';
+import { isPitchedScoreEvent } from '../../domain/score/events';
+import {
   getTimeSignatureId,
   getTimeSignatureLabel,
   TIME_SIGNATURE_OPTIONS,
 } from '../../domain/score/timeSignatures';
 import { formatPitch } from '../sheet/interaction';
 import type { MusicPosition } from '../sheet/interaction';
+import type { ClefChangeTarget } from '../app/selectionTypes';
 import { formatInputCursor } from './inputCursor';
 import type { InputCursor } from './inputCursor';
 import type { EditorToolState } from './editorState';
@@ -25,15 +41,22 @@ import {
   VOICE_LABEL,
 } from './editorState';
 
+const CLEF_CHANGE_LABEL = {
+  bass: 'Insert bass clef',
+  treble: 'Insert treble clef',
+} as const;
+
 interface ScoreSettingsPanelProps {
   canvasZoom: number;
   editorMessage: string;
   futureScoreCount: number;
   hoverPosition: MusicPosition | null;
   inputCursor: InputCursor | null;
+  musicIssueCount: number;
   pastScoreCount: number;
   rhythmIssueCount: number;
   score: Score;
+  selectedClefChange: ClefChangeTarget | null;
   selectedEventId: string | null;
   selectedMeasure: {
     staffId: StaffId;
@@ -41,16 +64,25 @@ interface ScoreSettingsPanelProps {
   } | null;
   selectedPitchIndex: number | null;
   toolState: EditorToolState;
+  onArticulationClear: () => void;
+  onArticulationToggle: (articulation: ArticulationKind) => void;
   onChordSymbolChange: (chordSymbol: string | null) => void;
   onDynamicChange: (dynamic: string | null) => void;
   onFermataChange: (fermata: boolean) => void;
   onGlissandoChange: (glissando: boolean) => void;
+  onHairpinChange: (hairpin: HairpinMark | null) => void;
   onLyricChange: (lyric: string | null) => void;
+  onOttavaClear: () => void;
+  onOttavaToggle: (ottava: OttavaKind) => void;
   onPageSizeChange: (pageSize: PageSize) => void;
   onPedalChange: (pedal: PedalMark | null) => void;
+  onReviewMusicIssue: () => void;
+  onReviewRhythmIssue: () => void;
   onSectionMarkerChange: (sectionMarker: string | null) => void;
   onScoreTypeChange: (scoreType: ScoreType) => void;
+  onSlurToNextToggle: () => void;
   onTempoChange: (value: string) => void;
+  onTieToNextToggle: () => void;
   onTimeSignatureChange: (value: string) => void;
 }
 
@@ -60,27 +92,55 @@ export function ScoreSettingsPanel({
   futureScoreCount,
   hoverPosition,
   inputCursor,
+  musicIssueCount,
   pastScoreCount,
   rhythmIssueCount,
   score,
+  selectedClefChange,
   selectedEventId,
   selectedMeasure,
   selectedPitchIndex,
   toolState,
+  onArticulationClear,
+  onArticulationToggle,
   onChordSymbolChange,
   onDynamicChange,
   onFermataChange,
   onGlissandoChange,
+  onHairpinChange,
   onLyricChange,
+  onOttavaClear,
+  onOttavaToggle,
   onPageSizeChange,
   onPedalChange,
+  onReviewMusicIssue,
+  onReviewRhythmIssue,
   onSectionMarkerChange,
   onScoreTypeChange,
+  onSlurToNextToggle,
   onTempoChange,
+  onTieToNextToggle,
   onTimeSignatureChange,
 }: ScoreSettingsPanelProps) {
   const selectedEvent = selectedEventId
     ? findScoreEvent(score, selectedEventId)
+    : null;
+  const selectedClefChangeInfo = selectedClefChange
+    ? findClefChange(
+        score,
+        selectedClefChange.staffId,
+        selectedClefChange.clefChangeId,
+      )
+    : null;
+  const selectedEventArticulations = selectedEvent?.event.articulations ?? [];
+  const canEditArticulations = Boolean(
+    selectedEvent && isPitchedScoreEvent(selectedEvent.event),
+  );
+  const canEditConnections = canEditArticulations;
+  const hasTieToNext = Boolean(selectedEvent?.event.ties?.length);
+  const hasSlurToNext = Boolean(selectedEvent?.event.slurs?.length);
+  const selectedOttava = selectedEventId
+    ? getOttavaMarkForSource(score, selectedEventId)
     : null;
   const selectedSectionMeasureIndex =
     selectedMeasure?.measureIndex ?? selectedEvent?.measureIndex ?? null;
@@ -230,6 +290,43 @@ export function ScoreSettingsPanel({
             <option value="start-release">Ped. *</option>
           </select>
         </label>
+        <div
+          className="articulation-editor"
+          aria-label="Articulation editor"
+        >
+          <span>Articulations</span>
+          <div className="articulation-toggle-group">
+            {ARTICULATION_KINDS.map((articulation) => {
+              const isActive = selectedEventArticulations.includes(articulation);
+
+              return (
+                <button
+                  key={articulation}
+                  type="button"
+                  aria-label={`Toggle ${ARTICULATION_LABEL[articulation]} articulation`}
+                  aria-pressed={isActive}
+                  className={`articulation-toggle${isActive ? ' is-active' : ''}`}
+                  disabled={!canEditArticulations}
+                  title={ARTICULATION_LABEL[articulation]}
+                  onClick={() => onArticulationToggle(articulation)}
+                >
+                  <span aria-hidden="true">
+                    {ARTICULATION_SYMBOL[articulation]}
+                  </span>
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              aria-label="Clear articulations"
+              className="articulation-clear"
+              disabled={!canEditArticulations || selectedEventArticulations.length === 0}
+              onClick={onArticulationClear}
+            >
+              Clear
+            </button>
+          </div>
+        </div>
         <label className="checkbox-row">
           <input
             key={`fermata-${selectedEventId ?? 'none'}-${
@@ -254,6 +351,92 @@ export function ScoreSettingsPanel({
           />
           Glissando to next note
         </label>
+        <label>
+          Hairpin
+          <select
+            key={`hairpin-${selectedEventId ?? 'none'}-${
+              selectedEvent?.event.hairpin ?? 'none'
+            }`}
+            defaultValue={selectedEvent?.event.hairpin ?? 'none'}
+            disabled={!selectedEvent}
+            onChange={(event) =>
+              onHairpinChange(
+                event.target.value === 'none'
+                  ? null
+                  : (event.target.value as HairpinMark),
+              )
+            }
+          >
+            <option value="none">None</option>
+            <option value="crescendo">Crescendo</option>
+            <option value="diminuendo">Diminuendo</option>
+          </select>
+        </label>
+        <div
+          className="articulation-editor"
+          aria-label="Connection mark editor"
+        >
+          <span>Connections</span>
+          <div className="articulation-toggle-group">
+            <button
+              type="button"
+              aria-label="Toggle tie to next note"
+              aria-pressed={hasTieToNext}
+              className={`articulation-toggle${hasTieToNext ? ' is-active' : ''}`}
+              disabled={!canEditConnections}
+              title="Tie to next same pitch"
+              onClick={onTieToNextToggle}
+            >
+              Tie
+            </button>
+            <button
+              type="button"
+              aria-label="Toggle slur to next note"
+              aria-pressed={hasSlurToNext}
+              className={`articulation-toggle${hasSlurToNext ? ' is-active' : ''}`}
+              disabled={!canEditConnections}
+              title="Slur to next note"
+              onClick={onSlurToNextToggle}
+            >
+              Slur
+            </button>
+          </div>
+        </div>
+        <div
+          className="articulation-editor"
+          aria-label="Ottava range editor"
+        >
+          <span>Ottava</span>
+          <div className="articulation-toggle-group">
+            {OTTAVA_KINDS.map((ottava) => {
+              const isActive = selectedOttava?.ottava === ottava;
+
+              return (
+                <button
+                  key={ottava}
+                  type="button"
+                  aria-label={`Toggle ${OTTAVA_LABEL[ottava]} to next note`}
+                  aria-pressed={isActive}
+                  className={`articulation-toggle${isActive ? ' is-active' : ''}`}
+                  disabled={!canEditConnections}
+                  title={`${OTTAVA_LABEL[ottava]} to next note`}
+                  onClick={() => onOttavaToggle(ottava)}
+                >
+                  {OTTAVA_LABEL[ottava]}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              aria-label="Clear ottava range"
+              className="articulation-clear"
+              disabled={!canEditConnections || !selectedOttava}
+              onClick={onOttavaClear}
+            >
+              Clear
+            </button>
+          </div>
+        </div>
         <label>
           Section marker
           <input
@@ -284,7 +467,13 @@ export function ScoreSettingsPanel({
         </div>
         <div>
           <dt>Input</dt>
-          <dd>{toolState.isInputArmed ? 'Write' : 'Select'}</dd>
+          <dd>
+            {toolState.clefChange
+              ? CLEF_CHANGE_LABEL[toolState.clefChange]
+              : toolState.isInputArmed
+                ? 'Write'
+                : 'Select'}
+          </dd>
         </div>
         <div>
           <dt>Duration</dt>
@@ -332,9 +521,39 @@ export function ScoreSettingsPanel({
         <div>
           <dt>Rhythm</dt>
           <dd>
-            {rhythmIssueCount === 0
-              ? 'OK'
-              : `${rhythmIssueCount} issue${rhythmIssueCount === 1 ? '' : 's'}`}
+            {rhythmIssueCount === 0 ? (
+              'OK'
+            ) : (
+              <button
+                type="button"
+                aria-label="Review first rhythm issue"
+                className="state-action"
+                onClick={onReviewRhythmIssue}
+              >
+                {`${rhythmIssueCount} issue${
+                  rhythmIssueCount === 1 ? '' : 's'
+                }`}
+              </button>
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>Music</dt>
+          <dd>
+            {musicIssueCount === 0 ? (
+              'OK'
+            ) : (
+              <button
+                type="button"
+                aria-label="Review first music issue"
+                className="state-action"
+                onClick={onReviewMusicIssue}
+              >
+                {`${musicIssueCount} issue${
+                  musicIssueCount === 1 ? '' : 's'
+                }`}
+              </button>
+            )}
           </dd>
         </div>
         <div>
@@ -344,7 +563,11 @@ export function ScoreSettingsPanel({
         <div>
           <dt>Selected</dt>
           <dd>
-            {selectedEventId ? (
+            {selectedClefChange && selectedClefChangeInfo ? (
+              `${selectedClefChangeInfo.change.clef} clef M${
+                selectedClefChangeInfo.measureIndex + 1
+              } B${selectedClefChangeInfo.change.beat + 1}`
+            ) : selectedEventId ? (
               <>
                 {selectedEvent?.event.id ?? 'None'}
                 {selectedPitchIndex !== null

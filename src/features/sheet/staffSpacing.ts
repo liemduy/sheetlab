@@ -8,6 +8,8 @@ import {
   isGeneratedRestEvent,
 } from '../../domain/score/events';
 import { findScoreEventContext } from '../../domain/score/eventLookup';
+import { getEffectiveStemDirection } from '../../domain/score/stemDirection';
+import { getActiveClef } from '../../domain/score/clefChanges';
 import { getLyricMapEventIds } from '../../domain/score/lyricMapping';
 import {
   TOP_LINE_BY_CLEF,
@@ -62,7 +64,7 @@ function getStaffPitchBounds(
     ? 0
     : systemIndex * MEASURES_PER_SYSTEM;
   const measureEnd = measureStart + MEASURES_PER_SYSTEM;
-  const eventPitches =
+  const pitchYs =
     staff?.measures
       .filter(
         (measure) =>
@@ -73,23 +75,30 @@ function getStaffPitchBounds(
       )
       .flatMap((measure) =>
         measure.voices.flatMap((voice) =>
-          voice.events.flatMap((event) => getEventPitches(event)),
+          voice.events.flatMap((event) => {
+            const activeClef = getActiveClef(
+              score,
+              staff.id,
+              measure.index,
+              event.beat,
+            );
+
+            return getEventPitches(event).map((pitch) =>
+              getPitchYRelativeToStaffTop(
+                clampPitchToClefRange(pitch, activeClef),
+                activeClef,
+              ),
+            );
+          }),
         ),
       ) ?? [];
 
-  if (!staff || eventPitches.length === 0) {
+  if (!staff || pitchYs.length === 0) {
     return {
       maxY: STAFF_LINE_SPACING * 4,
       minY: 0,
     };
   }
-
-  const pitchYs = eventPitches.map((pitch) =>
-    getPitchYRelativeToStaffTop(
-      clampPitchToClefRange(pitch, staff.clef),
-      staff.clef,
-    ),
-  );
 
   return {
     maxY: Math.max(STAFF_LINE_SPACING * 4, ...pitchYs),
@@ -107,7 +116,7 @@ function getStaffVoicePitchBounds(
   const staff = score.parts[0]?.staves[staffIndex];
   const measureStart = systemIndex * MEASURES_PER_SYSTEM;
   const measureEnd = measureStart + MEASURES_PER_SYSTEM;
-  const eventPitches =
+  const pitchYs =
     staff?.measures
       .filter(
         (measure) =>
@@ -116,24 +125,29 @@ function getStaffVoicePitchBounds(
             : measure.index >= measureStart && measure.index < measureEnd,
       )
       .flatMap((measure) =>
-        measure.voices[voiceIndex]?.events.flatMap((event) =>
-          getEventPitches(event),
-        ) ?? [],
+        measure.voices[voiceIndex]?.events.flatMap((event) => {
+          const activeClef = getActiveClef(
+            score,
+            staff.id,
+            measure.index,
+            event.beat,
+          );
+
+          return getEventPitches(event).map((pitch) =>
+            getPitchYRelativeToStaffTop(
+              clampPitchToClefRange(pitch, activeClef),
+              activeClef,
+            ),
+          );
+        }) ?? [],
       ) ?? [];
 
-  if (!staff || eventPitches.length === 0) {
+  if (!staff || pitchYs.length === 0) {
     return {
       maxY: STAFF_LINE_SPACING * 4,
       minY: 0,
     };
   }
-
-  const pitchYs = eventPitches.map((pitch) =>
-    getPitchYRelativeToStaffTop(
-      clampPitchToClefRange(pitch, staff.clef),
-      staff.clef,
-    ),
-  );
 
   return {
     maxY: Math.max(STAFF_LINE_SPACING * 4, ...pitchYs),
@@ -174,23 +188,30 @@ function getStaffInkBounds(
           return [];
         }
 
+        const activeClef = getActiveClef(
+          score,
+          staff.id,
+          measure.index,
+          event.beat,
+        );
         const pitchYs = eventPitches.map((pitch) =>
           getPitchYRelativeToStaffTop(
-            clampPitchToClefRange(pitch, staff.clef),
-            staff.clef,
+            clampPitchToClefRange(pitch, activeClef),
+            activeClef,
           ),
         );
         const minPitchY = Math.min(...pitchYs);
         const maxPitchY = Math.max(...pitchYs);
-        const averageY =
-          pitchYs.reduce((total, pitchY) => total + pitchY, 0) / pitchYs.length;
-        const stemDirection = hasMultipleVoices
-          ? voiceIndex === 0
-            ? 'up'
-            : 'down'
-          : averageY <= STAFF_LINE_SPACING * 2
-            ? 'down'
-            : 'up';
+        const stemDirection = getEffectiveStemDirection({
+          clef: activeClef,
+          event,
+          hasMultipleVoices,
+          voiceIndex,
+        });
+
+        if (!stemDirection) {
+          return [];
+        }
 
         return [
           {
@@ -331,7 +352,13 @@ function getEstimatedLyricAnnotationX({
   return (Math.min(...targetXs) + Math.max(...targetXs)) / 2;
 }
 
-function getEventPitchBounds(score: Score, staffIndex: number, eventPitches: Pitch[]) {
+function getEventPitchBounds(
+  score: Score,
+  staffIndex: number,
+  measureIndex: number,
+  beat: number,
+  eventPitches: Pitch[],
+) {
   const staff = score.parts[0]?.staves[staffIndex];
 
   if (!staff || eventPitches.length === 0) {
@@ -341,10 +368,11 @@ function getEventPitchBounds(score: Score, staffIndex: number, eventPitches: Pit
     };
   }
 
+  const activeClef = getActiveClef(score, staff.id, measureIndex, beat);
   const pitchYs = eventPitches.map((pitch) =>
     getPitchYRelativeToStaffTop(
-      clampPitchToClefRange(pitch, staff.clef),
-      staff.clef,
+      clampPitchToClefRange(pitch, activeClef),
+      activeClef,
     ),
   );
 
@@ -388,6 +416,8 @@ function getStaffSystemAnnotationExtents(
     const eventPitchBounds = getEventPitchBounds(
       score,
       staffIndex,
+      measure.index,
+      event.beat,
       getEventPitches(event),
     );
     const x = getEstimatedEventX(

@@ -1,4 +1,5 @@
 import { getMeasureBeats } from '../../domain/score/timeSignatures';
+import { getActiveClef } from '../../domain/score/clefChanges';
 import type { Score, ScoreEvent } from '../../domain/score/types';
 import {
   getCursorDurationBeats,
@@ -65,7 +66,7 @@ function getStaffSlotYRange(
 
   const pitchY = getPitchYForScore(
     cursor.pitchPreview,
-    staff.clef,
+    getActiveClef(score, staff.id, measureIndex, cursor.beat),
     staffIndex,
     score,
     measureIndex,

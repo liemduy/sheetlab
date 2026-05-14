@@ -2,6 +2,7 @@ import type {
   AnnotationKind,
   AnnotationPlacementSide,
   ScoreEvent,
+  StemDirection,
 } from '../../domain/score/types';
 
 export interface RenderedPitchLayout {
@@ -24,6 +25,7 @@ export interface RenderedEventLayout {
   minY: number;
   pitchLayouts: RenderedPitchLayout[];
   staffId: string;
+  stemDirection?: StemDirection | null;
   voiceIndex: number;
   x: number;
   y: number;
