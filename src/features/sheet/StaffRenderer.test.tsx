@@ -18,6 +18,7 @@ import { tryToggleOttavaToNext } from '../../domain/score/ottava';
 import { createEmptyScore } from '../../domain/score/factories';
 import {
   duChoTanTheExcerptFixture,
+  extremeClefOttavaChromaticFixture,
   trebleStudyFixture,
 } from '../../domain/score/fixtures';
 import { extremeScoreFixtureCatalog } from '../../domain/score/fixtureCatalog';
@@ -3286,6 +3287,32 @@ describe('StaffRenderer', () => {
     },
   );
 
+  it('renders dense chromatic key signatures with real glyphs and separated header marks', async () => {
+    render(<StaffRenderer score={extremeClefOttavaChromaticFixture} />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('rendered-key-signature-symbol').length)
+        .toBeGreaterThan(0);
+    });
+
+    screen.getAllByTestId('rendered-key-signature-symbol').forEach((symbol) => {
+      expect(['♯', '♭']).toContain(symbol.textContent);
+      expect(symbol.textContent).not.toMatch(/[Ãâ]/);
+    });
+
+    const tempoY = Number(
+      screen.getByTestId('rendered-tempo-mark').getAttribute('y'),
+    );
+    const firstSectionText = screen
+      .getAllByTestId('rendered-section-marker')[0]
+      ?.querySelector('text');
+    const sectionY = Number(firstSectionText?.getAttribute('y'));
+
+    expect(Number.isFinite(tempoY)).toBe(true);
+    expect(Number.isFinite(sectionY)).toBe(true);
+    expect(sectionY - tempoY).toBeGreaterThanOrEqual(22);
+  });
+
   it('renders manual stem direction overrides on the attached beam group only', async () => {
     const firstScore = placeScoreEvent(createEmptyScore('treble'), {
       eventId: 'flipped-beam-1',
@@ -3384,13 +3411,12 @@ describe('StaffRenderer', () => {
       '1',
     );
     expect(screen.getByTestId('rendered-pedal')).toHaveAttribute(
-      'data-annotation-row',
-      '0',
-    );
-    expect(screen.getByTestId('rendered-pedal')).toHaveAttribute(
       'data-annotation-side',
       'above',
     );
+    expect(
+      Number(screen.getByTestId('rendered-pedal').getAttribute('data-annotation-row')),
+    ).toBeLessThanOrEqual(1);
     expect(dynamicY - lyricY).toBeGreaterThanOrEqual(24);
     expect(pedalY).toBeLessThan(lyricY);
   });

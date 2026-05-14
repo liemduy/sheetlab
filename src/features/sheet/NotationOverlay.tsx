@@ -150,7 +150,7 @@ interface NotationOverlayProps {
   voiceIndex?: number;
 }
 
-const KEY_SIGNATURE_SYMBOL_TEXT = {
+const KEY_SIGNATURE_SYMBOL_DISPLAY_TEXT = {
   flat: '♭',
   sharp: '♯',
 } as const;
@@ -1042,7 +1042,7 @@ export function NotationOverlay({
           x={keySignatureDragState.layout.x}
           y={keySignatureDragState.previewPosition.y}
         >
-          {KEY_SIGNATURE_SYMBOL_TEXT[keySignatureDragState.layout.accidental]}
+          {KEY_SIGNATURE_SYMBOL_DISPLAY_TEXT[keySignatureDragState.layout.accidental]}
         </text>
       ) : null}
       {clefChangeDragState?.previewPosition ? (

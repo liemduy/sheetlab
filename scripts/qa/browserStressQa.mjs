@@ -420,6 +420,72 @@ async function gatherBrowserMetrics(session) {
         sourceId: node.getAttribute('data-source-id'),
         targetId: node.getAttribute('data-target-id'),
       }));
+      const collisionSelectors = [
+        '[data-testid="rendered-chord-symbol"]',
+        '[data-testid="rendered-dynamic"]',
+        '[data-testid="rendered-key-signature-symbol"]',
+        '[data-testid="rendered-lyric"]',
+        '[data-testid="rendered-pedal"]',
+        '[data-testid="rendered-section-marker"]',
+        '[data-testid="rendered-tempo-mark"]',
+      ].join(',');
+      const collisionNodes = [...document.querySelectorAll('.vexflow-output ' + collisionSelectors)]
+        .map((node) => ({
+          eventId: node.getAttribute('data-event-id'),
+          id: node.getAttribute('data-testid'),
+          measureIndex: node.getAttribute('data-measure-index'),
+          rect: node.getBoundingClientRect(),
+          staffId: node.getAttribute('data-staff-id'),
+          text: node.textContent?.trim() ?? '',
+          voiceIndex: node.getAttribute('data-voice-index'),
+        }))
+        .filter(({ rect }) => rect.width > 0 && rect.height > 0);
+      const shrinkRect = (rect) => ({
+        bottom: rect.bottom - 2,
+        left: rect.left + 2,
+        right: rect.right - 2,
+        top: rect.top + 2,
+      });
+      const rectsOverlap = (firstRect, secondRect) => {
+        const first = shrinkRect(firstRect);
+        const second = shrinkRect(secondRect);
+
+        return (
+          first.left < second.right &&
+          first.right > second.left &&
+          first.top < second.bottom &&
+          first.bottom > second.top
+        );
+      };
+      const notationTextCollisions = [];
+
+      for (let firstIndex = 0; firstIndex < collisionNodes.length; firstIndex += 1) {
+        for (let secondIndex = firstIndex + 1; secondIndex < collisionNodes.length; secondIndex += 1) {
+          const first = collisionNodes[firstIndex];
+          const second = collisionNodes[secondIndex];
+
+          if (rectsOverlap(first.rect, second.rect)) {
+            notationTextCollisions.push({
+              first: {
+                eventId: first.eventId,
+                id: first.id,
+                measureIndex: first.measureIndex,
+                staffId: first.staffId,
+                text: first.text,
+                voiceIndex: first.voiceIndex,
+              },
+              second: {
+                eventId: second.eventId,
+                id: second.id,
+                measureIndex: second.measureIndex,
+                staffId: second.staffId,
+                text: second.text,
+                voiceIndex: second.voiceIndex,
+              },
+            });
+          }
+        }
+      }
 
       return {
         bodyTextSample: document.body.innerText.slice(0, 240),
@@ -431,6 +497,8 @@ async function gatherBrowserMetrics(session) {
         invalidMeasureMarkCount: document.querySelectorAll('.is-invalid-measure').length,
         lyricMapConnectorCount: byTestId('lyric-map-connector').length,
         lyricMapRangeCount: document.querySelectorAll('[data-map-cardinality="range"]').length,
+        notationTextCollisionCount: notationTextCollisions.length,
+        notationTextCollisions: notationTextCollisions.slice(0, 12),
         overlayNotationMarkCount,
         ottavaCount: byTestId('rendered-ottava').length,
         ottavas,
@@ -569,6 +637,10 @@ async function runFixtureQa({ fixture, origin, qaDir, session }) {
   assertMetric(
     metrics.overlayNotationMarkCount === 0,
     `${fixture.id}: notation marks leaked into overlay`,
+  );
+  assertMetric(
+    metrics.notationTextCollisionCount === 0,
+    `${fixture.id}: rendered notation text collisions ${JSON.stringify(metrics.notationTextCollisions)}`,
   );
   assertMetric(
     metrics.invalidMeasureMarkCount === 0,

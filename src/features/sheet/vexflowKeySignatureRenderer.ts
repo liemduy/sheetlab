@@ -2,8 +2,8 @@ import type { Score } from '../../domain/score/types';
 import { getKeySignatureSymbolLayouts } from './keySignatureLayout';
 
 const KEY_SIGNATURE_SYMBOL_TEXT = {
-  flat: 'â™­',
-  sharp: 'â™¯',
+  flat: '♭',
+  sharp: '♯',
 } as const;
 
 export function drawKeySignatureSymbols(

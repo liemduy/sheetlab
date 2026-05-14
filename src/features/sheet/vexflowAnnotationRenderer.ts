@@ -27,6 +27,7 @@ import {
   placeAnnotationInRows,
 } from './annotationLayoutPolicy';
 import {
+  getRenderedSystemStaffSymbolInkBounds,
   getRenderedSystemVoiceBounds,
   getRenderedSystemVoiceEventInkBounds,
 } from './renderedVoiceZones';
@@ -209,6 +210,11 @@ export function drawTextAnnotations(
         staff.id,
         systemIndex,
       );
+      const staffSymbolInkBlockers = getRenderedSystemStaffSymbolInkBounds(
+        score,
+        staffIndex,
+        systemIndex,
+      );
       const getVoiceState = (voiceIndex: number) => {
         const existingState = voiceStates.get(voiceIndex);
 
@@ -237,6 +243,19 @@ export function drawTextAnnotations(
       };
 
       if (staffIndex === 0 && systemIndex === 0) {
+        const tempoX = getMeasureContentLeft(systemFirstMeasureIndex, score) + 12;
+        const tempoY = staffTop - 78;
+
+        systemAnnotationPlacements.push({
+          ...getAnnotationBounds({
+            kind: 'sectionMarker',
+            text: `Moderato ${Math.round(score.tempo)}`,
+            x: tempoX + 34,
+            y: tempoY,
+          }),
+          row: 0,
+          side: 'above',
+        });
         appendSvgText({
           className: 'sheetlab-tempo-mark',
           dataset: {
@@ -244,15 +263,18 @@ export function drawTextAnnotations(
           },
           svg,
           text: `Moderato \u2669 = ${Math.round(score.tempo)}`,
-          x: getMeasureContentLeft(systemFirstMeasureIndex, score) + 12,
-          y: staffTop - 56,
+          x: tempoX,
+          y: tempoY,
         });
       }
 
       systemMeasures.forEach((measure) => {
         if (staffIndex === 0 && measure.sectionMarker) {
           const markerX = getMeasureContentLeft(measure.index, score) + 12;
-          const markerY = staffTop - 42;
+          const markerY =
+            measure.index === systemFirstMeasureIndex
+              ? staffTop - 56
+              : staffTop - 42;
           const markerWidth = Math.max(34, measure.sectionMarker.length * 8 + 18);
           const markerGroup = document.createElementNS(
             'http://www.w3.org/2000/svg',
@@ -337,6 +359,7 @@ export function drawTextAnnotations(
               const placement = placeAnnotationInRows({
                 blockers: [
                   ...staffInkBlockers,
+                  ...staffSymbolInkBlockers,
                   ...systemAnnotationPlacements,
                 ],
                 direction: side,

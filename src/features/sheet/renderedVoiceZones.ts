@@ -1,7 +1,9 @@
 import type { Score } from '../../domain/score/types';
 import { getActiveClef } from '../../domain/score/clefChanges';
+import { getKeySignatureSymbolLayouts } from './keySignatureLayout';
 import {
   getMeasureRight,
+  getMeasureContentLeft,
   getMeasureX,
   getScoreStaffTop,
   getScoreSystemMeasureIndexes,
@@ -17,7 +19,9 @@ import {
   type AnnotationBounds,
   combineAnnotationBounds,
 } from './annotationLayoutPolicy';
-import { getClefInkBounds } from './staffSymbolInk';
+import {
+  getClefInkBounds,
+} from './staffSymbolInk';
 
 const INTER_VOICE_ZONE_GAP = 18;
 const VOICE_NOTEHEAD_INK_PADDING = 16;
@@ -90,12 +94,35 @@ export function getRenderedSystemStaffSymbolInkBounds(
     return [];
   }
 
+  const measureX = getMeasureX(firstMeasureIndex, score);
+  const measureContentLeft = getMeasureContentLeft(firstMeasureIndex, score);
+  const staffTop = getScoreStaffTop(score, staffIndex, firstMeasureIndex);
+  const keySignatureSymbolBounds = getKeySignatureSymbolLayouts(score)
+    .filter(
+      (layout) =>
+        layout.staffId === staff.id &&
+        getSystemIndex(layout.measureIndex, score) === systemIndex,
+    )
+    .map((layout) => ({
+      maxX: layout.x + 8,
+      maxY: layout.y + 17,
+      minX: layout.x - 8,
+      minY: layout.y - 17,
+    }));
+
   return [
     getClefInkBounds({
       clef: getActiveClef(score, staff.id, firstMeasureIndex, 0),
-      measureX: getMeasureX(firstMeasureIndex, score),
-      staffTop: getScoreStaffTop(score, staffIndex, firstMeasureIndex),
+      measureX,
+      staffTop,
     }),
+    {
+      maxX: measureContentLeft - 4,
+      maxY: staffTop + STAFF_LINE_SPACING * 4,
+      minX: Math.max(measureX + 36, measureContentLeft - 44),
+      minY: staffTop,
+    },
+    ...keySignatureSymbolBounds,
   ];
 }
 
