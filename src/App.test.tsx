@@ -406,6 +406,37 @@ describe('App editor state', () => {
     );
   });
 
+  it('navigates score event selection with ArrowLeft and ArrowRight in select mode', () => {
+    render(<App />);
+
+    fireEvent.keyDown(window, { code: 'Digit5', key: '5' });
+    fireEvent.keyDown(window, { key: 'C' });
+    fireEvent.keyDown(window, { key: 'D' });
+    fireEvent.keyDown(window, { key: 'E' });
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+
+    expect(screen.getByTestId('score-event-delete')).toHaveAttribute(
+      'aria-label',
+      'Delete Note C4 measure 1 beat 1',
+    );
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+
+    expect(screen.getByTestId('score-event-delete')).toHaveAttribute(
+      'aria-label',
+      'Delete Note D4 measure 1 beat 2',
+    );
+
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+
+    expect(screen.getByTestId('score-event-delete')).toHaveAttribute(
+      'aria-label',
+      'Delete Note C4 measure 1 beat 1',
+    );
+  });
+
   it('rejects triplet entry while the dotted modifier is active', () => {
     render(<App />);
 

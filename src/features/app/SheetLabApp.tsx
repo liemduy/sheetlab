@@ -74,6 +74,7 @@ import {
   isPdfExportMode,
   loadInitialScoreForApp,
 } from './appBootstrap';
+import { getAdjacentSelectableScoreEvent } from './scoreEventNavigation';
 
 function getExportPreflightMessage(issues: RhythmIssue[]) {
   const issueCount = issues.length;
@@ -552,6 +553,21 @@ function SheetLabApp() {
     );
   }
 
+  function handleSelectAdjacentEvent(direction: -1 | 1) {
+    const target = getAdjacentSelectableScoreEvent(
+      score,
+      selectedEventId,
+      direction,
+    );
+
+    if (!target) {
+      setEditorMessage('No event to select');
+      return;
+    }
+
+    handleSelectEvent(target.event.id);
+  }
+
   function handleTieToNextToggle() {
     if (!selectedEventId) {
       return;
@@ -797,6 +813,7 @@ function SheetLabApp() {
     onPlacementModeShortcut: handlePlacementModeChange,
     onRedo: handleRedo,
     onRequestClearMeasureContent: handleRequestClearMeasureContent,
+    onSelectAdjacentEvent: handleSelectAdjacentEvent,
     onTransposeSelectedPitch: handleTransposeSelectedPitch,
     onTupletShortcut: handleTupletChange,
     onUndo: handleUndo,

@@ -36,6 +36,7 @@ interface UseEditorShortcutsOptions {
   onFlipDirection: () => void;
   onRedo: () => void;
   onRequestClearMeasureContent: () => void;
+  onSelectAdjacentEvent: (direction: -1 | 1) => void;
   onTransposeSelectedPitch: (delta: number) => void;
   onTupletShortcut: (actualNotes: SupportedTupletActualNotes | null) => void;
   onUndo: () => void;
@@ -91,6 +92,7 @@ export function useEditorShortcuts({
   onFlipDirection,
   onRedo,
   onRequestClearMeasureContent,
+  onSelectAdjacentEvent,
   onTransposeSelectedPitch,
   onTupletShortcut,
   onUndo,
@@ -266,6 +268,10 @@ export function useEditorShortcuts({
         event.key === 'PageDown'
       ) {
         if (!isInputArmed && !inputCursorActive) {
+          if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+            event.preventDefault();
+            onSelectAdjacentEvent(event.key === 'ArrowLeft' ? -1 : 1);
+          }
           return;
         }
 
@@ -303,6 +309,7 @@ export function useEditorShortcuts({
     onPlacementModeShortcut,
     onRedo,
     onRequestClearMeasureContent,
+    onSelectAdjacentEvent,
     onTransposeSelectedPitch,
     onTupletShortcut,
     onUndo,
