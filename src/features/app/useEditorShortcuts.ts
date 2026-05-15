@@ -17,6 +17,7 @@ interface UseEditorShortcutsOptions {
   inputCursorActive: boolean;
   isInputArmed: boolean;
   onClearShortcut: () => void;
+  onCommandPaletteShortcut: () => void;
   onDottedShortcut: () => void;
   onDurationShortcut: (duration: DurationValue) => void;
   onEntryModeShortcut: (entryMode: EntryMode) => void;
@@ -79,6 +80,7 @@ export function useEditorShortcuts({
   inputCursorActive,
   isInputArmed,
   onClearShortcut,
+  onCommandPaletteShortcut,
   onDottedShortcut,
   onDurationShortcut,
   onEntryModeShortcut,
@@ -109,12 +111,24 @@ export function useEditorShortcuts({
 }: UseEditorShortcutsOptions) {
   useEffect(() => {
     function handleWindowKeyDown(event: KeyboardEvent) {
+      const key = event.key.toLowerCase();
+      const isModifierShortcut = event.ctrlKey || event.metaKey;
+
+      if (isModifierShortcut && key === 'k') {
+        event.preventDefault();
+        onCommandPaletteShortcut();
+        return;
+      }
+
       if (isTypingTarget(event.target)) {
         return;
       }
 
-      const key = event.key.toLowerCase();
-      const isModifierShortcut = event.ctrlKey || event.metaKey;
+      if (!isModifierShortcut && event.key === '?') {
+        event.preventDefault();
+        onCommandPaletteShortcut();
+        return;
+      }
 
       if (isModifierShortcut && key === 'z') {
         event.preventDefault();
@@ -296,6 +310,7 @@ export function useEditorShortcuts({
     inputCursorActive,
     isInputArmed,
     onClearShortcut,
+    onCommandPaletteShortcut,
     onDottedShortcut,
     onDeleteClefChange,
     onDeleteEvent,

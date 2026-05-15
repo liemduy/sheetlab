@@ -437,6 +437,57 @@ describe('App editor state', () => {
     );
   });
 
+  it('runs editor commands from the command palette shortcut', async () => {
+    render(<App />);
+
+    fireEvent.keyDown(window, { ctrlKey: true, key: 'k' });
+
+    expect(
+      screen.getByRole('dialog', { name: 'Command palette' }),
+    ).toBeInTheDocument();
+
+    const commandSearch = screen.getByRole('textbox', {
+      name: 'Command search',
+    });
+
+    fireEvent.change(commandSearch, { target: { value: 'rest entry' } });
+    fireEvent.keyDown(commandSearch, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('dialog', { name: 'Command palette' }),
+      ).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: 'Rest' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('opens the command palette from the toolbar and can arm tuplets', async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open command palette' }));
+
+    const commandSearch = screen.getByRole('textbox', {
+      name: 'Command search',
+    });
+
+    fireEvent.change(commandSearch, { target: { value: 'tuplet 5' } });
+    fireEvent.keyDown(commandSearch, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('dialog', { name: 'Command palette' }),
+      ).not.toBeInTheDocument();
+    });
+    expect(getTupletMenuButton()).toHaveTextContent('T5');
+    expect(screen.getByRole('button', { name: 'Sixteenth' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
   it('rejects triplet entry while the dotted modifier is active', () => {
     render(<App />);
 

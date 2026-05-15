@@ -34,13 +34,29 @@ import type {
   EntryMode,
   PlacementMode,
 } from '../editor/editorState';
-import { DEFAULT_EDITOR_TOOL_STATE } from '../editor/editorState';
+import {
+  ACCIDENTAL_LABEL,
+  DEFAULT_EDITOR_TOOL_STATE,
+  DURATION_LABEL,
+  DURATION_OPTIONS,
+  PLACEMENT_MODE_LABEL,
+  VOICE_LABEL,
+  VOICE_OPTIONS,
+} from '../editor/editorState';
+import {
+  CommandPalette,
+  type CommandPaletteCommand,
+} from '../editor/CommandPalette';
 import {
   EditorToolbar,
   type ToolbarPalette,
 } from '../editor/EditorToolbar';
 import { ScoreSettingsPanel } from '../editor/ScoreSettingsPanel';
 import type { Clef, OttavaKind, Score, StaffId } from '../../domain/score/types';
+import {
+  SUPPORTED_TUPLET_ACTUAL_NOTES,
+  getDefaultTupletNormalNotes,
+} from '../../domain/score/tuplets';
 import {
   getScoreRhythmIssues,
   type RhythmIssue,
@@ -189,6 +205,7 @@ function SheetLabApp() {
     selectMeasure,
   });
   const [openPalette, setOpenPalette] = useState<ToolbarPalette>(null);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [annotationContextMenu, setAnnotationContextMenu] =
     useState<AnnotationContextMenuState | null>(null);
   const notationViewportRef = useRef<HTMLDivElement | null>(null);
@@ -795,11 +812,153 @@ function SheetLabApp() {
     void handleExportPdf();
   }
 
+  function handleCommandPaletteOpen() {
+    setOpenPalette(null);
+    setIsCommandPaletteOpen(true);
+  }
+
+  const commandPaletteCommands: CommandPaletteCommand[] = [
+    {
+      group: 'Mode',
+      id: 'select-tool',
+      label: 'Select tool',
+      run: handleClearInteraction,
+      shortcut: 'Esc',
+    },
+    ...DURATION_OPTIONS.map((duration, index) => ({
+      group: 'Duration',
+      id: `duration-${duration}`,
+      label: DURATION_LABEL[duration],
+      run: () => handleDurationChange(duration),
+      shortcut: String(7 - index),
+    })),
+    {
+      group: 'Duration',
+      id: 'toggle-dotted',
+      label: toolState.dots > 0 ? 'Disable dotted note' : 'Enable dotted note',
+      run: () => handleDottedChange(toolState.dots === 0),
+      shortcut: '.',
+    },
+    {
+      group: 'Entry',
+      id: 'entry-note',
+      label: 'Note entry',
+      run: () => handleEntryModeChange('note'),
+      shortcut: 'A-G',
+    },
+    {
+      group: 'Entry',
+      id: 'entry-rest',
+      label: 'Rest entry',
+      run: () => handleEntryModeChange('rest'),
+      shortcut: 'R',
+    },
+    {
+      group: 'Placement',
+      id: 'placement-place',
+      label: PLACEMENT_MODE_LABEL.place,
+      run: () => handlePlacementModeChange('place'),
+    },
+    {
+      group: 'Placement',
+      id: 'placement-insert',
+      label: PLACEMENT_MODE_LABEL.insert,
+      run: () => handlePlacementModeChange('insert'),
+      shortcut: 'I',
+    },
+    ...VOICE_OPTIONS.map((voiceIndex) => ({
+      group: 'Voice',
+      id: `voice-${voiceIndex + 1}`,
+      label: VOICE_LABEL[voiceIndex],
+      run: () => handleVoiceIndexChange(voiceIndex),
+    })),
+    ...(['none', 'natural', 'sharp', 'flat'] as const).map((accidental) => ({
+      group: 'Accidental',
+      id: `accidental-${accidental}`,
+      label: ACCIDENTAL_LABEL[accidental],
+      run: () => handleAccidentalChange(accidental),
+    })),
+    {
+      group: 'Tuplet',
+      id: 'tuplet-off',
+      label: 'Tuplet off',
+      run: () => handleTupletChange(null),
+      shortcut: 'Ctrl/Cmd+0',
+    },
+    ...SUPPORTED_TUPLET_ACTUAL_NOTES.map((actualNotes) => ({
+      group: 'Tuplet',
+      id: `tuplet-${actualNotes}`,
+      label:
+        actualNotes === 3
+          ? `Triplet ${actualNotes}:${getDefaultTupletNormalNotes(actualNotes)}`
+          : `Tuplet ${actualNotes}:${getDefaultTupletNormalNotes(actualNotes)}`,
+      run: () => handleTupletChange(actualNotes),
+      shortcut: `Ctrl/Cmd+${actualNotes}`,
+    })),
+    {
+      disabled: !canFlipSelection,
+      group: 'Edit',
+      id: 'flip-direction',
+      label: 'Flip selected direction',
+      run: handleFlipSelectedDirection,
+      shortcut: 'X',
+    },
+    {
+      disabled: !selectedEventId && !selectedMeasure && !selectedClefChange,
+      group: 'Edit',
+      id: 'delete-selection',
+      label: 'Delete selected item',
+      run: handleDeleteCurrentSelection,
+      shortcut: 'Del',
+    },
+    {
+      disabled: pastScores.length === 0,
+      group: 'History',
+      id: 'undo',
+      label: 'Undo',
+      run: handleUndo,
+      shortcut: 'Ctrl/Cmd+Z',
+    },
+    {
+      disabled: futureScores.length === 0,
+      group: 'History',
+      id: 'redo',
+      label: 'Redo',
+      run: handleRedo,
+      shortcut: 'Ctrl/Cmd+Y',
+    },
+    {
+      group: 'View',
+      id: 'toggle-lyric-map',
+      label: toolState.showLyricMap ? 'Hide lyric map' : 'Show lyric map',
+      run: () => updateToolState({ showLyricMap: !toolState.showLyricMap }),
+    },
+    {
+      group: 'View',
+      id: 'toggle-layout-zones',
+      label: toolState.showLayoutZones ? 'Hide layout zones' : 'Show layout zones',
+      run: () => updateToolState({ showLayoutZones: !toolState.showLayoutZones }),
+    },
+    {
+      group: 'Transport',
+      id: 'playback-toggle',
+      label: isPlaying ? 'Stop playback' : 'Play score',
+      run: () => void handlePlaybackToggle(),
+    },
+    {
+      group: 'Score',
+      id: 'add-measure',
+      label: 'Add measure',
+      run: handleAddMeasure,
+    },
+  ];
+
   useEditorShortcuts({
     futureScores,
     inputCursorActive: Boolean(inputCursor),
     isInputArmed: toolState.isInputArmed,
     onClearShortcut: handleClearInteraction,
+    onCommandPaletteShortcut: handleCommandPaletteOpen,
     onDottedShortcut: () => handleDottedChange(toolState.dots === 0),
     onDeleteClefChange: handleDeleteClefChange,
     onDeleteEvent: handleDeleteEvent,
@@ -868,6 +1027,7 @@ function SheetLabApp() {
           onCanvasZoomChange={handleCanvasZoomChange}
           onClefChangeToolChange={handleClefChangeToolChange}
           onClearInteraction={handleClearInteraction}
+          onCommandPaletteOpen={handleCommandPaletteOpen}
           onDeleteSelected={handleDeleteCurrentSelection}
           onDottedChange={handleDottedChange}
           onDownloadAbc={handleDownloadAbc}
@@ -1038,6 +1198,11 @@ function SheetLabApp() {
           onSetAnnotationContextMenu={setAnnotationContextMenu}
           onSheetStageClick={handleSheetStageClick}
           onUpdateScoreMetadata={updateScoreMetadata}
+        />
+        <CommandPalette
+          commands={commandPaletteCommands}
+          open={isCommandPaletteOpen}
+          onClose={() => setIsCommandPaletteOpen(false)}
         />
       </section>
     </main>

@@ -231,6 +231,7 @@ interface EditorToolbarProps {
   onCanvasZoomChange: (value: string) => void;
   onClefChangeToolChange: (clef: Clef) => void;
   onClearInteraction: () => void;
+  onCommandPaletteOpen: () => void;
   onDeleteSelected: () => void;
   onDemoScoreLoad: (fixtureId: string) => void;
   onDottedChange: (dotted: boolean) => void;
@@ -280,6 +281,7 @@ export function EditorToolbar({
   onCanvasZoomChange,
   onClefChangeToolChange,
   onClearInteraction,
+  onCommandPaletteOpen,
   onDeleteSelected,
   onDemoScoreLoad,
   onDottedChange,
@@ -323,6 +325,17 @@ export function EditorToolbar({
     <nav className="toolbar" aria-label="Editor toolbar">
       <div className="toolbar-group" aria-label="Duration tools">
         <span className="toolbar-group-label">Duration</span>
+        <button
+          type="button"
+          aria-label="Open command palette"
+          className="tool-button"
+          title="Open command palette (Ctrl/Cmd+K)"
+          onClick={onCommandPaletteOpen}
+        >
+          <span className="tool-symbol" aria-hidden="true">
+            ?
+          </span>
+        </button>
         <button
           type="button"
           aria-label="Select tool"
