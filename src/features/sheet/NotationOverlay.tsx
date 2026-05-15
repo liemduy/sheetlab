@@ -256,7 +256,7 @@ export function NotationOverlay({
           .flatMap((voice) => voice.events)
           .find((event) => event.id === dragState.eventId) ?? null;
   const inputCursorPosition =
-    inputCursor && hoverPosition
+    inputCursor && (hoverPosition || inputCursor.source === 'keyboard')
       ? inputCursorToMusicPosition(inputCursor, score)
       : null;
   const cursorMatchesHover =

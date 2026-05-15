@@ -5,8 +5,14 @@ import {
   tryPlaceTupletGroup,
 } from '../../domain/score/editing';
 import { applyActiveKeySignatureToPitch } from '../../domain/score/keySignatures';
-import { trySetClefChange } from '../../domain/score/clefChanges';
-import type { Score, StaffId } from '../../domain/score/types';
+import { getActiveClef, trySetClefChange } from '../../domain/score/clefChanges';
+import { getMeasureBeats } from '../../domain/score/timeSignatures';
+import {
+  clampPitchToClefRange,
+  diatonicValueToPitch,
+  pitchToDiatonicValue,
+} from '../../domain/score/pitchRange';
+import type { NoteStep, Pitch, Score, StaffId } from '../../domain/score/types';
 import {
   getTupletSlotDuration,
   type SupportedTupletActualNotes,
@@ -17,6 +23,11 @@ import { playPitchPreview } from '../playback/audioEngine';
 import type { MusicPosition } from '../sheet/interaction';
 import { snapInsertPositionToEventBoundary } from '../sheet/insertPosition';
 import { getInsertTargetEvent } from '../sheet/insertPreview';
+import { getBeatX, getPitchYForScore } from '../sheet/notationGeometry';
+import {
+  getRhythmSlotsForMeasure,
+  type RhythmSlot,
+} from '../sheet/rhythmSlots';
 import {
   createCursorAfterPlacement,
   musicPositionFromCursor,
@@ -47,6 +58,147 @@ function getTupletLabel(actualNotes: SupportedTupletActualNotes) {
   return actualNotes === 3 ? 'Triplet' : `Tuplet ${actualNotes}`;
 }
 
+const DEFAULT_KEYBOARD_PITCH_BY_STAFF: Record<StaffId, Pitch> = {
+  bass: { step: 'C', octave: 3 },
+  treble: { step: 'C', octave: 4 },
+};
+
+function getScoreStaff(score: Score, staffId: StaffId) {
+  return score.parts
+    .flatMap((part) => part.staves)
+    .find((staff) => staff.id === staffId);
+}
+
+function getFirstEditableStaffId(score: Score): StaffId {
+  return score.parts[0]?.staves[0]?.id ?? 'treble';
+}
+
+function clampMeasureIndex(score: Score, staffId: StaffId, measureIndex: number) {
+  const measureCount = getScoreStaff(score, staffId)?.measures.length ?? 1;
+
+  return Math.min(Math.max(0, measureIndex), Math.max(0, measureCount - 1));
+}
+
+function createMusicPositionFromKeyboardCursor({
+  beat,
+  measureIndex,
+  pitch,
+  score,
+  staffId,
+}: {
+  beat: number;
+  measureIndex: number;
+  pitch: Pitch;
+  score: Score;
+  staffId: StaffId;
+}): MusicPosition | null {
+  const staves = score.parts[0]?.staves ?? [];
+  const staffIndex = staves.findIndex((staff) => staff.id === staffId);
+
+  if (staffIndex < 0) {
+    return null;
+  }
+
+  const beatsPerMeasure = getMeasureBeats(score.timeSignature);
+  const safeMeasureIndex = clampMeasureIndex(score, staffId, measureIndex);
+  const safeBeat = Math.min(
+    Math.max(0, beat),
+    Math.max(0, beatsPerMeasure - 0.0001),
+  );
+  const activeClef = getActiveClef(
+    score,
+    staffId,
+    safeMeasureIndex,
+    safeBeat,
+  );
+  const boundedPitch = clampPitchToClefRange(pitch, activeClef);
+
+  return {
+    beat: Number(safeBeat.toFixed(4)),
+    measureIndex: safeMeasureIndex,
+    pitch: boundedPitch,
+    staffId,
+    staffIndex,
+    x: getBeatX(safeMeasureIndex, safeBeat, beatsPerMeasure, score),
+    y: getPitchYForScore(
+      boundedPitch,
+      activeClef,
+      staffIndex,
+      score,
+      safeMeasureIndex,
+    ),
+  };
+}
+
+function getNearestPitchForStep(currentPitch: Pitch, step: NoteStep): Pitch {
+  const currentValue = pitchToDiatonicValue(currentPitch);
+  const candidates = [
+    currentPitch.octave - 1,
+    currentPitch.octave,
+    currentPitch.octave + 1,
+  ].map((octave) => ({ step, octave }));
+
+  return candidates.sort((first, second) => {
+    const firstDistance = Math.abs(pitchToDiatonicValue(first) - currentValue);
+    const secondDistance = Math.abs(pitchToDiatonicValue(second) - currentValue);
+
+    return (
+      firstDistance - secondDistance ||
+      pitchToDiatonicValue(first) - pitchToDiatonicValue(second)
+    );
+  })[0] ?? { step, octave: currentPitch.octave };
+}
+
+function getAllRhythmSlotsForStaff(
+  score: Score,
+  staffId: StaffId,
+  voiceIndex: number,
+) {
+  const beatsPerMeasure = getMeasureBeats(score.timeSignature);
+  const staff = getScoreStaff(score, staffId);
+
+  return (staff?.measures ?? [])
+    .flatMap((measure) =>
+      getRhythmSlotsForMeasure(
+        score,
+        staffId,
+        measure.index,
+        voiceIndex,
+      ).map((slot) => ({
+        globalBeat: measure.index * beatsPerMeasure + slot.beat,
+        slot,
+      })),
+    )
+    .sort((first, second) => first.globalBeat - second.globalBeat);
+}
+
+function findAdjacentRhythmSlot({
+  cursor,
+  direction,
+  score,
+  voiceIndex,
+}: {
+  cursor: InputCursor;
+  direction: -1 | 1;
+  score: Score;
+  voiceIndex: number;
+}): RhythmSlot | null {
+  const beatsPerMeasure = getMeasureBeats(score.timeSignature);
+  const currentGlobalBeat =
+    cursor.measureIndex * beatsPerMeasure + cursor.beat;
+  const slots = getAllRhythmSlotsForStaff(score, cursor.staffId, voiceIndex);
+
+  if (direction > 0) {
+    return slots.find(({ globalBeat }) => globalBeat > currentGlobalBeat + 0.0001)
+      ?.slot ?? null;
+  }
+
+  return [...slots]
+    .reverse()
+    .find(({ globalBeat }) => globalBeat < currentGlobalBeat - 0.0001)
+    ?.slot ?? null;
+}
+
 export function useCursorPlacement({
   clearSelection,
   commitScoreChange,
@@ -65,15 +217,18 @@ export function useCursorPlacement({
     setInputCursor(null);
   }
 
-  function resolvePlacementContext(position: MusicPosition): ResolvedInputContext {
+  function resolvePlacementContext(
+    position: MusicPosition,
+    activeToolState = toolState,
+  ): ResolvedInputContext {
     const context = resolveInputContext({
       position,
       score,
-      toolState,
+      toolState: activeToolState,
     });
 
     if (
-      toolState.placementMode !== 'place' ||
+      activeToolState.placementMode !== 'place' ||
       !shouldSnapPlaceTargetToSequentialAppend(context.targetSlot)
     ) {
       return context;
@@ -83,10 +238,10 @@ export function useCursorPlacement({
       position: getSequentialAppendPosition({
         position,
         score,
-        voiceIndex: toolState.voiceIndex,
+        voiceIndex: activeToolState.voiceIndex,
       }),
       score,
-      toolState,
+      toolState: activeToolState,
     });
   }
 
@@ -129,30 +284,44 @@ export function useCursorPlacement({
       return;
     }
 
-    setInputCursor(context.cursor);
+    setInputCursor({ ...context.cursor, source: 'pointer' });
     setHoverPosition(musicPositionFromCursor(context.cursor, nextHoverPosition));
   }
 
-  function handlePlaceAtPosition(position: MusicPosition) {
-    if (!toolState.isInputArmed) {
+  function placeAtPosition(
+    position: MusicPosition,
+    activeToolState = toolState,
+    cursorSource: InputCursor['source'] = 'pointer',
+  ) {
+    if (!activeToolState.isInputArmed) {
       onInactivePlace();
       return;
     }
 
     const placementPosition =
-      toolState.placementMode === 'insert' || toolState.clefChange
-        ? snapInsertPositionToEventBoundary(score, position, toolState.voiceIndex)
+      activeToolState.placementMode === 'insert' || activeToolState.clefChange
+        ? snapInsertPositionToEventBoundary(
+            score,
+            position,
+            activeToolState.voiceIndex,
+          )
         : position;
-    const context = resolvePlacementContext(placementPosition);
+    const context = resolvePlacementContext(placementPosition, activeToolState);
     const accidental =
-      toolState.accidental === 'none' ? undefined : toolState.accidental;
+      activeToolState.accidental === 'none' ? undefined : activeToolState.accidental;
     const eventId = `event-${eventCounter.current++}`;
     const targetSlot = context.targetSlot;
     const slotTuplet = context.tuplet;
     const writePosition = context.cursorPosition;
 
-    if (toolState.clefChange) {
-      if (!getInsertTargetEvent(score, context.cursorPosition, toolState.voiceIndex)) {
+    if (activeToolState.clefChange) {
+      if (
+        !getInsertTargetEvent(
+          score,
+          context.cursorPosition,
+          activeToolState.voiceIndex,
+        )
+      ) {
         markInvalidMeasure(
           placementPosition.staffId,
           placementPosition.measureIndex,
@@ -168,7 +337,7 @@ export function useCursorPlacement({
         writePosition.staffId,
         writePosition.measureIndex,
         writePosition.beat,
-        toolState.clefChange,
+        activeToolState.clefChange,
       );
 
       if (result.updated) {
@@ -190,8 +359,12 @@ export function useCursorPlacement({
     }
 
     if (
-      toolState.placementMode === 'insert' &&
-      !getInsertTargetEvent(score, context.cursorPosition, toolState.voiceIndex)
+      activeToolState.placementMode === 'insert' &&
+      !getInsertTargetEvent(
+        score,
+        context.cursorPosition,
+        activeToolState.voiceIndex,
+      )
     ) {
       markInvalidMeasure(
         placementPosition.staffId,
@@ -204,12 +377,12 @@ export function useCursorPlacement({
     }
 
     if (
-      toolState.placementMode === 'place' &&
+      activeToolState.placementMode === 'place' &&
       !isSequentialPlaceTargetAllowed({
         position: context.cursorPosition,
         score,
         targetSlot,
-        voiceIndex: toolState.voiceIndex,
+        voiceIndex: activeToolState.voiceIndex,
       })
     ) {
       markInvalidMeasure(
@@ -222,32 +395,32 @@ export function useCursorPlacement({
       return;
     }
 
-    if (toolState.tuplet && !slotTuplet) {
-      const totalDuration = toolState.tuplet.totalDuration;
+    if (activeToolState.tuplet && !slotTuplet) {
+      const totalDuration = activeToolState.tuplet.totalDuration;
       const slotDuration = getTupletSlotDuration(
         totalDuration,
-        toolState.tuplet.actualNotes,
-        toolState.tuplet.normalNotes,
+        activeToolState.tuplet.actualNotes,
+        activeToolState.tuplet.normalNotes,
       );
       const result = tryPlaceTupletGroup(score, {
         accidental,
-        actualNotes: toolState.tuplet.actualNotes,
+        actualNotes: activeToolState.tuplet.actualNotes,
         beat: writePosition.beat,
         duration: totalDuration,
-        entryMode: toolState.entryMode,
+        entryMode: activeToolState.entryMode,
         eventId,
         measureIndex: writePosition.measureIndex,
-        normalNotes: toolState.tuplet.normalNotes,
+        normalNotes: activeToolState.tuplet.normalNotes,
         pitch: writePosition.pitch,
         staffId: writePosition.staffId,
-        voiceIndex: toolState.voiceIndex,
+        voiceIndex: activeToolState.voiceIndex,
       });
 
       if (result.placed) {
-        const tupletLabel = getTupletLabel(toolState.tuplet.actualNotes);
+        const tupletLabel = getTupletLabel(activeToolState.tuplet.actualNotes);
 
         commitScoreChange(result.score, `${tupletLabel} placed`);
-        if (toolState.entryMode === 'note') {
+        if (activeToolState.entryMode === 'note') {
           const placedPitch = {
             ...writePosition.pitch,
             accidental,
@@ -264,22 +437,27 @@ export function useCursorPlacement({
         setHoverPosition(null);
         updateToolState({
           dots: 0,
-          duration: slotDuration ?? toolState.duration,
+          duration: slotDuration ?? activeToolState.duration,
           isInputArmed: true,
           tuplet: null,
         });
         setInputCursor(
-          createCursorAfterPlacement(
-            result.score,
-            writePosition,
-            slotDuration ?? toolState.duration,
-            0,
-            toolState.voiceIndex,
-          ),
+          {
+            ...createCursorAfterPlacement(
+              result.score,
+              writePosition,
+              slotDuration ?? activeToolState.duration,
+              0,
+              activeToolState.voiceIndex,
+            ),
+            source: cursorSource,
+          },
         );
         clearSelection();
       } else {
-        const tupletLabel = getTupletLabel(toolState.tuplet.actualNotes).toLowerCase();
+        const tupletLabel = getTupletLabel(
+          activeToolState.tuplet.actualNotes,
+        ).toLowerCase();
 
         markInvalidMeasure(
           writePosition.staffId,
@@ -304,25 +482,27 @@ export function useCursorPlacement({
         : context.cursorPosition.beat,
       dots: context.dots,
       duration: context.duration,
-      entryMode: toolState.entryMode,
+      entryMode: activeToolState.entryMode,
       eventId,
       measureIndex: writePosition.measureIndex,
       pitch: writePosition.pitch,
       staffId: writePosition.staffId,
       tuplet: slotTuplet,
-      voiceIndex: toolState.voiceIndex,
+      voiceIndex: activeToolState.voiceIndex,
     };
     const result =
-      toolState.placementMode === 'insert'
+      activeToolState.placementMode === 'insert'
         ? tryInsertScoreEvent(score, placeRequest)
         : tryPlaceScoreEvent(score, placeRequest);
 
     if (result.placed) {
       commitScoreChange(
         result.score,
-        toolState.placementMode === 'insert' ? 'Event inserted' : 'Event placed',
+        activeToolState.placementMode === 'insert'
+          ? 'Event inserted'
+          : 'Event placed',
       );
-      if (toolState.entryMode === 'note') {
+      if (activeToolState.entryMode === 'note') {
         const placedPitch = {
           ...writePosition.pitch,
           accidental,
@@ -338,16 +518,19 @@ export function useCursorPlacement({
       }
       setHoverPosition(null);
       setInputCursor(
-        createCursorAfterPlacement(
-          result.score,
-          {
-            ...writePosition,
-            beat: placeRequest.beat,
-          },
-          placeRequest.duration,
-          placeRequest.dots,
-          toolState.voiceIndex,
-        ),
+        {
+          ...createCursorAfterPlacement(
+            result.score,
+            {
+              ...writePosition,
+              beat: placeRequest.beat,
+            },
+            placeRequest.duration,
+            placeRequest.dots,
+            activeToolState.voiceIndex,
+          ),
+          source: cursorSource,
+        },
       );
       clearSelection();
     } else {
@@ -359,8 +542,236 @@ export function useCursorPlacement({
     }
   }
 
+  function handlePlaceAtPosition(position: MusicPosition) {
+    placeAtPosition(position);
+  }
+
+  function getKeyboardCursorPosition(
+    activeToolState = toolState,
+  ): MusicPosition | null {
+    if (inputCursor) {
+      return createMusicPositionFromKeyboardCursor({
+        beat: inputCursor.beat,
+        measureIndex: inputCursor.measureIndex,
+        pitch: inputCursor.pitchPreview,
+        score,
+        staffId: inputCursor.staffId,
+      });
+    }
+
+    const staffId = getFirstEditableStaffId(score);
+    const pitch = DEFAULT_KEYBOARD_PITCH_BY_STAFF[staffId];
+    const initialPosition = createMusicPositionFromKeyboardCursor({
+      beat: 0,
+      measureIndex: 0,
+      pitch,
+      score,
+      staffId,
+    });
+
+    if (!initialPosition) {
+      return null;
+    }
+
+    const appendPosition = getSequentialAppendPosition({
+      position: initialPosition,
+      score,
+      voiceIndex: activeToolState.voiceIndex,
+    });
+
+    return createMusicPositionFromKeyboardCursor({
+      beat: appendPosition.beat,
+      measureIndex: appendPosition.measureIndex,
+      pitch: appendPosition.pitch,
+      score,
+      staffId: appendPosition.staffId,
+    });
+  }
+
+  function setKeyboardCursorAtPosition(
+    position: MusicPosition,
+    activeToolState = toolState,
+  ) {
+    const context = resolvePlacementContext(position, activeToolState);
+
+    if (
+      activeToolState.placementMode === 'insert' &&
+      !getInsertTargetEvent(
+        score,
+        context.cursorPosition,
+        activeToolState.voiceIndex,
+      )
+    ) {
+      clearPointerState();
+      return null;
+    }
+
+    if (
+      activeToolState.placementMode === 'place' &&
+      !isSequentialPlaceTargetAllowed({
+        position: context.cursorPosition,
+        score,
+        targetSlot: context.targetSlot,
+        voiceIndex: activeToolState.voiceIndex,
+      })
+    ) {
+      clearPointerState();
+      return null;
+    }
+
+    setHoverPosition(null);
+    setInputCursor({ ...context.cursor, source: 'keyboard' });
+
+    return context.cursor;
+  }
+
+  function handleKeyboardCursorMove({
+    pitchDelta = 0,
+    rhythmDelta = 0,
+    staffDelta = 0,
+  }: {
+    pitchDelta?: number;
+    rhythmDelta?: -1 | 0 | 1;
+    staffDelta?: -1 | 0 | 1;
+  }) {
+    const activeToolState = {
+      ...toolState,
+      clefChange: null,
+      isInputArmed: true,
+    };
+    const currentPosition = getKeyboardCursorPosition(activeToolState);
+
+    if (!currentPosition) {
+      return;
+    }
+
+    const staves = score.parts[0]?.staves ?? [];
+    const currentStaffIndex = Math.max(0, currentPosition.staffIndex);
+    const nextStaffIndex = Math.min(
+      Math.max(0, currentStaffIndex + staffDelta),
+      Math.max(0, staves.length - 1),
+    );
+    const nextStaffId = staves[nextStaffIndex]?.id ?? currentPosition.staffId;
+    const currentCursor = inputCursor ?? {
+      beat: currentPosition.beat,
+      duration: activeToolState.duration,
+      measureIndex: currentPosition.measureIndex,
+      mode: 'note-input' as const,
+      pitchPreview: currentPosition.pitch,
+      staffId: currentPosition.staffId,
+      staffIndex: currentPosition.staffIndex,
+    };
+    const adjacentSlot =
+      rhythmDelta === 0
+        ? null
+        : findAdjacentRhythmSlot({
+            cursor: currentCursor,
+            direction: rhythmDelta,
+            score,
+            voiceIndex: activeToolState.voiceIndex,
+          });
+    const nextBeat = adjacentSlot?.beat ?? currentPosition.beat;
+    const nextMeasureIndex =
+      adjacentSlot?.measureIndex ?? currentPosition.measureIndex;
+    const nextPitch =
+      pitchDelta === 0
+        ? currentPosition.pitch
+        : diatonicValueToPitch(
+            pitchToDiatonicValue(currentPosition.pitch) + pitchDelta,
+          );
+    const nextPosition = createMusicPositionFromKeyboardCursor({
+      beat: nextBeat,
+      measureIndex: nextMeasureIndex,
+      pitch: nextPitch,
+      score,
+      staffId: nextStaffId,
+    });
+
+    if (!nextPosition) {
+      return;
+    }
+
+    updateToolState(activeToolState);
+    setKeyboardCursorAtPosition(nextPosition, activeToolState);
+  }
+
+  function handleKeyboardCursorDurationChange(
+    nextToolState: Pick<EditorToolState, 'dots' | 'duration'>,
+  ) {
+    const activeToolState = {
+      ...toolState,
+      ...nextToolState,
+      clefChange: null,
+      isInputArmed: true,
+      tuplet: null,
+    };
+    const currentPosition = getKeyboardCursorPosition(activeToolState);
+
+    if (!currentPosition) {
+      return;
+    }
+
+    updateToolState({
+      clefChange: null,
+      dots: activeToolState.dots,
+      duration: activeToolState.duration,
+      isInputArmed: true,
+      tuplet: null,
+    });
+    setKeyboardCursorAtPosition(currentPosition, activeToolState);
+  }
+
+  function handleKeyboardPlaceAtCursor() {
+    const activeToolState = {
+      ...toolState,
+      clefChange: null,
+      isInputArmed: true,
+    };
+    const position = getKeyboardCursorPosition(activeToolState);
+
+    if (!position) {
+      return;
+    }
+
+    updateToolState(activeToolState);
+    placeAtPosition(position, activeToolState, 'keyboard');
+  }
+
+  function handleKeyboardPitchStepInput(step: NoteStep) {
+    const activeToolState = {
+      ...toolState,
+      clefChange: null,
+      entryMode: 'note' as const,
+      isInputArmed: true,
+    };
+    const currentPosition = getKeyboardCursorPosition(activeToolState);
+
+    if (!currentPosition) {
+      return;
+    }
+
+    const nextPosition = createMusicPositionFromKeyboardCursor({
+      beat: currentPosition.beat,
+      measureIndex: currentPosition.measureIndex,
+      pitch: getNearestPitchForStep(currentPosition.pitch, step),
+      score,
+      staffId: currentPosition.staffId,
+    });
+
+    if (!nextPosition) {
+      return;
+    }
+
+    updateToolState(activeToolState);
+    placeAtPosition(nextPosition, activeToolState, 'keyboard');
+  }
+
   return {
     clearPointerState,
+    handleKeyboardCursorDurationChange,
+    handleKeyboardCursorMove,
+    handleKeyboardPitchStepInput,
+    handleKeyboardPlaceAtCursor,
     handleHoverPositionChange,
     handlePlaceAtPosition,
     hoverPosition,

@@ -1,13 +1,36 @@
 import { useEffect } from 'react';
-import type { Score, StaffId } from '../../domain/score/types';
+import type {
+  DurationValue,
+  NoteStep,
+  Score,
+  StaffId,
+} from '../../domain/score/types';
 import {
   isSupportedTupletActualNotes,
   type SupportedTupletActualNotes,
 } from '../../domain/score/tuplets';
+import type { EntryMode, PlacementMode } from '../editor/editorState';
 import type { ClefChangeTarget } from './selectionTypes';
 
 interface UseEditorShortcutsOptions {
   futureScores: Score[];
+  inputCursorActive: boolean;
+  isInputArmed: boolean;
+  onClearShortcut: () => void;
+  onDottedShortcut: () => void;
+  onDurationShortcut: (duration: DurationValue) => void;
+  onEntryModeShortcut: (entryMode: EntryMode) => void;
+  onKeyboardCursorDurationChange: (
+    nextToolState: { dots: number; duration: DurationValue },
+  ) => void;
+  onKeyboardCursorMove: (move: {
+    pitchDelta?: number;
+    rhythmDelta?: -1 | 0 | 1;
+    staffDelta?: -1 | 0 | 1;
+  }) => void;
+  onKeyboardPitchStepInput: (step: NoteStep) => void;
+  onKeyboardPlaceAtCursor: () => void;
+  onPlacementModeShortcut: (placementMode: PlacementMode) => void;
   onDeleteClefChange: (target?: ClefChangeTarget | null) => void;
   onDeleteEvent: (eventId: string, pitchIndex?: number | null) => void;
   onFlipDirection: () => void;
@@ -25,6 +48,10 @@ interface UseEditorShortcutsOptions {
     measureIndex: number;
   } | null;
   selectedPitchIndex: number | null;
+  toolDots: number;
+  toolDuration: DurationValue;
+  toolEntryMode: EntryMode;
+  toolPlacementMode: PlacementMode;
 }
 
 function isTypingTarget(target: EventTarget | null) {
@@ -35,8 +62,30 @@ function isTypingTarget(target: EventTarget | null) {
   );
 }
 
+const DURATION_SHORTCUTS: Record<string, DurationValue> = {
+  Digit2: 'thirtySecond',
+  Digit3: 'sixteenth',
+  Digit4: 'eighth',
+  Digit5: 'quarter',
+  Digit6: 'half',
+  Digit7: 'whole',
+};
+
+const PITCH_SHORTCUTS = new Set(['A', 'B', 'C', 'D', 'E', 'F', 'G']);
+
 export function useEditorShortcuts({
   futureScores,
+  inputCursorActive,
+  isInputArmed,
+  onClearShortcut,
+  onDottedShortcut,
+  onDurationShortcut,
+  onEntryModeShortcut,
+  onKeyboardCursorDurationChange,
+  onKeyboardCursorMove,
+  onKeyboardPitchStepInput,
+  onKeyboardPlaceAtCursor,
+  onPlacementModeShortcut,
   onDeleteClefChange,
   onDeleteEvent,
   onFlipDirection,
@@ -51,6 +100,10 @@ export function useEditorShortcuts({
   selectedEventId,
   selectedMeasure,
   selectedPitchIndex,
+  toolDots,
+  toolDuration,
+  toolEntryMode,
+  toolPlacementMode,
 }: UseEditorShortcutsOptions) {
   useEffect(() => {
     function handleWindowKeyDown(event: KeyboardEvent) {
@@ -93,6 +146,74 @@ export function useEditorShortcuts({
         }
       }
 
+      if (!isModifierShortcut && !event.altKey) {
+        const duration = DURATION_SHORTCUTS[event.code];
+
+        if (duration) {
+          event.preventDefault();
+          onDurationShortcut(duration);
+          onKeyboardCursorDurationChange({
+            dots: toolDots,
+            duration,
+          });
+          return;
+        }
+
+        if (event.key === '.') {
+          event.preventDefault();
+          const dots = toolDots > 0 ? 0 : 1;
+
+          onDottedShortcut();
+          onKeyboardCursorDurationChange({
+            dots,
+            duration: toolDuration,
+          });
+          return;
+        }
+
+        if (key === 'r') {
+          event.preventDefault();
+          onEntryModeShortcut(toolEntryMode === 'rest' ? 'note' : 'rest');
+          onKeyboardCursorDurationChange({
+            dots: toolDots,
+            duration: toolDuration,
+          });
+          return;
+        }
+
+        if (key === 'i') {
+          event.preventDefault();
+          onPlacementModeShortcut(
+            toolPlacementMode === 'insert' ? 'place' : 'insert',
+          );
+          return;
+        }
+
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          onClearShortcut();
+          return;
+        }
+
+        if ((event.key === 'Enter' || event.key === ' ') && isInputArmed) {
+          event.preventDefault();
+          onKeyboardPlaceAtCursor();
+          return;
+        }
+
+        const pitchStep = event.key.toUpperCase();
+
+        if (
+          isInputArmed &&
+          PITCH_SHORTCUTS.has(pitchStep) &&
+          pitchStep.length === 1
+        ) {
+          event.preventDefault();
+          onKeyboardPitchStepInput(pitchStep as NoteStep);
+          return;
+        }
+      }
+
       if (event.key === 'Delete' || event.key === 'Backspace') {
         event.preventDefault();
 
@@ -122,12 +243,42 @@ export function useEditorShortcuts({
       }
 
       if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        if (isInputArmed || inputCursorActive) {
+          event.preventDefault();
+          onKeyboardCursorMove({
+            pitchDelta: event.key === 'ArrowUp' ? 1 : -1,
+          });
+          return;
+        }
+
         if (!selectedEventId) {
           return;
         }
 
         event.preventDefault();
         onTransposeSelectedPitch(event.key === 'ArrowUp' ? 1 : -1);
+      }
+
+      if (
+        event.key === 'ArrowLeft' ||
+        event.key === 'ArrowRight' ||
+        event.key === 'PageUp' ||
+        event.key === 'PageDown'
+      ) {
+        if (!isInputArmed && !inputCursorActive) {
+          return;
+        }
+
+        event.preventDefault();
+        onKeyboardCursorMove(
+          event.key === 'ArrowLeft'
+            ? { rhythmDelta: -1 }
+            : event.key === 'ArrowRight'
+              ? { rhythmDelta: 1 }
+              : event.key === 'PageUp'
+                ? { staffDelta: -1 }
+                : { staffDelta: 1 },
+        );
       }
     }
 
@@ -136,9 +287,20 @@ export function useEditorShortcuts({
     return () => window.removeEventListener('keydown', handleWindowKeyDown);
   }, [
     futureScores,
+    inputCursorActive,
+    isInputArmed,
+    onClearShortcut,
+    onDottedShortcut,
     onDeleteClefChange,
     onDeleteEvent,
+    onDurationShortcut,
+    onEntryModeShortcut,
     onFlipDirection,
+    onKeyboardCursorDurationChange,
+    onKeyboardCursorMove,
+    onKeyboardPitchStepInput,
+    onKeyboardPlaceAtCursor,
+    onPlacementModeShortcut,
     onRedo,
     onRequestClearMeasureContent,
     onTransposeSelectedPitch,
@@ -150,5 +312,9 @@ export function useEditorShortcuts({
     selectedEventId,
     selectedMeasure,
     selectedPitchIndex,
+    toolDots,
+    toolDuration,
+    toolEntryMode,
+    toolPlacementMode,
   ]);
 }

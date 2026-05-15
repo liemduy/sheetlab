@@ -355,6 +355,57 @@ describe('App editor state', () => {
     ).toBeInTheDocument();
   });
 
+  it('supports MuseScore-style keyboard note entry from the active cursor', () => {
+    render(<App />);
+
+    fireEvent.keyDown(window, { code: 'Digit4', key: '4' });
+
+    expect(screen.getByRole('button', { name: 'Eighth' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByTestId('active-input-cursor')).toHaveAttribute(
+      'data-beat',
+      '0',
+    );
+
+    fireEvent.keyDown(window, { key: 'E' });
+
+    expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toHaveAttribute(
+      'data-duration',
+      'eighth',
+    );
+    expect(screen.getByTestId('active-input-cursor')).toHaveAttribute(
+      'data-beat',
+      '0.5',
+    );
+
+    fireEvent.keyDown(window, { key: 'ArrowUp' });
+    fireEvent.keyDown(window, { key: 'G' });
+
+    expect(screen.getByLabelText('Note G4 measure 1 beat 1.5')).toHaveAttribute(
+      'data-duration',
+      'eighth',
+    );
+  });
+
+  it('places rests from the keyboard cursor without a mouse hover target', () => {
+    render(<App />);
+
+    fireEvent.keyDown(window, { code: 'Digit5', key: '5' });
+    fireEvent.keyDown(window, { key: 'r' });
+    fireEvent.keyDown(window, { key: 'Enter' });
+
+    expect(screen.getByLabelText('Rest measure 1 beat 1')).toHaveAttribute(
+      'data-duration',
+      'quarter',
+    );
+    expect(screen.getByTestId('active-input-cursor')).toHaveAttribute(
+      'data-beat',
+      '1',
+    );
+  });
+
   it('rejects triplet entry while the dotted modifier is active', () => {
     render(<App />);
 

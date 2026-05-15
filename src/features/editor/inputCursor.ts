@@ -27,6 +27,7 @@ export interface InputCursor {
   measureIndex: number;
   mode: InputCursorMode;
   pitchPreview: Pitch;
+  source?: 'keyboard' | 'pointer';
   staffId: StaffId;
   staffIndex: number;
   tuplet?: TupletInfo;

@@ -147,6 +147,10 @@ function SheetLabApp() {
   } = useEditorSelection();
   const {
     clearPointerState,
+    handleKeyboardCursorDurationChange,
+    handleKeyboardCursorMove,
+    handleKeyboardPitchStepInput,
+    handleKeyboardPlaceAtCursor,
     handleHoverPositionChange,
     handlePlaceAtPosition,
     hoverPosition,
@@ -777,9 +781,20 @@ function SheetLabApp() {
 
   useEditorShortcuts({
     futureScores,
+    inputCursorActive: Boolean(inputCursor),
+    isInputArmed: toolState.isInputArmed,
+    onClearShortcut: handleClearInteraction,
+    onDottedShortcut: () => handleDottedChange(toolState.dots === 0),
     onDeleteClefChange: handleDeleteClefChange,
     onDeleteEvent: handleDeleteEvent,
+    onDurationShortcut: handleDurationChange,
+    onEntryModeShortcut: handleEntryModeChange,
     onFlipDirection: handleFlipSelectedDirection,
+    onKeyboardCursorDurationChange: handleKeyboardCursorDurationChange,
+    onKeyboardCursorMove: handleKeyboardCursorMove,
+    onKeyboardPitchStepInput: handleKeyboardPitchStepInput,
+    onKeyboardPlaceAtCursor: handleKeyboardPlaceAtCursor,
+    onPlacementModeShortcut: handlePlacementModeChange,
     onRedo: handleRedo,
     onRequestClearMeasureContent: handleRequestClearMeasureContent,
     onTransposeSelectedPitch: handleTransposeSelectedPitch,
@@ -791,6 +806,10 @@ function SheetLabApp() {
     selectedEventId,
     selectedMeasure,
     selectedPitchIndex,
+    toolDots: toolState.dots,
+    toolDuration: toolState.duration,
+    toolEntryMode: toolState.entryMode,
+    toolPlacementMode: toolState.placementMode,
   });
 
   return (
