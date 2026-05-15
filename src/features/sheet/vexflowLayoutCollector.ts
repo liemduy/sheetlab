@@ -63,6 +63,7 @@ export function collectRenderedMeasureEventLayouts({
       });
       svgElement.classList.add(...getVexFlowEventClasses(event).split(' '));
       svgElement.setAttribute('data-event-id', event.id);
+      svgElement.setAttribute('data-beat', String(event.beat));
       svgElement.setAttribute('data-duration', event.duration);
       svgElement.setAttribute('data-measure-index', String(measureIndex));
       const eventPitches = getEventPitches(event);

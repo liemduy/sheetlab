@@ -1,5 +1,6 @@
 import type { Score, ScoreEvent } from '../../domain/score/types';
 import {
+  getEventDots,
   getEventPitches,
   isGeneratedRestEvent,
 } from '../../domain/score/events';
@@ -10,6 +11,11 @@ import { MEASURE_COMPLEXITY_WEIGHT_SCALE } from './layoutConstants';
 const TUPLET_REST_LANE_DENSITY = 0.9;
 const TUPLET_NOTE_LANE_DENSITY_BONUS = 0.25;
 const LANE_DENSITY_SLOT_WEIGHT_SCALE = 0.65;
+const ACCIDENTAL_READABLE_WIDTH_BONUS = 7;
+const ADDITIONAL_CHORD_PITCH_WIDTH_BONUS = 5;
+const DOT_READABLE_WIDTH_BONUS = 4;
+const SHORT_FLAG_READABLE_WIDTH_BONUS = 2;
+const TUPLET_READABLE_WIDTH_BONUS = 1.5;
 
 function normalizeBoundary(beat: number) {
   return Number(Math.max(0, beat).toFixed(4));
@@ -108,6 +114,29 @@ function getEventLaneDensity(event: ScoreEvent) {
   return (pitchCount <= 1 ? 1 : 1 + (pitchCount - 1) * 0.25) + tupletBonus;
 }
 
+function getEventReadableInkWidthBonus(event: ScoreEvent) {
+  if (isGeneratedRestEvent(event)) {
+    return 0;
+  }
+
+  const pitches = getEventPitches(event);
+  const accidentalBonus =
+    event.kind === 'rest'
+      ? 0
+      : pitches.filter((pitch) => Boolean(pitch.accidental)).length *
+        ACCIDENTAL_READABLE_WIDTH_BONUS;
+  const chordBonus =
+    Math.max(0, pitches.length - 1) * ADDITIONAL_CHORD_PITCH_WIDTH_BONUS;
+  const dotBonus = getEventDots(event) * DOT_READABLE_WIDTH_BONUS;
+  const shortFlagBonus =
+    event.duration === 'sixteenth' || event.duration === 'thirtySecond'
+      ? SHORT_FLAG_READABLE_WIDTH_BONUS
+      : 0;
+  const tupletBonus = event.tuplet ? TUPLET_READABLE_WIDTH_BONUS : 0;
+
+  return accidentalBonus + chordBonus + dotBonus + shortFlagBonus + tupletBonus;
+}
+
 export function countMeasureLaneDensities(score: Score, measureIndex: number) {
   const laneDensities = new Map<string, number>();
 
@@ -133,6 +162,33 @@ export function countMeasureLaneDensities(score: Score, measureIndex: number) {
     });
 
   return laneDensities;
+}
+
+export function getMeasureReadableInkWidthBonus(
+  score: Score,
+  measureIndex: number,
+) {
+  const laneBonuses = new Map<string, number>();
+
+  score.parts
+    .flatMap((part) => part.staves)
+    .forEach((staff) => {
+      const measure = staff.measures.find(
+        (candidate) => candidate.index === measureIndex,
+      );
+
+      measure?.voices.forEach((voice, voiceIndex) => {
+        const laneKey = `${staff.id}:${voiceIndex}`;
+        const voiceBonus = voice.events.reduce(
+          (total, event) => total + getEventReadableInkWidthBonus(event),
+          0,
+        );
+
+        laneBonuses.set(laneKey, (laneBonuses.get(laneKey) ?? 0) + voiceBonus);
+      });
+    });
+
+  return Math.max(0, ...laneBonuses.values());
 }
 
 function getMeasureMaxLaneDensity(score: Score, measureIndex: number) {

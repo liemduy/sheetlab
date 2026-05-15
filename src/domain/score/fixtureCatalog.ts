@@ -5,6 +5,7 @@ import {
   extremeTupletRepeatEtudeFixture,
   extremeVocalPianoFixture,
   grandStaffStudyFixture,
+  readableSpacingStressFixture,
   stressPianoHardeningFixture,
   trebleStudyFixture,
 } from './fixtures';
@@ -204,6 +205,13 @@ export const scoreFixtureCatalog = [
     label: 'Extreme Clef/Ottava Chromatic',
     risk: 'high',
     score: extremeClefOttavaChromaticFixture,
+  }),
+  createFixtureMetadata({
+    category: 'extreme',
+    id: 'readable-spacing-stress',
+    label: 'Readable Spacing Stress',
+    risk: 'high',
+    score: readableSpacingStressFixture,
   }),
 ] as const satisfies readonly ScoreFixtureMetadata[];
 

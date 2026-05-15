@@ -9,6 +9,7 @@ import { createServer as createViteServer } from 'vite';
 const PROJECT_STORAGE_KEY = 'sheetlab:v0.1:project';
 const DEFAULT_START_PORT = 5500;
 const DEFAULT_END_PORT = 6500;
+const MIN_READABLE_NOTEHEAD_GAP_PX = 2;
 
 function getRepoRoot() {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -457,6 +458,8 @@ async function gatherBrowserMetrics(session) {
           first.bottom > second.top
         );
       };
+      const getVerticalOverlap = (firstRect, secondRect) =>
+        Math.max(0, Math.min(firstRect.bottom, secondRect.bottom) - Math.max(firstRect.top, secondRect.top));
       const notationTextCollisions = [];
 
       for (let firstIndex = 0; firstIndex < collisionNodes.length; firstIndex += 1) {
@@ -487,6 +490,150 @@ async function gatherBrowserMetrics(session) {
         }
       }
 
+      const toRect = (rect) => ({
+        bottom: rect.bottom,
+        height: rect.height,
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+        width: rect.width,
+      });
+      const combineRects = (rects) =>
+        rects.length === 0
+          ? null
+          : rects.reduce(
+              (combined, rect) => ({
+                bottom: Math.max(combined.bottom, rect.bottom),
+                height: Math.max(combined.bottom, rect.bottom) - Math.min(combined.top, rect.top),
+                left: Math.min(combined.left, rect.left),
+                right: Math.max(combined.right, rect.right),
+                top: Math.min(combined.top, rect.top),
+                width: Math.max(combined.right, rect.right) - Math.min(combined.left, rect.left),
+              }),
+              rects[0],
+            );
+      const eventNodeMap = new Map(
+        [...document.querySelectorAll('.vexflow-output .vf-user-event:not(.vf-generated-rest)')]
+          .map((node) => [node.getAttribute('data-event-id'), node]),
+      );
+      const noteheadRectsByEvent = new Map();
+
+      [...document.querySelectorAll('.vexflow-output .vf-user-notehead')]
+        .forEach((node) => {
+          const eventId = node.getAttribute('data-event-id');
+          const rect = node.getBoundingClientRect();
+
+          if (!eventId || rect.width <= 0 || rect.height <= 0) {
+            return;
+          }
+
+          const rects = noteheadRectsByEvent.get(eventId) ?? [];
+          rects.push(toRect(rect));
+          noteheadRectsByEvent.set(eventId, rects);
+        });
+
+      const readableNodes = [...eventNodeMap]
+        .map(([eventId, eventNode]) => {
+          const eventRect = eventNode.getBoundingClientRect();
+          const noteheadRect = combineRects(noteheadRectsByEvent.get(eventId) ?? []);
+
+          return {
+            beat: Number(eventNode.getAttribute('data-beat') ?? '0'),
+            eventId,
+            eventRect: toRect(eventRect),
+            measureIndex: eventNode.getAttribute('data-measure-index') ?? '',
+            noteheadRect,
+            staffId: eventNode.getAttribute('data-staff-id') ?? '',
+            voiceIndex: eventNode.getAttribute('data-voice-index') ?? '',
+          };
+        })
+        .filter(
+          ({ eventRect, noteheadRect }) =>
+            eventRect.width > 0 &&
+            eventRect.height > 0 &&
+            noteheadRect &&
+            noteheadRect.width > 0 &&
+            noteheadRect.height > 0,
+        );
+      const groupByLane = (items) =>
+        items.reduce((groups, item) => {
+          const key = [item.staffId, item.voiceIndex, item.measureIndex].join(':');
+          const group = groups.get(key) ?? [];
+          group.push(item);
+          groups.set(key, group);
+          return groups;
+        }, new Map());
+      const noteheadInkCollisions = [];
+      const eventInkCollisions = [];
+      let minReadableNoteheadGapPx = null;
+      let minReadableOverlappingNoteheadGapPx = null;
+      let minReadableEventGapPx = null;
+
+      groupByLane(readableNodes).forEach((laneItems) => {
+        const sortedLaneItems = laneItems.sort(
+          (first, second) =>
+            first.beat - second.beat ||
+            first.noteheadRect.left - second.noteheadRect.left,
+        );
+
+        for (let index = 0; index < sortedLaneItems.length - 1; index += 1) {
+          const first = sortedLaneItems[index];
+          const second = sortedLaneItems[index + 1];
+          const noteheadGap = second.noteheadRect.left - first.noteheadRect.right;
+          const eventGap = second.eventRect.left - first.eventRect.right;
+
+          minReadableNoteheadGapPx =
+            minReadableNoteheadGapPx === null
+              ? noteheadGap
+              : Math.min(minReadableNoteheadGapPx, noteheadGap);
+          if (getVerticalOverlap(first.noteheadRect, second.noteheadRect) > 2) {
+            minReadableOverlappingNoteheadGapPx =
+              minReadableOverlappingNoteheadGapPx === null
+                ? noteheadGap
+                : Math.min(minReadableOverlappingNoteheadGapPx, noteheadGap);
+          }
+          minReadableEventGapPx =
+            minReadableEventGapPx === null
+              ? eventGap
+              : Math.min(minReadableEventGapPx, eventGap);
+
+          if (rectsOverlap(first.noteheadRect, second.noteheadRect)) {
+            noteheadInkCollisions.push({
+              first: {
+                eventId: first.eventId,
+                measureIndex: first.measureIndex,
+                staffId: first.staffId,
+                voiceIndex: first.voiceIndex,
+              },
+              second: {
+                eventId: second.eventId,
+                measureIndex: second.measureIndex,
+                staffId: second.staffId,
+                voiceIndex: second.voiceIndex,
+              },
+            });
+          }
+
+          if (rectsOverlap(first.eventRect, second.eventRect)) {
+            eventInkCollisions.push({
+              eventGap,
+              first: {
+                eventId: first.eventId,
+                measureIndex: first.measureIndex,
+                staffId: first.staffId,
+                voiceIndex: first.voiceIndex,
+              },
+              second: {
+                eventId: second.eventId,
+                measureIndex: second.measureIndex,
+                staffId: second.staffId,
+                voiceIndex: second.voiceIndex,
+              },
+            });
+          }
+        }
+      });
+
       return {
         bodyTextSample: document.body.innerText.slice(0, 240),
         eventCount: document.querySelectorAll('.vexflow-output .vf-user-event').length,
@@ -495,8 +642,15 @@ async function gatherBrowserMetrics(session) {
         hairpinCount: byTestId('rendered-hairpin').length,
         hairpins,
         invalidMeasureMarkCount: document.querySelectorAll('.is-invalid-measure').length,
+        eventInkCollisionCount: eventInkCollisions.length,
+        eventInkCollisions: eventInkCollisions.slice(0, 12),
         lyricMapConnectorCount: byTestId('lyric-map-connector').length,
         lyricMapRangeCount: document.querySelectorAll('[data-map-cardinality="range"]').length,
+        minReadableEventGapPx,
+        minReadableNoteheadGapPx,
+        minReadableOverlappingNoteheadGapPx,
+        noteheadInkCollisionCount: noteheadInkCollisions.length,
+        noteheadInkCollisions: noteheadInkCollisions.slice(0, 12),
         notationTextCollisionCount: notationTextCollisions.length,
         notationTextCollisions: notationTextCollisions.slice(0, 12),
         overlayNotationMarkCount,
@@ -641,6 +795,15 @@ async function runFixtureQa({ fixture, origin, qaDir, session }) {
   assertMetric(
     metrics.notationTextCollisionCount === 0,
     `${fixture.id}: rendered notation text collisions ${JSON.stringify(metrics.notationTextCollisions)}`,
+  );
+  assertMetric(
+    metrics.noteheadInkCollisionCount === 0,
+    `${fixture.id}: rendered notehead ink collisions ${JSON.stringify(metrics.noteheadInkCollisions)}`,
+  );
+  assertMetric(
+    metrics.minReadableOverlappingNoteheadGapPx === null ||
+      metrics.minReadableOverlappingNoteheadGapPx >= MIN_READABLE_NOTEHEAD_GAP_PX,
+    `${fixture.id}: minimum overlapping notehead gap ${metrics.minReadableOverlappingNoteheadGapPx}px is below ${MIN_READABLE_NOTEHEAD_GAP_PX}px`,
   );
   assertMetric(
     metrics.invalidMeasureMarkCount === 0,

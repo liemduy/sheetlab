@@ -1,6 +1,7 @@
 import type {
   AnnotationKind,
   Score,
+  Staff,
 } from '../../domain/score/types';
 import { isGeneratedRestEvent } from '../../domain/score/events';
 import { getLyricMapEventIds } from '../../domain/score/lyricMapping';
@@ -21,6 +22,7 @@ import {
   type AnnotationBounds,
   type AnnotationPlacement,
   type AnnotationSide,
+  doAnnotationBoundsOverlap,
   getAnnotationBounds,
   getAutomaticAnnotationSide,
   getEventAnnotationText,
@@ -154,6 +156,84 @@ function createRenderedAnnotationLayout({
   };
 }
 
+function getSectionMarkerPlacementAvoidingBlockers({
+  blockers,
+  text,
+  x,
+  y,
+}: {
+  blockers: AnnotationBounds[];
+  text: string;
+  x: number;
+  y: number;
+}): AnnotationPlacement {
+  let markerY = y;
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const bounds = getAnnotationBounds({
+      kind: 'sectionMarker',
+      text,
+      x,
+      y: markerY,
+    });
+
+    if (!blockers.some((blocker) => doAnnotationBoundsOverlap(bounds, blocker))) {
+      return {
+        ...bounds,
+        row: attempt,
+        side: 'above',
+      };
+    }
+
+    markerY -= ANNOTATION_METRICS.sectionMarker.height + 6;
+  }
+
+  return {
+    ...getAnnotationBounds({
+      kind: 'sectionMarker',
+      text,
+      x,
+      y: markerY,
+    }),
+    row: 4,
+    side: 'above',
+  };
+}
+
+function measureHasKeySignatureChange(
+  staves: Staff[],
+  measureIndex: number,
+) {
+  return staves.some((systemStaff) => {
+    const systemMeasure = systemStaff.measures.find(
+      (candidate) => candidate.index === measureIndex,
+    );
+
+    return Boolean(
+      systemMeasure?.keySignature ||
+        systemMeasure?.keySignatureSymbols?.length,
+    );
+  });
+}
+
+function getSectionMarkerDesiredY({
+  hasMeasureKeySignature,
+  isSystemFirstMeasure,
+  staffTop,
+  systemIndex,
+}: {
+  hasMeasureKeySignature: boolean;
+  isSystemFirstMeasure: boolean;
+  staffTop: number;
+  systemIndex: number;
+}) {
+  if (hasMeasureKeySignature && systemIndex > 0) {
+    return staffTop - 82;
+  }
+
+  return isSystemFirstMeasure ? staffTop - 56 : staffTop - 42;
+}
+
 export function drawTextAnnotations(
   container: HTMLDivElement,
   score: Score,
@@ -271,10 +351,23 @@ export function drawTextAnnotations(
       systemMeasures.forEach((measure) => {
         if (staffIndex === 0 && measure.sectionMarker) {
           const markerX = getMeasureContentLeft(measure.index, score) + 12;
+          const desiredMarkerY = getSectionMarkerDesiredY({
+            hasMeasureKeySignature: measureHasKeySignatureChange(
+              staves,
+              measure.index,
+            ),
+            isSystemFirstMeasure: measure.index === systemFirstMeasureIndex,
+            staffTop,
+            systemIndex,
+          });
+          const markerPlacement = getSectionMarkerPlacementAvoidingBlockers({
+            blockers: staffSymbolInkBlockers,
+            text: measure.sectionMarker,
+            x: markerX,
+            y: desiredMarkerY,
+          });
           const markerY =
-            measure.index === systemFirstMeasureIndex
-              ? staffTop - 56
-              : staffTop - 42;
+            markerPlacement.maxY - ANNOTATION_METRICS.sectionMarker.descent;
           const markerWidth = Math.max(34, measure.sectionMarker.length * 8 + 18);
           const markerGroup = document.createElementNS(
             'http://www.w3.org/2000/svg',
@@ -288,16 +381,7 @@ export function drawTextAnnotations(
           markerGroup.classList.add('sheetlab-section-marker');
           markerGroup.setAttribute('data-testid', 'rendered-section-marker');
           markerGroup.setAttribute('data-measure-index', String(measure.index));
-          systemAnnotationPlacements.push({
-            ...getAnnotationBounds({
-              kind: 'sectionMarker',
-              text: measure.sectionMarker,
-              x: markerX,
-              y: markerY,
-            }),
-            row: 0,
-            side: 'above',
-          });
+          systemAnnotationPlacements.push(markerPlacement);
           markerRect.setAttribute('x', (markerX - 9).toFixed(2));
           markerRect.setAttribute('y', (markerY - 15).toFixed(2));
           markerRect.setAttribute('width', markerWidth.toFixed(2));

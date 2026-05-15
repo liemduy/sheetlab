@@ -3,7 +3,6 @@ import {
   FIRST_MEASURE_LEFT_PADDING,
   FIRST_STAFF_Y,
   GRAND_SYSTEM_PADDING,
-  MEASURE_COMPLEXITY_WIDTH_SCALE,
   MEASURE_LEFT_PADDING,
   MEASURE_RIGHT_PADDING,
   MEASURE_WIDTH,
@@ -325,58 +324,27 @@ function getSystemMeasureWidths(score: Score, systemIndex: number) {
   const minWeight = Math.min(...weights);
   const maxWeight = Math.max(...weights);
   const equalWidth = SYSTEM_WIDTH / systemMeasureIndexes.length;
+  const minWidthTotal = minWidths.reduce((total, width) => total + width, 0);
 
-  if (maxWeight - minWeight < 0.0001) {
+  if (
+    maxWeight - minWeight < 0.0001 &&
+    minWidths.every((width) => width <= equalWidth)
+  ) {
     return systemMeasureIndexes.map(() => equalWidth);
   }
 
-  const totalWeight = weights.reduce((total, weight) => total + weight, 0);
-  const averageWeight = totalWeight / systemMeasureIndexes.length;
-  const rawWidths = weights.map(
-    (weight) =>
-      equalWidth + (weight - averageWeight) * MEASURE_COMPLEXITY_WIDTH_SCALE,
-  );
-  let widths = rawWidths.map((width, index) =>
-    Math.max(minWidths[index] ?? MEASURE_WIDTH, width),
-  );
-
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const widthTotal = widths.reduce((total, width) => total + width, 0);
-    const overflow = widthTotal - SYSTEM_WIDTH;
-
-    if (Math.abs(overflow) < 0.001) {
-      break;
-    }
-
-    if (overflow < 0) {
-      const addition = Math.abs(overflow) / widths.length;
-
-      widths = widths.map((width) => width + addition);
-      continue;
-    }
-
-    const reducibleWidths = widths.map((width, index) =>
-      Math.max(0, width - (minWidths[index] ?? MEASURE_WIDTH)),
-    );
-    const totalReducibleWidth = reducibleWidths.reduce(
-      (total, width) => total + width,
-      0,
-    );
-
-    if (totalReducibleWidth <= 0) {
-      return minWidths.map((width) => (SYSTEM_WIDTH * width) / widthTotal);
-    }
-
-    widths = widths.map((width, index) => {
-      const minimumWidth = minWidths[index] ?? MEASURE_WIDTH;
-      const reduction =
-        overflow * ((reducibleWidths[index] ?? 0) / totalReducibleWidth);
-
-      return Math.max(minimumWidth, width - reduction);
-    });
+  if (minWidthTotal >= SYSTEM_WIDTH) {
+    return minWidths;
   }
 
-  return widths;
+  const availableExtraWidth = SYSTEM_WIDTH - minWidthTotal;
+  const safeWeights = weights.map((weight) => Math.max(1, weight));
+  const totalWeight = safeWeights.reduce((total, weight) => total + weight, 0);
+
+  return minWidths.map(
+    (width, index) =>
+      width + availableExtraWidth * ((safeWeights[index] ?? 1) / totalWeight),
+  );
 }
 
 export function getMeasureWidth(measureIndex: number, score?: Score) {
@@ -478,6 +446,22 @@ export function getStaffRight(
   const lastMeasureIndex = systemMeasureIndexes[measureCountForSystem - 1] ?? measureIndex;
 
   return getMeasureRight(lastMeasureIndex, score);
+}
+
+export function getScoreSvgWidth(score: Score | ScoreType) {
+  if (typeof score === 'string') {
+    return SVG_WIDTH;
+  }
+
+  const rightMargin = SVG_WIDTH - STAFF_RIGHT;
+  const maxSystemRight = Math.max(
+    STAFF_RIGHT,
+    ...getScoreLayoutCache(score).systems.flatMap((system) =>
+      system.measureIndexes.map((measureIndex) => getMeasureRight(measureIndex, score)),
+    ),
+  );
+
+  return Math.max(SVG_WIDTH, maxSystemRight + rightMargin);
 }
 
 export function getStaticMeasureX(measureIndex: number) {

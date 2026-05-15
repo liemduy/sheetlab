@@ -146,6 +146,7 @@ interface NotationOverlayProps {
   selectedMeasure?: { staffId: StaffId; measureIndex: number } | null;
   selectedPitchIndex?: number | null;
   svgHeight: number;
+  svgWidth?: number;
   voiceZoneLayouts?: RenderedVoiceZoneLayout[];
   voiceIndex?: number;
 }
@@ -191,6 +192,7 @@ export function NotationOverlay({
   showLayoutZones = false,
   showLyricMap = false,
   svgHeight,
+  svgWidth = SVG_WIDTH,
   voiceZoneLayouts = [],
   voiceIndex = 0,
 }: NotationOverlayProps) {
@@ -545,7 +547,7 @@ export function NotationOverlay({
       className="staff-renderer notation-overlay"
       data-testid="staff-renderer"
       role="img"
-      viewBox={`0 0 ${SVG_WIDTH} ${svgHeight}`}
+      viewBox={`0 0 ${svgWidth} ${svgHeight}`}
       onMouseMove={(event) => {
         if (lyricMapDragState) {
           const point = getSvgPoint(event, svgHeight);
@@ -775,7 +777,7 @@ export function NotationOverlay({
         );
       }}
     >
-      <rect className="staff-page-bg" x={0} y={0} width={SVG_WIDTH} height={svgHeight} />
+      <rect className="staff-page-bg" x={0} y={0} width={svgWidth} height={svgHeight} />
       <VoiceZoneDebugOverlay
         show={showLayoutZones}
         zones={voiceZoneLayouts}

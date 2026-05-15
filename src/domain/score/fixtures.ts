@@ -1638,9 +1638,117 @@ export const extremeClefOttavaChromaticFixture: Score = {
   marks: extremeClefOttavaMarks,
 };
 
+const readableSpacingBase = setMeasureSectionMarker(
+  setMeasureKeySignature(
+    createEmptyScore('grand', {
+      id: 'fixture-readable-spacing-stress',
+      title: 'Readable Spacing Stress',
+      composer: 'SheetLab QA',
+      measureCount: 4,
+    }),
+    0,
+    'F#',
+  ),
+  0,
+  'Spacing',
+);
+
+const readableSpacingChromaticPitches: Pitch[] = [
+  { accidental: 'sharp', step: 'F', octave: 5 },
+  { accidental: 'sharp', step: 'G', octave: 5 },
+  { accidental: 'sharp', step: 'A', octave: 5 },
+  { step: 'B', octave: 5 },
+  { accidental: 'sharp', step: 'C', octave: 6 },
+  { accidental: 'sharp', step: 'D', octave: 6 },
+  { step: 'E', octave: 6 },
+  { accidental: 'sharp', step: 'F', octave: 6 },
+  { accidental: 'sharp', step: 'G', octave: 6 },
+];
+
+const readableSpacingTrebleDense = withMeasureEvents(
+  readableSpacingBase,
+  'treble',
+  0,
+  [0, 1, 2, 3].flatMap((beat) =>
+    tupletNoteEvents({
+      actualNotes: 9,
+      beat,
+      duration: 'thirtySecond',
+      id: `readable-spacing-nonuplet-${beat + 1}`,
+      normalNotes: 8,
+      pitches: readableSpacingChromaticPitches.map((pitch, pitchIndex) => ({
+        ...pitch,
+        octave: pitch.octave - (beat % 2 === 0 ? 0 : 1),
+        accidental:
+          pitchIndex % 3 === 1 && beat % 2 === 1
+            ? 'flat'
+            : pitch.accidental,
+      })),
+    }),
+  ),
+);
+
+const readableSpacingTrebleChords = withMeasureEvents(
+  readableSpacingTrebleDense,
+  'treble',
+  1,
+  [
+    chordEvent('readable-spacing-second-chord-1', 0, 'eighth', [
+      { step: 'E', octave: 4 },
+      { accidental: 'sharp', step: 'F', octave: 4 },
+    ], {
+      articulations: ['staccato', 'accent'],
+    }),
+    chordEvent('readable-spacing-second-chord-2', 0.5, 'eighth', [
+      { step: 'F', octave: 4 },
+      { accidental: 'sharp', step: 'G', octave: 4 },
+    ]),
+    chordEvent('readable-spacing-second-chord-3', 1, 'eighth', [
+      { step: 'G', octave: 4 },
+      { accidental: 'sharp', step: 'A', octave: 4 },
+    ]),
+    chordEvent('readable-spacing-second-chord-4', 1.5, 'eighth', [
+      { step: 'A', octave: 4 },
+      { accidental: 'sharp', step: 'B', octave: 4 },
+    ]),
+    ...tupletNoteEvents({
+      actualNotes: 7,
+      beat: 2,
+      duration: 'sixteenth',
+      id: 'readable-spacing-septuplet-tail',
+      normalNotes: 4,
+      pitches: [
+        { accidental: 'sharp', step: 'C', octave: 5 },
+        { step: 'D', octave: 5 },
+        { accidental: 'sharp', step: 'E', octave: 5 },
+        { step: 'F', octave: 5 },
+        { accidental: 'sharp', step: 'G', octave: 5 },
+        { step: 'A', octave: 5 },
+        { accidental: 'sharp', step: 'B', octave: 5 },
+      ],
+    }),
+  ],
+);
+
+export const readableSpacingStressFixture: Score = [0, 1, 2, 3].reduce(
+  (score, measureIndex) =>
+    withMeasureEvents(score, 'bass', measureIndex, [
+      chordEvent(`readable-spacing-bass-${measureIndex}-open`, 0, 'half', [
+        { step: 'C', octave: 2 },
+        { step: 'G', octave: 2 },
+      ]),
+      chordEvent(`readable-spacing-bass-${measureIndex}-close`, 2, 'half', [
+        { accidental: measureIndex % 2 === 0 ? undefined : 'flat', step: 'E', octave: 2 },
+        { step: 'B', octave: 2 },
+      ]),
+    ]),
+  readableSpacingTrebleChords,
+);
+
 export const extremeScoreFixtures = [
   stressPianoHardeningFixture,
   extremeTupletRepeatEtudeFixture,
   extremeVocalPianoFixture,
   extremeClefOttavaChromaticFixture,
+  readableSpacingStressFixture,
 ] satisfies readonly Score[];

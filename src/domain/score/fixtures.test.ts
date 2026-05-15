@@ -7,6 +7,7 @@ import {
   extremeTupletRepeatEtudeFixture,
   extremeVocalPianoFixture,
   grandStaffStudyFixture,
+  readableSpacingStressFixture,
   stressPianoHardeningFixture,
   trebleStudyFixture,
 } from './fixtures';
@@ -204,12 +205,14 @@ describe('score fixtures', () => {
       extremeTupletRepeatEtudeFixture,
       extremeVocalPianoFixture,
       extremeClefOttavaChromaticFixture,
+      readableSpacingStressFixture,
     ]);
     expect(extremeScoreFixtures.map((score) => score.title)).toEqual([
       'Stress Piano Hardening Fixture',
       'Extreme Tuplet Repeat Etude',
       'Extreme Vocal Piano Map Study',
       'Extreme Clef Ottava Chromatic Study',
+      'Readable Spacing Stress',
     ]);
     extremeScoreFixtures.forEach((score) => {
       expect(getScoreRhythmIssues(score)).toEqual([]);
@@ -245,6 +248,7 @@ describe('score fixtures', () => {
       'extreme-tuplet-repeat',
       'extreme-vocal-piano',
       'extreme-clef-ottava-chromatic',
+      'readable-spacing-stress',
     ]);
     expect(extremeScoreFixtureCatalog.map((fixture) => fixture.score)).toEqual(
       extremeScoreFixtures,

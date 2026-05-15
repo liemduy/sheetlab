@@ -40,6 +40,7 @@ import {
   getScoreSystemMeasureIndexes,
   getScoreStaffTop,
   getScoreSvgHeight,
+  getScoreSvgWidth,
   getSystemIndex,
 } from './layout';
 import {
@@ -309,12 +310,13 @@ function drawVexFlowMeasureEvents({
 function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps['score']) {
   const staves = score.parts[0]?.staves ?? [];
   const height = getScoreSvgHeight(score);
+  const width = getScoreSvgWidth(score);
   const beatsPerMeasure = getMeasureBeats(score.timeSignature);
 
   container.innerHTML = '';
 
   const renderer = new Renderer(container, Renderer.Backends.SVG);
-  renderer.resize(SVG_WIDTH, height);
+  renderer.resize(width, height);
   const context = renderer.getContext();
   const eventLayouts: Record<string, RenderedEventLayout> = {};
   const noteRefs = new Map<string, RenderedNoteRef>();
@@ -359,7 +361,7 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
   const svg = container.querySelector('svg');
 
   if (svg) {
-    svg.setAttribute('viewBox', `0 0 ${SVG_WIDTH} ${height}`);
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
     svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
   }
 
@@ -564,6 +566,8 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
     RenderedVoiceZoneLayout[]
   >([]);
   const height = getScoreSvgHeight(props.score);
+  const width = getScoreSvgWidth(props.score);
+  const isOverfullWidth = width > SVG_WIDTH;
 
   useEffect(() => {
     if (containerRef.current) {
@@ -635,12 +639,20 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
     <div
       className="vexflow-stage"
       data-testid="vexflow-renderer"
-      style={{ aspectRatio: `${SVG_WIDTH} / ${height}` }}
+      style={{
+        aspectRatio: `${width} / ${height}`,
+        ...(isOverfullWidth
+          ? {
+              maxWidth: 'none',
+              width: `${width}px`,
+            }
+          : null),
+      }}
     >
       <div
         aria-hidden="true"
         className="vexflow-stage-spacer"
-        style={{ paddingBottom: `${(height / SVG_WIDTH) * 100}%` }}
+        style={{ paddingBottom: `${(height / width) * 100}%` }}
       />
       <div ref={containerRef} className="vexflow-output" aria-hidden="true" />
       <NotationOverlay
@@ -680,6 +692,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         showLayoutZones={props.showLayoutZones ?? false}
         showLyricMap={props.showLyricMap ?? false}
         svgHeight={height}
+        svgWidth={width}
         voiceIndex={props.voiceIndex}
       />
     </div>

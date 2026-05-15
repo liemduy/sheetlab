@@ -22,10 +22,12 @@ import {
   getScoreStaffTop,
   getScoreSystemCount,
   getScoreSystemGap,
+  getScoreSvgWidth,
   getSystemIndex,
   getStaffTop,
 } from './layout';
 import { getBeatX, getPitchY } from './notationGeometry';
+import { getMeasureReadableMinWidthForLocalIndex } from './measureWidthPolicy';
 
 describe('notation geometry', () => {
   it('maps pitch back to the expected treble staff y coordinate', () => {
@@ -325,6 +327,36 @@ describe('notation geometry', () => {
     expect(getSystemIndex(0, score)).toBe(0);
     expect(getSystemIndex(1, score)).toBe(1);
     expect(getMeasureWidth(0, score)).toBeGreaterThan(700);
+  });
+
+  it('does not compress an overfull single-measure system below its readable width', () => {
+    const score = [0, 1, 2, 3].reduce((measureScore, beat) => {
+      const result = tryPlaceTupletGroup(
+        measureScore,
+        {
+          eventId: `overfull-readable-nonuplet-b${beat}`,
+          staffId: 'treble',
+          measureIndex: 0,
+          beat,
+          duration: 'quarter',
+          entryMode: 'note',
+          actualNotes: 9,
+          pitch: {
+            accidental: beat % 2 === 0 ? 'sharp' : 'flat',
+            step: beat % 2 === 0 ? 'F' : 'B',
+            octave: 5,
+          },
+        },
+      );
+
+      return result.score;
+    }, createEmptyScore('treble', { measureCount: 4 }));
+    const readableMinWidth = getMeasureReadableMinWidthForLocalIndex(score, 0, 0);
+
+    expect(getSystemIndex(0, score)).toBe(0);
+    expect(getSystemIndex(1, score)).toBe(1);
+    expect(getMeasureWidth(0, score)).toBeGreaterThanOrEqual(readableMinWidth);
+    expect(getScoreSvgWidth(score)).toBeGreaterThan(SVG_WIDTH);
   });
 
   it('adds inter-system padding for previous bass annotations', () => {

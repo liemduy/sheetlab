@@ -798,7 +798,7 @@ button {
 
 .notation-scroll {
   margin-top: clamp(1.75rem, 3vw, 2.75rem);
-  overflow-x: hidden;
+  overflow-x: auto;
   overflow-y: visible;
   padding-bottom: 0.35rem;
 }
