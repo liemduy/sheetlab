@@ -122,6 +122,12 @@ function cloneDemoScore(score: Score): Score {
   return JSON.parse(JSON.stringify(score)) as Score;
 }
 
+function scoreHasStaff(score: Score, staffId: StaffId) {
+  return score.parts
+    .flatMap((part) => part.staves)
+    .some((staff) => staff.id === staffId);
+}
+
 const DEMO_SCORE_OPTIONS = scoreFixtureCatalog.map((fixture) => ({
   id: fixture.id,
   label: fixture.label,
@@ -166,6 +172,7 @@ function SheetLabApp() {
     clearPointerState,
     handleKeyboardCursorDurationChange,
     handleKeyboardCursorMove,
+    handleKeyboardCursorStaffChange,
     handleKeyboardPitchStepInput,
     handleKeyboardPlaceAtCursor,
     handleHoverPositionChange,
@@ -252,6 +259,7 @@ function SheetLabApp() {
     handleDurationChange,
     handleFlipSelectedDirection,
     handleMoveEvent,
+    handleMoveSelectedEventToStaff,
     handleTransposeSelectedPitch,
     handleTupletChange,
   } = useScoreEventEditing({
@@ -817,6 +825,8 @@ function SheetLabApp() {
     setIsCommandPaletteOpen(true);
   }
 
+  const canUseTrebleStaff = scoreHasStaff(score, 'treble');
+  const canUseBassStaff = scoreHasStaff(score, 'bass');
   const commandPaletteCommands: CommandPaletteCommand[] = [
     {
       group: 'Mode',
@@ -852,6 +862,42 @@ function SheetLabApp() {
       label: 'Rest entry',
       run: () => handleEntryModeChange('rest'),
       shortcut: 'R',
+    },
+    {
+      disabled: !canUseTrebleStaff,
+      group: 'Piano',
+      id: 'right-hand-input',
+      label: 'Right hand input',
+      run: () => handleKeyboardCursorStaffChange('treble'),
+      shortcut: 'PageUp',
+    },
+    {
+      disabled: !canUseBassStaff,
+      group: 'Piano',
+      id: 'left-hand-input',
+      label: 'Left hand input',
+      run: () => handleKeyboardCursorStaffChange('bass'),
+      shortcut: 'PageDown',
+    },
+    {
+      disabled:
+        !selectedEventId ||
+        selectedEventSource !== 'manual' ||
+        !canUseTrebleStaff,
+      group: 'Piano',
+      id: 'move-selected-right-hand',
+      label: 'Move selected event to right hand staff',
+      run: () => handleMoveSelectedEventToStaff('treble'),
+    },
+    {
+      disabled:
+        !selectedEventId ||
+        selectedEventSource !== 'manual' ||
+        !canUseBassStaff,
+      group: 'Piano',
+      id: 'move-selected-left-hand',
+      label: 'Move selected event to left hand staff',
+      run: () => handleMoveSelectedEventToStaff('bass'),
     },
     {
       group: 'Placement',

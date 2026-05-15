@@ -12,7 +12,7 @@ import {
   type AccidentalChoice,
   type EditorToolState,
 } from '../editor/editorState';
-import type { DurationValue, Score } from '../../domain/score/types';
+import type { DurationValue, Score, StaffId } from '../../domain/score/types';
 import {
   diatonicValueToPitch,
   pitchToDiatonicValue,
@@ -354,6 +354,50 @@ export function useScoreEventEditing({
     }
   }
 
+  function handleMoveSelectedEventToStaff(staffId: StaffId) {
+    if (!selectedEventId || selectedEventSource !== 'manual') {
+      setEditorMessage('Select an event first');
+      return;
+    }
+
+    const foundEvent = findScoreEvent(score, selectedEventId);
+
+    if (!foundEvent) {
+      setEditorMessage('Selected event not found');
+      return;
+    }
+
+    if (foundEvent.staffId === staffId) {
+      setEditorMessage(
+        staffId === 'bass'
+          ? 'Event already on left hand staff'
+          : 'Event already on right hand staff',
+      );
+      return;
+    }
+
+    const result = tryUpdateScoreEvent(score, selectedEventId, { staffId });
+
+    if (result.updated) {
+      commitScoreChange(
+        result.score,
+        staffId === 'bass'
+          ? 'Event moved to left hand staff'
+          : 'Event moved to right hand staff',
+      );
+      clearPointerState();
+      clearMeasureSelection();
+      selectEvent(selectedEventId, selectedPitchIndex);
+      return;
+    }
+
+    markInvalidMeasure(
+      staffId,
+      foundEvent.measureIndex,
+      `Cannot move to ${staffId}: ${result.reason}`,
+    );
+  }
+
   function handleTransposeSelectedPitch(delta: number) {
     if (!selectedEventId || selectedEventSource !== 'manual') {
       return;
@@ -433,6 +477,7 @@ export function useScoreEventEditing({
     handleDurationChange,
     handleFlipSelectedDirection,
     handleMoveEvent,
+    handleMoveSelectedEventToStaff,
     handleTransposeSelectedPitch,
     handleTupletChange,
   };

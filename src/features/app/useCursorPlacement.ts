@@ -695,6 +695,53 @@ export function useCursorPlacement({
     setKeyboardCursorAtPosition(nextPosition, activeToolState);
   }
 
+  function handleKeyboardCursorStaffChange(staffId: StaffId) {
+    const activeToolState = {
+      ...toolState,
+      clefChange: null,
+      isInputArmed: true,
+    };
+    const basePitch =
+      inputCursor?.staffId === staffId
+        ? inputCursor.pitchPreview
+        : DEFAULT_KEYBOARD_PITCH_BY_STAFF[staffId];
+    const basePosition = createMusicPositionFromKeyboardCursor({
+      beat: inputCursor?.staffId === staffId ? inputCursor.beat : 0,
+      measureIndex:
+        inputCursor?.staffId === staffId ? inputCursor.measureIndex : 0,
+      pitch: basePitch,
+      score,
+      staffId,
+    });
+
+    if (!basePosition) {
+      return;
+    }
+
+    const appendPosition =
+      inputCursor?.staffId === staffId
+        ? basePosition
+        : getSequentialAppendPosition({
+            position: basePosition,
+            score,
+            voiceIndex: activeToolState.voiceIndex,
+          });
+    const nextPosition = createMusicPositionFromKeyboardCursor({
+      beat: appendPosition.beat,
+      measureIndex: appendPosition.measureIndex,
+      pitch: appendPosition.pitch,
+      score,
+      staffId: appendPosition.staffId,
+    });
+
+    if (!nextPosition) {
+      return;
+    }
+
+    updateToolState(activeToolState);
+    setKeyboardCursorAtPosition(nextPosition, activeToolState);
+  }
+
   function handleKeyboardCursorDurationChange(
     nextToolState: Pick<EditorToolState, 'dots' | 'duration'>,
   ) {
@@ -770,6 +817,7 @@ export function useCursorPlacement({
     clearPointerState,
     handleKeyboardCursorDurationChange,
     handleKeyboardCursorMove,
+    handleKeyboardCursorStaffChange,
     handleKeyboardPitchStepInput,
     handleKeyboardPlaceAtCursor,
     handleHoverPositionChange,

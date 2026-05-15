@@ -488,6 +488,66 @@ describe('App editor state', () => {
     );
   });
 
+  it('uses piano hand commands to move keyboard entry to the bass staff', async () => {
+    render(<App />);
+
+    fireEvent.keyDown(window, { ctrlKey: true, key: 'k' });
+
+    const commandSearch = screen.getByRole('textbox', {
+      name: 'Command search',
+    });
+
+    fireEvent.change(commandSearch, { target: { value: 'left hand input' } });
+    fireEvent.keyDown(commandSearch, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('active-input-cursor')).toHaveAttribute(
+        'data-staff-id',
+        'bass',
+      );
+    });
+
+    fireEvent.keyDown(window, { key: 'C' });
+
+    expect(
+      within(screen.getByTestId('staff-bass')).getByLabelText(
+        'Note C3 measure 1 beat 1',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('moves a selected event to the left hand staff from the command palette', async () => {
+    render(<App />);
+
+    fireEvent.keyDown(window, { code: 'Digit5', key: '5' });
+    fireEvent.keyDown(window, { key: 'C' });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyDown(window, { ctrlKey: true, key: 'k' });
+
+    const commandSearch = screen.getByRole('textbox', {
+      name: 'Command search',
+    });
+
+    fireEvent.change(commandSearch, {
+      target: { value: 'move selected event to left hand staff' },
+    });
+    fireEvent.keyDown(commandSearch, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('staff-bass')).getByLabelText(
+          'Note C4 measure 1 beat 1',
+        ),
+      ).toBeInTheDocument();
+    });
+    expect(
+      within(screen.getByTestId('staff-treble')).queryByLabelText(
+        'Note C4 measure 1 beat 1',
+      ),
+    ).not.toBeInTheDocument();
+  });
+
   it('rejects triplet entry while the dotted modifier is active', () => {
     render(<App />);
 
