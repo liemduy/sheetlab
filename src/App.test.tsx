@@ -16,7 +16,10 @@ vi.mock('./features/playback/audioEngine', () => ({
 }));
 
 import App from './App';
-import { playPitchPreview } from './features/playback/audioEngine';
+import {
+  playPitchPreview,
+  playTimelineAudio,
+} from './features/playback/audioEngine';
 import {
   STAFF_LEFT,
   STAFF_LINE_SPACING,
@@ -2475,6 +2478,37 @@ describe('App editor state', () => {
     expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();
     expect(screen.getByTestId('score-event')).not.toHaveClass('is-playing');
     expect(screen.queryByTestId('playhead')).not.toBeInTheDocument();
+  });
+
+  it('starts playback from the selected event with the Space shortcut', async () => {
+    const playTimelineAudioMock = vi.mocked(playTimelineAudio);
+
+    render(<App />);
+
+    fireEvent.keyDown(window, { code: 'Digit5', key: '5' });
+    fireEvent.keyDown(window, { key: 'C' });
+    fireEvent.keyDown(window, { key: 'D' });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+
+    expect(screen.getByTestId('score-event-delete')).toHaveAttribute(
+      'aria-label',
+      'Delete Note D4 measure 1 beat 2',
+    );
+
+    playTimelineAudioMock.mockClear();
+    fireEvent.keyDown(window, { key: ' ' });
+
+    await waitFor(() => {
+      expect(playTimelineAudioMock).toHaveBeenCalledWith(
+        expect.any(Array),
+        { startSeconds: 0.625 },
+      );
+    });
+    expect(
+      screen.getByText('Playback started from selected event'),
+    ).toBeInTheDocument();
   });
 
   it('saves and loads the current score from JSON storage', () => {

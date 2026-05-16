@@ -441,6 +441,23 @@ export function getTimelineDurationSeconds(timeline: PlaybackTimelineEvent[]) {
   );
 }
 
+export function findPlaybackStartSecondsForEventId(
+  timeline: PlaybackTimelineEvent[],
+  eventId: string | null,
+) {
+  if (!eventId) {
+    return null;
+  }
+
+  const event = timeline.find(
+    (timelineEvent) =>
+      timelineEvent.id === eventId ||
+      timelineEvent.sustainedEventIds?.includes(eventId),
+  );
+
+  return event?.startSeconds ?? null;
+}
+
 export function getActiveTimelineEvent(
   timeline: PlaybackTimelineEvent[],
   elapsedSeconds: number,

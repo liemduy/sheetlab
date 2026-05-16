@@ -18,6 +18,7 @@ import {
 import {
   buildPlaybackMeasureOrder,
   buildPlaybackTimeline,
+  findPlaybackStartSecondsForEventId,
   getActiveTimelineEvent,
   getActiveTimelineEvents,
   getPlaybackBeatAtSeconds,
@@ -279,6 +280,10 @@ describe('playback timeline', () => {
       pitches: [{ step: 'C', octave: 4 }],
       sustainedEventIds: ['tie-playback-source', 'tie-playback-target'],
     });
+    expect(
+      findPlaybackStartSecondsForEventId(timeline, 'tie-playback-target'),
+    ).toBe(0);
+    expect(findPlaybackStartSecondsForEventId(timeline, null)).toBeNull();
   });
 
   it('uses tempo consistently for timeline seconds and cursor beat speed', () => {

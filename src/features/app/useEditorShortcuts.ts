@@ -32,6 +32,7 @@ interface UseEditorShortcutsOptions {
   onKeyboardPitchStepInput: (step: NoteStep) => void;
   onKeyboardPlaceAtCursor: () => void;
   onPlacementModeShortcut: (placementMode: PlacementMode) => void;
+  onPlaybackShortcut: () => void;
   onDeleteClefChange: (target?: ClefChangeTarget | null) => void;
   onDeleteEvent: (eventId: string, pitchIndex?: number | null) => void;
   onFlipDirection: () => void;
@@ -89,6 +90,7 @@ export function useEditorShortcuts({
   onKeyboardPitchStepInput,
   onKeyboardPlaceAtCursor,
   onPlacementModeShortcut,
+  onPlaybackShortcut,
   onDeleteClefChange,
   onDeleteEvent,
   onFlipDirection,
@@ -211,6 +213,12 @@ export function useEditorShortcuts({
           return;
         }
 
+        if (event.key === ' ' && !isInputArmed) {
+          event.preventDefault();
+          onPlaybackShortcut();
+          return;
+        }
+
         if ((event.key === 'Enter' || event.key === ' ') && isInputArmed) {
           event.preventDefault();
           onKeyboardPlaceAtCursor();
@@ -322,6 +330,7 @@ export function useEditorShortcuts({
     onKeyboardPitchStepInput,
     onKeyboardPlaceAtCursor,
     onPlacementModeShortcut,
+    onPlaybackShortcut,
     onRedo,
     onRequestClearMeasureContent,
     onSelectAdjacentEvent,

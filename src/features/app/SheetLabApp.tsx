@@ -708,6 +708,7 @@ function SheetLabApp() {
   const {
     activePlaybackEvent,
     activePlaybackEventIds,
+    handlePlaybackFromSelectedEvent,
     handlePlaybackToggle,
     isPlaying,
     playbackBeat,
@@ -823,6 +824,15 @@ function SheetLabApp() {
   function handleCommandPaletteOpen() {
     setOpenPalette(null);
     setIsCommandPaletteOpen(true);
+  }
+
+  function handlePlaybackShortcut() {
+    if (selectedEventId) {
+      void handlePlaybackFromSelectedEvent(selectedEventId);
+      return;
+    }
+
+    void handlePlaybackToggle();
   }
 
   const canUseTrebleStaff = scoreHasStaff(score, 'treble');
@@ -988,8 +998,16 @@ function SheetLabApp() {
     {
       group: 'Transport',
       id: 'playback-toggle',
-      label: isPlaying ? 'Stop playback' : 'Play score',
+      label: isPlaying ? 'Stop playback' : 'Play from start',
       run: () => void handlePlaybackToggle(),
+      shortcut: 'Space',
+    },
+    {
+      disabled: isPlaying || !selectedEventId,
+      group: 'Transport',
+      id: 'playback-from-selected',
+      label: 'Play from selected event',
+      run: () => void handlePlaybackFromSelectedEvent(selectedEventId),
     },
     {
       group: 'Score',
@@ -1016,6 +1034,7 @@ function SheetLabApp() {
     onKeyboardPitchStepInput: handleKeyboardPitchStepInput,
     onKeyboardPlaceAtCursor: handleKeyboardPlaceAtCursor,
     onPlacementModeShortcut: handlePlacementModeChange,
+    onPlaybackShortcut: handlePlaybackShortcut,
     onRedo: handleRedo,
     onRequestClearMeasureContent: handleRequestClearMeasureContent,
     onSelectAdjacentEvent: handleSelectAdjacentEvent,

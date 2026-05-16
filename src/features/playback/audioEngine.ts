@@ -7,6 +7,10 @@ export interface PlaybackController {
   stop: () => void;
 }
 
+export interface PlaybackAudioOptions {
+  startSeconds?: number;
+}
+
 const PLAYBACK_SCHEDULE_LEAD_SECONDS = 0.08;
 
 function getAudioOutputLatencySeconds(Tone: typeof import('tone')) {
@@ -23,6 +27,7 @@ function getAudioOutputLatencySeconds(Tone: typeof import('tone')) {
 
 export async function playTimelineAudio(
   timeline: PlaybackTimelineEvent[],
+  options: PlaybackAudioOptions = {},
 ): Promise<PlaybackController> {
   type AudioGlobal = typeof globalThis & {
     webkitAudioContext?: typeof AudioContext;
@@ -49,6 +54,7 @@ export async function playTimelineAudio(
   const outputLatencySeconds = getAudioOutputLatencySeconds(Tone);
   const scheduledStartSeconds =
     audioNowSeconds + PLAYBACK_SCHEDULE_LEAD_SECONDS;
+  const startSeconds = Math.max(0, options.startSeconds ?? 0);
   const startedAtMs =
     performance.now() +
     (toneLookAheadSeconds +
@@ -57,11 +63,11 @@ export async function playTimelineAudio(
       1000;
 
   timeline.forEach((event) => {
-    if (event.pitches.length > 0) {
+    if (event.pitches.length > 0 && event.startSeconds >= startSeconds) {
       synth.triggerAttackRelease(
         event.pitches.map(pitchToToneNote),
         event.soundDurationSeconds,
-        scheduledStartSeconds + event.startSeconds,
+        scheduledStartSeconds + event.startSeconds - startSeconds,
         event.velocity,
       );
     }
