@@ -2,7 +2,11 @@ import { useRef, useState } from 'react';
 import type {
   MouseEvent as ReactMouseEvent,
 } from 'react';
-import { findScoreEvent } from '../../domain/score/editing';
+import {
+  findScoreEvent,
+  tryUpdateScoreEvent,
+} from '../../domain/score/editing';
+import { getEventAnnotationOffset } from '../../domain/score/annotationOffsets';
 import {
   deleteClefChange,
   findClefChange,
@@ -84,6 +88,7 @@ import { useAnnotationCommands } from './useAnnotationCommands';
 import { useScoreCommands } from './useScoreCommands';
 import type {
   AnnotationContextMenuState,
+  AnnotationTarget,
   ClefChangeTarget,
 } from './selectionTypes';
 import {
@@ -216,6 +221,8 @@ function SheetLabApp() {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [annotationContextMenu, setAnnotationContextMenu] =
     useState<AnnotationContextMenuState | null>(null);
+  const [selectedAnnotation, setSelectedAnnotation] =
+    useState<AnnotationTarget | null>(null);
   const notationViewportRef = useRef<HTMLDivElement | null>(null);
   const { canvasZoom, handleCanvasZoomChange } =
     useCanvasZoom(notationViewportRef);
@@ -224,6 +231,7 @@ function SheetLabApp() {
     clearPointerState();
     clearMeasureUiState();
     setAnnotationContextMenu(null);
+    setSelectedAnnotation(null);
     clearSelection();
   }
 
@@ -346,6 +354,7 @@ function SheetLabApp() {
   ) {
     updateToolState({ clefChange: null, isInputArmed: false });
     clearPointerState();
+    setSelectedAnnotation(null);
     openMeasureContextMenu({ staffId, measureIndex }, clientX, clientY);
     setEditorMessage('Measure selected');
   }
@@ -434,6 +443,7 @@ function SheetLabApp() {
     updateToolState({ clefChange: null, isInputArmed: false, tuplet: null });
     clearPointerState();
     clearMeasureUiState();
+    setSelectedAnnotation(null);
     selectClefChange(target);
     setEditorMessage(
       foundClefChange
@@ -534,8 +544,19 @@ function SheetLabApp() {
     updateToolState({ clefChange: null, isInputArmed: false, tuplet: null });
     clearPointerState();
     clearMeasureUiState();
+    setSelectedAnnotation(null);
     selectMeasure({ staffId, measureIndex });
     setEditorMessage('Measure selected');
+  }
+
+  function handleSelectAnnotation(target: AnnotationTarget) {
+    updateToolState({ clefChange: null, isInputArmed: false, tuplet: null });
+    clearPointerState();
+    clearMeasureUiState();
+    setAnnotationContextMenu(null);
+    selectEvent(target.eventId, null);
+    setSelectedAnnotation(target);
+    setEditorMessage('Annotation selected');
   }
 
   const {
@@ -550,6 +571,7 @@ function SheetLabApp() {
     clearPointerState,
     commitScoreChange,
     score,
+    selectAnnotation: handleSelectAnnotation,
     selectEvent,
     selectedEventId,
     setAnnotationContextMenu,
@@ -573,6 +595,7 @@ function SheetLabApp() {
           : toolState.voiceIndex,
     });
     clearPointerState();
+    setSelectedAnnotation(null);
     selectEvent(selectionEventId, selectedPitchIndex);
     setEditorMessage(
       selectedPitchIndex !== null && selectedPitchIndex !== undefined
@@ -840,6 +863,56 @@ function SheetLabApp() {
     void handlePlaybackToggle();
   }
 
+  function handleSelectedAnnotationNudge({
+    deltaX = 0,
+    deltaY = 0,
+    reset = false,
+  }: {
+    deltaX?: number;
+    deltaY?: number;
+    reset?: boolean;
+  }) {
+    if (!selectedAnnotation) {
+      return;
+    }
+
+    const found = findScoreEvent(score, selectedAnnotation.eventId);
+
+    if (!found) {
+      setSelectedAnnotation(null);
+      setEditorMessage('Annotation not found');
+      return;
+    }
+
+    const currentOffset = getEventAnnotationOffset(
+      found.event,
+      selectedAnnotation.kind,
+    );
+    const nextOffset = reset
+      ? { x: 0, y: 0 }
+      : {
+          x: currentOffset.x + deltaX,
+          y: currentOffset.y + deltaY,
+        };
+    const result = tryUpdateScoreEvent(score, selectedAnnotation.eventId, {
+      annotationOffset: {
+        kind: selectedAnnotation.kind,
+        offset: nextOffset,
+      },
+    });
+
+    if (result.updated) {
+      commitScoreChange(
+        result.score,
+        reset ? 'Annotation position reset' : 'Annotation nudged',
+      );
+      selectEvent(selectedAnnotation.eventId, null);
+      setSelectedAnnotation(selectedAnnotation);
+    } else {
+      setEditorMessage(`Cannot move annotation: ${result.reason}`);
+    }
+  }
+
   const canUseTrebleStaff = scoreHasStaff(score, 'treble');
   const canUseBassStaff = scoreHasStaff(score, 'bass');
   const commandPaletteCommands: CommandPaletteCommand[] = [
@@ -1038,6 +1111,7 @@ function SheetLabApp() {
     onKeyboardCursorMove: handleKeyboardCursorMove,
     onKeyboardPitchStepInput: handleKeyboardPitchStepInput,
     onKeyboardPlaceAtCursor: handleKeyboardPlaceAtCursor,
+    onNudgeSelectedAnnotation: handleSelectedAnnotationNudge,
     onPlacementModeShortcut: handlePlacementModeChange,
     onPlaybackShortcut: handlePlaybackShortcut,
     onRedo: handleRedo,
@@ -1049,6 +1123,7 @@ function SheetLabApp() {
     pastScores,
     score,
     selectedClefChange,
+    selectedAnnotation,
     selectedEventId,
     selectedMeasure,
     selectedPitchIndex,
@@ -1238,6 +1313,7 @@ function SheetLabApp() {
           pendingMeasureDelete={pendingMeasureDelete}
           playbackBeat={playbackBeat}
           score={score}
+          selectedAnnotation={selectedAnnotation}
           selectedClefChange={selectedClefChange}
           selectedEventId={selectedEventId}
           selectedMeasure={selectedMeasure}
@@ -1261,6 +1337,7 @@ function SheetLabApp() {
           onMoveClefChange={handleMoveClefChange}
           onPlaceAtPosition={handlePlaceAtPosition}
           onRequestDeleteMeasure={handleRequestDeleteMeasure}
+          onSelectAnnotation={handleSelectAnnotation}
           onSelectEvent={handleSelectEvent}
           onSelectClefChange={handleSelectClefChange}
           onSelectMeasure={handleSelectMeasure}

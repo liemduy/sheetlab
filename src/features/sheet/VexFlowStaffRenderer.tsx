@@ -69,7 +69,6 @@ import {
   SVG_NAMESPACE,
   drawSystemStartClefChangeMarkers,
   tagRenderedClefChangeElement,
-  tagRenderedFermataElements,
 } from './vexflowSvgTagging';
 import { collectRenderedMeasureEventLayouts } from './vexflowLayoutCollector';
 
@@ -226,9 +225,8 @@ function drawVexFlowMeasureEvents({
     .formatToStave(vexFlowVoices, stave, {
       alignRests: true,
       context,
-    });
+  });
   vexFlowVoices.forEach((voice) => voice.draw(context, stave));
-  tagRenderedFermataElements({ context, renderedVoices });
   renderedVoices
     .flatMap(({ clefNotes }) => clefNotes)
     .forEach(({ change, note }) => {
@@ -676,6 +674,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         onMeasureContextMenu={props.onMeasureContextMenu}
         onAnnotationContextMenu={props.onAnnotationContextMenu}
         onAnnotationOffsetChange={props.onAnnotationOffsetChange}
+        onSelectAnnotation={props.onSelectAnnotation}
         onMoveEvent={props.onMoveEvent}
         onMoveClefChange={props.onMoveClefChange}
         onMoveKeySignatureSymbol={props.onMoveKeySignatureSymbol}
@@ -686,6 +685,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         playbackBeat={props.playbackBeat}
         placementMode={props.placementMode}
         score={props.score}
+        selectedAnnotation={props.selectedAnnotation}
         selectedEventId={props.selectedEventId}
         selectedClefChangeId={props.selectedClefChangeId}
         selectedMeasure={props.selectedMeasure}

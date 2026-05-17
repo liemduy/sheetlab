@@ -1,5 +1,5 @@
-import type { Articulation as VexFlowArticulation, Renderer, StaveNote } from 'vexflow';
-import type { ClefChange, Score, ScoreEvent, Staff } from '../../domain/score/types';
+import type { StaveNote } from 'vexflow';
+import type { ClefChange, Score, Staff } from '../../domain/score/types';
 import { getMeasureClefChanges } from '../../domain/score/clefChanges';
 import {
   STAFF_LINE_SPACING,
@@ -7,7 +7,6 @@ import {
   getMeasureX,
   getScoreStaffTop,
 } from './layout';
-import { isVexFlowFermataArticulation } from './vexflowNoteFactory';
 
 export const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 export const CLEF_CHANGE_BEAT_EPSILON = 0.0001;
@@ -187,75 +186,6 @@ export function drawSystemStartClefChangeMarkers(
           group.appendChild(rect);
           svg.appendChild(group);
         });
-    });
-  });
-}
-
-export function tagRenderedFermataElements({
-  context,
-  renderedVoices,
-}: {
-  context: ReturnType<Renderer['getContext']>;
-  renderedVoices: Array<{
-    events: ScoreEvent[];
-    notes: StaveNote[];
-  }>;
-}) {
-  const svg = (context as { svg?: SVGSVGElement }).svg;
-
-  if (!svg) {
-    return;
-  }
-
-  const taggedElements = new Set<SVGTextElement>();
-
-  renderedVoices.forEach(({ events, notes }) => {
-    notes.forEach((note, noteIndex) => {
-      const event = events[noteIndex];
-
-      if (!event?.fermata) {
-        return;
-      }
-
-      const fermata = note
-        .getModifiersByType('Articulation')
-        .find(isVexFlowFermataArticulation);
-
-      if (!fermata) {
-        return;
-      }
-
-      const renderedFermata = fermata as VexFlowArticulation & {
-        x?: number;
-        y?: number;
-      };
-      const targetX = (renderedFermata.x ?? note.getAbsoluteX()) + fermata.getXShift();
-      const targetY = (renderedFermata.y ?? note.getYs()[0] ?? 0) + fermata.getYShift();
-      const candidates = [...svg.querySelectorAll('text')].filter(
-        (element): element is SVGTextElement =>
-          element.textContent === fermata.getText() && !taggedElements.has(element),
-      );
-      const bestElement = candidates.reduce<{
-        distance: number;
-        element: SVGTextElement;
-      } | null>((best, element) => {
-        const x = Number(element.getAttribute('x'));
-        const y = Number(element.getAttribute('y'));
-        const distance = Math.hypot(x - targetX, y - targetY);
-
-        return !best || distance < best.distance
-          ? { distance, element }
-          : best;
-      }, null)?.element;
-
-      if (!bestElement) {
-        return;
-      }
-
-      taggedElements.add(bestElement);
-      bestElement.classList.add('sheetlab-fermata');
-      bestElement.setAttribute('data-event-id', event.id);
-      bestElement.setAttribute('data-testid', 'rendered-fermata');
     });
   });
 }

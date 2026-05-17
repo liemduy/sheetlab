@@ -274,6 +274,7 @@ export function drawTextAnnotations(
         '.sheetlab-section-marker',
         '.sheetlab-tempo-mark',
         '.sheetlab-dynamic',
+        '.sheetlab-fermata',
         '.sheetlab-pedal',
       ].join(', '),
     )
@@ -549,6 +550,21 @@ export function drawTextAnnotations(
                 kind: 'dynamic',
                 testId: 'rendered-dynamic',
                 text: event.dynamic,
+              });
+            }
+
+            if (event.fermata) {
+              const text = getEventAnnotationText(event, 'fermata');
+
+              if (!text) {
+                return;
+              }
+
+              drawEventAnnotation({
+                className: 'sheetlab-fermata',
+                kind: 'fermata',
+                testId: 'rendered-fermata',
+                text,
               });
             }
 

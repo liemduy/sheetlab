@@ -7,7 +7,10 @@ import type {
   Score,
 } from '../../domain/score/types';
 import type { EditorToolState } from '../editor/editorState';
-import type { AnnotationContextMenuState } from './selectionTypes';
+import type {
+  AnnotationContextMenuState,
+  AnnotationTarget,
+} from './selectionTypes';
 
 interface UseAnnotationCommandsParams {
   annotationContextMenu: AnnotationContextMenuState | null;
@@ -15,6 +18,7 @@ interface UseAnnotationCommandsParams {
   clearPointerState: () => void;
   commitScoreChange: (nextScore: Score, message: string) => void;
   score: Score;
+  selectAnnotation: (target: AnnotationTarget) => void;
   selectEvent: (eventId: string, pitchIndex?: number | null) => void;
   selectedEventId: string | null;
   setAnnotationContextMenu: Dispatch<
@@ -30,6 +34,7 @@ export function useAnnotationCommands({
   clearPointerState,
   commitScoreChange,
   score,
+  selectAnnotation,
   selectEvent,
   selectedEventId,
   setAnnotationContextMenu,
@@ -63,6 +68,7 @@ export function useAnnotationCommands({
     clearPointerState();
     clearMeasureUiState();
     selectEvent(eventId, null);
+    selectAnnotation({ eventId, kind });
     setAnnotationContextMenu({ clientX, clientY, eventId, kind });
     setEditorMessage('Annotation selected');
   }
@@ -108,6 +114,8 @@ export function useAnnotationCommands({
     if (result.updated) {
       commitScoreChange(result.score, 'Annotation position adjusted');
       selectEvent(eventId, null);
+      selectAnnotation({ eventId, kind });
+      setEditorMessage('Annotation position adjusted');
     } else {
       setEditorMessage(`Cannot move annotation: ${result.reason}`);
     }

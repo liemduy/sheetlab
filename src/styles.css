@@ -1315,10 +1315,25 @@ button {
   fill: transparent;
   cursor: grab;
   pointer-events: all;
+  stroke: transparent;
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
 }
 
 .annotation-hit-target:active {
   cursor: grabbing;
+}
+
+.annotation-hit-target:hover,
+.annotation-hit-target:focus-visible {
+  fill: rgb(43 103 255 / 7%);
+  stroke: rgb(43 103 255 / 24%);
+}
+
+.annotation-hit-target.is-selected {
+  fill: rgb(43 103 255 / 12%);
+  stroke: #2b67ff;
+  stroke-dasharray: 4 3;
 }
 
 .annotation-drag-preview {

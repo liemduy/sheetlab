@@ -10,7 +10,10 @@ import {
   type SupportedTupletActualNotes,
 } from '../../domain/score/tuplets';
 import type { EntryMode, PlacementMode } from '../editor/editorState';
-import type { ClefChangeTarget } from './selectionTypes';
+import type {
+  AnnotationTarget,
+  ClefChangeTarget,
+} from './selectionTypes';
 
 interface UseEditorShortcutsOptions {
   futureScores: Score[];
@@ -31,6 +34,11 @@ interface UseEditorShortcutsOptions {
   }) => void;
   onKeyboardPitchStepInput: (step: NoteStep) => void;
   onKeyboardPlaceAtCursor: () => void;
+  onNudgeSelectedAnnotation: (change: {
+    deltaX?: number;
+    deltaY?: number;
+    reset?: boolean;
+  }) => void;
   onPlacementModeShortcut: (placementMode: PlacementMode) => void;
   onPlaybackShortcut: () => void;
   onDeleteClefChange: (target?: ClefChangeTarget | null) => void;
@@ -45,6 +53,7 @@ interface UseEditorShortcutsOptions {
   pastScores: Score[];
   score: Score;
   selectedClefChange: ClefChangeTarget | null;
+  selectedAnnotation: AnnotationTarget | null;
   selectedEventId: string | null;
   selectedMeasure: {
     staffId: StaffId;
@@ -89,6 +98,7 @@ export function useEditorShortcuts({
   onKeyboardCursorMove,
   onKeyboardPitchStepInput,
   onKeyboardPlaceAtCursor,
+  onNudgeSelectedAnnotation,
   onPlacementModeShortcut,
   onPlaybackShortcut,
   onDeleteClefChange,
@@ -103,6 +113,7 @@ export function useEditorShortcuts({
   pastScores,
   score,
   selectedClefChange,
+  selectedAnnotation,
   selectedEventId,
   selectedMeasure,
   selectedPitchIndex,
@@ -213,6 +224,12 @@ export function useEditorShortcuts({
           return;
         }
 
+        if (selectedAnnotation && event.key === '0') {
+          event.preventDefault();
+          onNudgeSelectedAnnotation({ reset: true });
+          return;
+        }
+
         if (event.key === ' ' && !isInputArmed) {
           event.preventDefault();
           onPlaybackShortcut();
@@ -267,6 +284,22 @@ export function useEditorShortcuts({
       }
 
       if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        if (
+          selectedAnnotation &&
+          !isModifierShortcut &&
+          !event.altKey &&
+          !isInputArmed &&
+          !inputCursorActive
+        ) {
+          event.preventDefault();
+          const step = event.shiftKey ? 5 : 1;
+
+          onNudgeSelectedAnnotation({
+            deltaY: event.key === 'ArrowUp' ? -step : step,
+          });
+          return;
+        }
+
         if (isInputArmed || inputCursorActive) {
           event.preventDefault();
           onKeyboardCursorMove({
@@ -289,6 +322,23 @@ export function useEditorShortcuts({
         event.key === 'PageUp' ||
         event.key === 'PageDown'
       ) {
+        if (
+          selectedAnnotation &&
+          !isModifierShortcut &&
+          !event.altKey &&
+          !isInputArmed &&
+          !inputCursorActive &&
+          (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+        ) {
+          event.preventDefault();
+          const step = event.shiftKey ? 5 : 1;
+
+          onNudgeSelectedAnnotation({
+            deltaX: event.key === 'ArrowLeft' ? -step : step,
+          });
+          return;
+        }
+
         if (!isInputArmed && !inputCursorActive) {
           if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
             event.preventDefault();
@@ -329,6 +379,7 @@ export function useEditorShortcuts({
     onKeyboardCursorMove,
     onKeyboardPitchStepInput,
     onKeyboardPlaceAtCursor,
+    onNudgeSelectedAnnotation,
     onPlacementModeShortcut,
     onPlaybackShortcut,
     onRedo,
@@ -340,6 +391,7 @@ export function useEditorShortcuts({
     pastScores,
     score,
     selectedClefChange,
+    selectedAnnotation,
     selectedEventId,
     selectedMeasure,
     selectedPitchIndex,

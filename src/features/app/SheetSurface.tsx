@@ -17,6 +17,7 @@ import type {
 } from '../../domain/score/types';
 import type {
   AnnotationContextMenuState,
+  AnnotationTarget,
   ClefChangeTarget,
   MeasureContextMenuState,
   MeasureTarget,
@@ -37,6 +38,7 @@ interface SheetSurfaceProps {
   pendingMeasureDelete: MeasureTarget | null;
   playbackBeat: number | null;
   score: Score;
+  selectedAnnotation: AnnotationTarget | null;
   selectedEventId: string | null;
   selectedClefChange: ClefChangeTarget | null;
   selectedMeasure: MeasureTarget | null;
@@ -59,6 +61,7 @@ interface SheetSurfaceProps {
     kind: AnnotationKind,
     offset: { x: number; y: number },
   ) => void;
+  onSelectAnnotation: (target: AnnotationTarget) => void;
   onDeleteEvent: (eventId: string, pitchIndex?: number | null) => void;
   onHoverPositionChange: (position: MusicPosition | null) => void;
   onLyricMapChange: (eventId: string, targetEventIds: string[]) => void;
@@ -114,6 +117,7 @@ export function SheetSurface({
   pendingMeasureDelete,
   playbackBeat,
   score,
+  selectedAnnotation,
   selectedEventId,
   selectedClefChange,
   selectedMeasure,
@@ -138,6 +142,7 @@ export function SheetSurface({
   onPlaceAtPosition,
   onRequestDeleteMeasure,
   onSelectEvent,
+  onSelectAnnotation,
   onSelectClefChange,
   onSelectMeasure,
   onSetAnnotationContextMenu,
@@ -227,6 +232,7 @@ export function SheetSurface({
             playbackBeat={playbackBeat}
             placementMode={toolState.placementMode}
             selectedEventId={selectedEventId}
+            selectedAnnotation={selectedAnnotation}
             selectedPitchIndex={selectedPitchIndex}
             score={score}
             showLayoutZones={toolState.showLayoutZones}
@@ -235,6 +241,7 @@ export function SheetSurface({
             onClearInteraction={onClearInteraction}
             onAnnotationContextMenu={onAnnotationContextMenu}
             onAnnotationOffsetChange={onAnnotationOffsetChange}
+            onSelectAnnotation={onSelectAnnotation}
             onHoverPositionChange={onHoverPositionChange}
             onLyricMapChange={onLyricMapChange}
             onPlaceAtPosition={onPlaceAtPosition}
@@ -301,6 +308,20 @@ export function SheetSurface({
             onClick={() => onAnnotationPlacementChange('auto')}
           >
             Auto
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onAnnotationOffsetChange(
+                annotationContextMenu.eventId,
+                annotationContextMenu.kind,
+                { x: 0, y: 0 },
+              );
+              onSetAnnotationContextMenu(null);
+            }}
+          >
+            Reset position
           </button>
           <button
             type="button"

@@ -1260,6 +1260,16 @@ describe('App editor state', () => {
     });
 
     expect(screen.getByTestId('annotation-context-menu')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        container.querySelector(
+          '[data-testid="annotation-hit-target"][data-annotation-kind="pedal"]',
+        ),
+      ).toHaveAttribute('data-annotation-selected', 'true');
+    });
+    expect(
+      screen.getByRole('menuitem', { name: 'Reset position' }),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move below' }));
 
     await waitFor(() => {
@@ -1342,13 +1352,44 @@ describe('App editor state', () => {
     });
     expect(screen.getByTestId('rendered-lyric')).toHaveAttribute(
       'data-annotation-offset-y',
-      '-16',
+      '-8',
     );
     expect(
       within(screen.getByLabelText('Current editor state')).getByText(
         'Annotation position adjusted',
       ),
     ).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-lyric')).toHaveAttribute(
+        'data-annotation-offset-x',
+        '23',
+      );
+    });
+
+    fireEvent.keyDown(window, { key: 'ArrowDown', shiftKey: true });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-lyric')).toHaveAttribute(
+        'data-annotation-offset-y',
+        '-3',
+      );
+    });
+
+    fireEvent.keyDown(window, { key: '0' });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-lyric')).toHaveAttribute(
+        'data-annotation-offset-x',
+        '0',
+      );
+    });
+    expect(screen.getByTestId('rendered-lyric')).toHaveAttribute(
+      'data-annotation-offset-y',
+      '0',
+    );
   });
 
   it('toggles combinable articulations on the selected note', async () => {

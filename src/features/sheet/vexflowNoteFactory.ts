@@ -51,24 +51,10 @@ const ARTICULATION_RENDER_ORDER: ArticulationKind[] = [
   'marcato',
 ];
 
-const VEXFLOW_FERMATA_GLYPHS = new Set([
-  String.fromCodePoint(0xe4c0),
-  String.fromCodePoint(0xe4c1),
-]);
-
 export function getVexFlowEventClasses(event: ScoreEvent) {
   return isGeneratedRestEvent(event)
     ? 'vf-score-event vf-generated-rest'
     : 'vf-score-event vf-user-event';
-}
-
-export function isVexFlowFermataArticulation(
-  modifier: unknown,
-): modifier is VexFlowArticulation {
-  return (
-    modifier instanceof VexFlowArticulation &&
-    VEXFLOW_FERMATA_GLYPHS.has(modifier.getText())
-  );
 }
 
 export function createVexFlowNote(
@@ -131,17 +117,6 @@ export function createVexFlowNote(
       staveNote.addModifier(vexFlowArticulation, 0);
     });
 
-    if (event.fermata) {
-      const vexFlowFermata = new VexFlowArticulation('a@').setPosition(
-        modifierDirection === 'down'
-          ? ModifierPosition.BELOW
-          : ModifierPosition.ABOVE,
-      );
-
-      vexFlowFermata.setAttribute('data-event-id', event.id);
-      vexFlowFermata.setAttribute('data-testid', 'rendered-fermata');
-      staveNote.addModifier(vexFlowFermata, 0);
-    }
   }
 
   if (eventDots > 0) {

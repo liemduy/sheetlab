@@ -21,4 +21,9 @@ export interface AnnotationContextMenuState {
   kind: AnnotationKind;
 }
 
+export interface AnnotationTarget {
+  eventId: string;
+  kind: AnnotationKind;
+}
+
 export type SelectionSource = 'manual';

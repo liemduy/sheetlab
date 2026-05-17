@@ -216,6 +216,7 @@ export function getEventAnnotationKinds(event: ScoreEvent) {
     event.chordSymbol ? 'chordSymbol' : null,
     event.lyric ? 'lyric' : null,
     event.dynamic ? 'dynamic' : null,
+    event.fermata ? 'fermata' : null,
     event.pedal ? 'pedal' : null,
   ].filter(Boolean) as AnnotationKind[]);
 }

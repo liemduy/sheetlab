@@ -2,6 +2,7 @@ import type { AnnotationKind, Clef, Score, StaffId } from '../../domain/score/ty
 import type { DurationValue } from '../../domain/score/types';
 import type { InputCursor } from '../editor/inputCursor';
 import type { EntryMode, PlacementMode } from '../editor/editorState';
+import type { AnnotationTarget } from '../app/selectionTypes';
 import type { MusicPosition } from './interaction';
 import { VexFlowStaffRenderer } from './VexFlowStaffRenderer';
 
@@ -34,6 +35,7 @@ export interface StaffRendererProps {
     kind: AnnotationKind,
     offset: { x: number; y: number },
   ) => void;
+  onSelectAnnotation?: (target: AnnotationTarget) => void;
   onLyricMapChange?: (eventId: string, targetEventIds: string[]) => void;
   onMoveEvent?: (
     eventId: string,
@@ -60,6 +62,7 @@ export interface StaffRendererProps {
   }) => void;
   onSelectMeasure?: (staffId: StaffId, measureIndex: number) => void;
   selectedClefChangeId?: string | null;
+  selectedAnnotation?: AnnotationTarget | null;
   selectedEventId?: string | null;
   selectedPitchIndex?: number | null;
   selectedMeasure?: { staffId: StaffId; measureIndex: number } | null;

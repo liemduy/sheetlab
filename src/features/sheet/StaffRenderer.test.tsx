@@ -3724,6 +3724,42 @@ describe('StaffRenderer', () => {
     expect(hitTarget).toHaveAttribute('data-annotation-offset-y', '-12');
   });
 
+  it('renders fermata as a draggable note annotation', async () => {
+    const noteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'fermata-annotation-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const fermataScore = tryUpdateScoreEvent(noteScore, 'fermata-annotation-note', {
+      fermata: true,
+    }).score;
+    const score = tryUpdateScoreEvent(fermataScore, 'fermata-annotation-note', {
+      annotationOffset: {
+        kind: 'fermata',
+        offset: { x: -10, y: 8 },
+      },
+    }).score;
+
+    render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-fermata')).toHaveAttribute(
+        'data-annotation-kind',
+        'fermata',
+      );
+    });
+
+    const hitTarget = screen.getByTestId('annotation-hit-target');
+
+    expect(hitTarget).toHaveAttribute('data-annotation-kind', 'fermata');
+    expect(hitTarget).toHaveAttribute('data-annotation-offset-x', '-10');
+    expect(hitTarget).toHaveAttribute('data-annotation-offset-y', '8');
+  });
+
   it('drags an annotation hit target within its bounded local offset range', async () => {
     const noteScore = placeScoreEvent(createEmptyScore('treble'), {
       eventId: 'drag-annotation-note',

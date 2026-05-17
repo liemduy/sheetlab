@@ -13,6 +13,7 @@ import { getEventDots } from '../../domain/score/events';
 import { clampAnnotationOffset } from '../../domain/score/annotationOffsets';
 import { getLyricMapTargetEventIds } from '../../domain/score/lyricMapping';
 import { getActiveClef } from '../../domain/score/clefChanges';
+import type { AnnotationTarget } from '../app/selectionTypes';
 import type { EntryMode, PlacementMode } from '../editor/editorState';
 import type { InputCursor } from '../editor/inputCursor';
 import {
@@ -70,6 +71,7 @@ import {
   AnnotationDragPreview,
   AnnotationHitTargets,
 } from './OverlayAnnotationLayer';
+import { resolveAnnotationDragOffset } from './annotationDrag';
 import {
   LyricMapConnectors,
   LyricMapPreview,
@@ -122,6 +124,7 @@ interface NotationOverlayProps {
     kind: AnnotationKind,
     offset: { x: number; y: number },
   ) => void;
+  onSelectAnnotation?: (target: AnnotationTarget) => void;
   onLyricMapChange?: (eventId: string, targetEventIds: string[]) => void;
   onMoveEvent?: (
     eventId: string,
@@ -152,6 +155,7 @@ interface NotationOverlayProps {
   score: Score;
   selectedEventId?: string | null;
   selectedClefChangeId?: string | null;
+  selectedAnnotation?: AnnotationTarget | null;
   selectedMeasure?: { staffId: StaffId; measureIndex: number } | null;
   selectedPitchIndex?: number | null;
   svgHeight: number;
@@ -185,6 +189,7 @@ export function NotationOverlay({
   onMoveKeySignatureSymbol,
   onAnnotationContextMenu,
   onAnnotationOffsetChange,
+  onSelectAnnotation,
   onLyricMapChange,
   onPlaceAtPosition,
   onDeleteEvent,
@@ -197,6 +202,7 @@ export function NotationOverlay({
   score,
   selectedEventId,
   selectedClefChangeId,
+  selectedAnnotation,
   selectedMeasure,
   selectedPitchIndex,
   showLayoutZones = false,
@@ -611,9 +617,13 @@ export function NotationOverlay({
             ...annotationDragState,
             hasMoved,
             previewOffset: hasMoved
-              ? clampAnnotationOffset({
-                  x: annotationDragState.startOffsetX + svgDeltaX,
-                  y: annotationDragState.startOffsetY + svgDeltaY,
+              ? resolveAnnotationDragOffset({
+                  eventLayout: eventLayouts[annotationDragState.layout.eventId],
+                  layout: annotationDragState.layout,
+                  offset: clampAnnotationOffset({
+                    x: annotationDragState.startOffsetX + svgDeltaX,
+                    y: annotationDragState.startOffsetY + svgDeltaY,
+                  }),
                 })
               : annotationDragState.previewOffset,
           });
@@ -1055,6 +1065,8 @@ export function NotationOverlay({
       <AnnotationHitTargets
         layouts={annotationLayouts}
         onAnnotationContextMenu={onAnnotationContextMenu}
+        onSelectAnnotation={onSelectAnnotation}
+        selectedAnnotation={selectedAnnotation}
         onAnnotationStartDrag={(layout, dragEvent) => {
           const startPoint = getNestedSvgPoint(dragEvent);
 
