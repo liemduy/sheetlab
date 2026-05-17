@@ -56,18 +56,18 @@ export function useProjectActions({
 
   function handleSaveProject() {
     saveProjectToStorage(score);
-    setEditorMessage('Project saved');
+    setEditorMessage('Project saved locally');
   }
 
   function handleLoadProject() {
     const storedScore = loadProjectFromStorage();
 
     if (!storedScore) {
-      setEditorMessage('No saved project');
+      setEditorMessage('No saved project found');
       return;
     }
 
-    onScoreLoaded(storedScore, 'Project loaded');
+    onScoreLoaded(storedScore, 'Saved project loaded');
   }
 
   async function handleImportProjectFile(fileList: FileList | null) {
@@ -80,11 +80,11 @@ export function useProjectActions({
     try {
       const importedScore = deserializeScore(await file.text());
 
-      onScoreLoaded(importedScore, 'Project imported', {
+      onScoreLoaded(importedScore, `JSON imported: ${file.name}`, {
         closePalette: true,
       });
     } catch {
-      setEditorMessage('Invalid JSON project');
+      setEditorMessage('Invalid JSON project file');
     } finally {
       if (importInputRef.current) {
         importInputRef.current.value = '';
@@ -107,16 +107,16 @@ export function useProjectActions({
       onScoreLoaded(
         importedScore,
         warnings.length > 0
-          ? `ABC imported with ${warnings.length} warning${
+          ? `ABC imported: ${warnings.length} warning${
               warnings.length === 1 ? '' : 's'
             }`
-          : 'ABC imported',
+          : `ABC imported: ${file.name}`,
         {
           closePalette: true,
         },
       );
     } catch {
-      setEditorMessage('Invalid ABC notation');
+      setEditorMessage('Invalid ABC notation file');
     } finally {
       if (importAbcInputRef.current) {
         importAbcInputRef.current.value = '';
@@ -125,20 +125,24 @@ export function useProjectActions({
   }
 
   function handleDownloadProject() {
+    const fileName = `${getDownloadBaseName(score)}.json`;
+
     downloadBlob(
       createProjectJsonBlob(score),
-      `${score.title || 'sheetlab-project'}.json`,
+      fileName,
     );
-    setEditorMessage('JSON downloaded');
+    setEditorMessage(`JSON downloaded: ${fileName}`);
   }
 
   function handleDownloadAbc() {
-    downloadBlob(createAbcNotationBlob(score), getAbcNotationFileName(score));
-    setEditorMessage('ABC downloaded');
+    const fileName = getAbcNotationFileName(score);
+
+    downloadBlob(createAbcNotationBlob(score), fileName);
+    setEditorMessage(`ABC downloaded: ${fileName}`);
   }
 
   async function handleExportPdf() {
-    setEditorMessage('Exporting PDF');
+    setEditorMessage('Exporting PDF...');
 
     try {
       const response = await fetch('/api/export-pdf', {
@@ -153,10 +157,12 @@ export function useProjectActions({
         throw new Error('PDF export failed');
       }
 
-      downloadBlob(await response.blob(), `${getDownloadBaseName(score)}.pdf`);
-      setEditorMessage('PDF downloaded');
+      const fileName = `${getDownloadBaseName(score)}.pdf`;
+
+      downloadBlob(await response.blob(), fileName);
+      setEditorMessage(`PDF downloaded: ${fileName}`);
     } catch {
-      setEditorMessage('PDF export failed');
+      setEditorMessage('PDF export failed; review validation status');
     }
   }
 

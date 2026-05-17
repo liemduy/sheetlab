@@ -2,6 +2,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { tryUpdateScoreEvent } from '../../domain/score/editing';
 import type {
   AnnotationKind,
+  AnnotationOffset,
   AnnotationPlacementSide,
   Score,
 } from '../../domain/score/types';
@@ -92,6 +93,26 @@ export function useAnnotationCommands({
     setAnnotationContextMenu(null);
   }
 
+  function handleAnnotationOffsetChange(
+    eventId: string,
+    kind: AnnotationKind,
+    offset: AnnotationOffset,
+  ) {
+    const result = tryUpdateScoreEvent(score, eventId, {
+      annotationOffset: {
+        kind,
+        offset,
+      },
+    });
+
+    if (result.updated) {
+      commitScoreChange(result.score, 'Annotation position adjusted');
+      selectEvent(eventId, null);
+    } else {
+      setEditorMessage(`Cannot move annotation: ${result.reason}`);
+    }
+  }
+
   function handleLyricMapChange(eventId: string, targetEventIds: string[]) {
     const result = tryUpdateScoreEvent(score, eventId, {
       lyricMap: { eventIds: targetEventIds },
@@ -107,6 +128,7 @@ export function useAnnotationCommands({
 
   return {
     handleAnnotationContextMenu,
+    handleAnnotationOffsetChange,
     handleAnnotationPlacementChange,
     handleLyricMapChange,
     handleSelectedEventAnnotationChange,

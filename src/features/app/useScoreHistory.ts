@@ -5,6 +5,7 @@ import {
 } from 'react';
 import type { Score, StaffId } from '../../domain/score/types';
 import { getMeasureKey } from '../sheet/measureKey';
+import { formatEditorMessage } from './editorFeedback';
 
 const INVALID_MEASURE_FLASH_MS = 700;
 
@@ -13,7 +14,7 @@ export function useScoreHistory(initialScore: Score) {
   const [invalidMeasureKeys, setInvalidMeasureKeys] = useState<string[]>([]);
   const [pastScores, setPastScores] = useState<Score[]>([]);
   const [futureScores, setFutureScores] = useState<Score[]>([]);
-  const [editorMessage, setEditorMessage] = useState('Ready');
+  const [editorMessage, setRawEditorMessage] = useState('Ready');
   const invalidMeasureFlashTimers = useRef(new Map<string, number>());
 
   useEffect(() => () => {
@@ -22,6 +23,10 @@ export function useScoreHistory(initialScore: Score) {
     });
     invalidMeasureFlashTimers.current.clear();
   }, []);
+
+  function setEditorMessage(message: string) {
+    setRawEditorMessage(formatEditorMessage(message));
+  }
 
   function commitScoreChange(nextScore: Score, message: string) {
     setPastScores((currentPast) => [...currentPast, score]);

@@ -18,6 +18,7 @@ import {
   tryPlaceTupletGroup,
   tryUpdateScoreEvent,
 } from './editing';
+import { ANNOTATION_OFFSET_LIMIT } from './annotationOffsets';
 import type { Score, StaffId } from './types';
 import { getMeasureTicks } from './ticks';
 import { getEventDurationTicks } from './eventDuration';
@@ -1261,6 +1262,52 @@ describe('score editing', () => {
     ).toBeUndefined();
     expect(
       findScoreEvent(cleared.score, 'event-annotate-me')?.event.lyricMap,
+    ).toBeUndefined();
+  });
+
+  it('stores bounded manual annotation offsets and clears them when placement is reset', () => {
+    const score = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'event-offset-annotation',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const offsetScore = tryUpdateScoreEvent(score, 'event-offset-annotation', {
+      lyric: 'drag',
+      annotationOffset: {
+        kind: 'lyric',
+        offset: { x: 999, y: -999 },
+      },
+    });
+    const resetScore = tryUpdateScoreEvent(
+      offsetScore.score,
+      'event-offset-annotation',
+      {
+        annotationPlacement: {
+          kind: 'lyric',
+          side: 'auto',
+        },
+      },
+    );
+
+    expect(offsetScore.updated).toBe(true);
+    expect(findScoreEvent(offsetScore.score, 'event-offset-annotation')?.event)
+      .toMatchObject({
+        annotationOffsets: {
+          lyric: {
+            x: ANNOTATION_OFFSET_LIMIT.x,
+            y: -ANNOTATION_OFFSET_LIMIT.y,
+          },
+        },
+        lyric: 'drag',
+      });
+    expect(resetScore.updated).toBe(true);
+    expect(
+      findScoreEvent(resetScore.score, 'event-offset-annotation')?.event
+        .annotationOffsets,
     ).toBeUndefined();
   });
 

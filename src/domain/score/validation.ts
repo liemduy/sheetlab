@@ -2,6 +2,7 @@ import type {
   Accidental,
   ArticulationKind,
   AnnotationKind,
+  AnnotationOffset,
   AnnotationPlacementSide,
   Clef,
   ClefChange,
@@ -24,6 +25,7 @@ import type {
   TupletInfo,
 } from './types';
 import { isArticulationKind } from './articulations';
+import { ANNOTATION_OFFSET_LIMIT } from './annotationOffsets';
 import { isRepeatJumpKind } from './repeatJumps';
 import { isStemDirection } from './stemDirection';
 
@@ -135,6 +137,27 @@ function isAnnotationPlacements(value: unknown) {
   );
 }
 
+function isAnnotationOffset(value: unknown): value is AnnotationOffset {
+  return (
+    isRecord(value) &&
+    isNumber(value.x) &&
+    Math.abs(value.x) <= ANNOTATION_OFFSET_LIMIT.x &&
+    isNumber(value.y) &&
+    Math.abs(value.y) <= ANNOTATION_OFFSET_LIMIT.y
+  );
+}
+
+function isAnnotationOffsets(value: unknown) {
+  return (
+    isRecord(value) &&
+    Object.entries(value).every(
+      ([key, offset]) =>
+        ANNOTATION_KINDS.has(key as AnnotationKind) &&
+        isAnnotationOffset(offset),
+    )
+  );
+}
+
 function isLyricMap(value: unknown): value is LyricMap {
   return (
     isRecord(value) &&
@@ -211,6 +234,8 @@ function isScoreEvent(value: unknown): value is ScoreEvent {
       HAIRPIN_MARKS.has(value.hairpin as HairpinMark)) &&
     (value.annotationPlacements === undefined ||
       isAnnotationPlacements(value.annotationPlacements)) &&
+    (value.annotationOffsets === undefined ||
+      isAnnotationOffsets(value.annotationOffsets)) &&
     (value.lyric === undefined || isString(value.lyric)) &&
     (value.lyricMap === undefined || isLyricMap(value.lyricMap)) &&
     (value.pedal === undefined || PEDAL_MARKS.has(value.pedal as PedalMark)) &&

@@ -139,6 +139,12 @@ describe('App editor state', () => {
     expect(
       within(screen.getByLabelText('Current editor state')).getByText('Select'),
     ).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText('Composer flow')).getByText('Score is empty'),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Empty score composer state')).toHaveTextContent(
+      'Select mode',
+    );
     expect(document.querySelector('.paper-a4')).not.toBeNull();
     expect(screen.queryByText(/notation surface/i)).not.toBeInTheDocument();
     expect(screen.getByText('96 BPM')).toBeInTheDocument();
@@ -229,7 +235,9 @@ describe('App editor state', () => {
     );
     expect(screen.queryByTestId('score-event')).not.toBeInTheDocument();
     expect(
-      within(screen.getByLabelText('Current editor state')).getByText('treble M1'),
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'treble measure 1',
+      ),
     ).toBeInTheDocument();
     expect(
       within(screen.getByLabelText('Current editor state')).getByText(
@@ -371,6 +379,11 @@ describe('App editor state', () => {
       'data-beat',
       '0',
     );
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'Eighth entry: treble M1 B1 C4',
+      ),
+    ).toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: 'E' });
 
@@ -696,6 +709,12 @@ describe('App editor state', () => {
 
     expect(screen.getByTestId('score-event')).toBeInTheDocument();
     expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText('Empty score composer state'),
+    ).not.toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText('Composer flow')).getByText('Quarter note ready'),
+    ).toBeInTheDocument();
     expect(screen.queryByTestId('score-event-delete')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
   });
@@ -756,7 +775,7 @@ describe('App editor state', () => {
     expect(screen.queryByTestId('selected-notehead')).not.toBeInTheDocument();
     expect(
       within(screen.getByLabelText('Current editor state')).getByText(
-        'event-3 pitch 2',
+        'Quarter chord E4 M1 B1',
       ),
     ).toBeInTheDocument();
     expect(screen.getByTestId('score-event-delete')).toHaveAttribute(
@@ -1040,7 +1059,9 @@ describe('App editor state', () => {
       clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
     });
 
-    expect(screen.getByText('Cannot place: next-slot-required')).toBeInTheDocument();
+    expect(
+      screen.getByText('Cannot place: write at the next open rhythm slot'),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toHaveAttribute(
       'data-duration',
       'half',
@@ -1247,6 +1268,87 @@ describe('App editor state', () => {
         'below',
       );
     });
+  });
+
+  it('drags a rendered annotation around its attached note', async () => {
+    const { container } = render(<App />);
+    startWriting();
+
+    const overlay = screen.getByTestId('staff-renderer');
+    const bounds = setVisibleSheetBounds(overlay);
+    const notePoint = svgToClientPoint(
+      bounds,
+      getBeatX(0, 0, 4),
+      getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+      getOverlaySvgHeight(overlay),
+    );
+
+    fireEvent.mouseMove(overlay, notePoint);
+    fireEvent.click(overlay, notePoint);
+    await waitFor(() => {
+      expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select tool' }));
+    fireEvent.click(screen.getByLabelText('Note E4 measure 1 beat 1'));
+    fireEvent.change(screen.getByLabelText('Lyric'), {
+      target: { value: 'sing' },
+    });
+    fireEvent.blur(screen.getByLabelText('Lyric'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-lyric')).toHaveTextContent('sing');
+    });
+
+    const lyricTarget = container.querySelector(
+      '[data-testid="annotation-hit-target"][data-annotation-kind="lyric"]',
+    );
+
+    expect(lyricTarget).not.toBeNull();
+
+    const hitX =
+      Number(lyricTarget?.getAttribute('x')) +
+      Number(lyricTarget?.getAttribute('width')) / 2;
+    const hitY =
+      Number(lyricTarget?.getAttribute('y')) +
+      Number(lyricTarget?.getAttribute('height')) / 2;
+    const startPoint = svgToClientPoint(
+      bounds,
+      hitX,
+      hitY,
+      getOverlaySvgHeight(overlay),
+    );
+    const endPoint = svgToClientPoint(
+      bounds,
+      hitX + 22,
+      hitY - 16,
+      getOverlaySvgHeight(overlay),
+    );
+
+    fireEvent.mouseDown(lyricTarget as Element, { button: 0, ...startPoint });
+    fireEvent.mouseMove(overlay, endPoint);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('annotation-drag-preview')).toBeInTheDocument();
+    });
+
+    fireEvent.mouseUp(overlay, endPoint);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-lyric')).toHaveAttribute(
+        'data-annotation-offset-x',
+        '22',
+      );
+    });
+    expect(screen.getByTestId('rendered-lyric')).toHaveAttribute(
+      'data-annotation-offset-y',
+      '-16',
+    );
+    expect(
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'Annotation position adjusted',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('toggles combinable articulations on the selected note', async () => {
@@ -1527,7 +1629,9 @@ describe('App editor state', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Note E4 measure 1 beat 1' }));
 
     expect(
-      within(screen.getByLabelText('Current editor state')).getByText('event-1'),
+      within(screen.getByLabelText('Current editor state')).getByText(
+        'Quarter note E4 M1 B1',
+      ),
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
@@ -1746,7 +1850,9 @@ describe('App editor state', () => {
       clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
     });
 
-    expect(screen.getByText('Cannot place: measure-overflow')).toBeInTheDocument();
+    expect(
+      screen.getByText('Cannot place: the event would exceed this measure'),
+    ).toBeInTheDocument();
   });
 
   it('marks the resolved append measure when an overflowed note is clicked from the next measure', () => {
@@ -1773,7 +1879,9 @@ describe('App editor state', () => {
       clientY: getPitchY({ step: 'F', octave: 4 }, 'treble', 0),
     });
 
-    expect(screen.getByText('Cannot place: measure-overflow')).toBeInTheDocument();
+    expect(
+      screen.getByText('Cannot place: the event would exceed this measure'),
+    ).toBeInTheDocument();
     expect(screen.getByTestId('invalid-measure-warning')).toHaveAttribute(
       'data-measure-key',
       'treble:0',
@@ -1799,7 +1907,9 @@ describe('App editor state', () => {
         clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
       });
 
-      expect(screen.getByText('Cannot place triplet: event-overlap'))
+      expect(
+        screen.getByText('Cannot place triplet: this beat is already occupied'),
+      )
         .toBeInTheDocument();
       expect(screen.getByTestId('invalid-measure-warning')).toHaveAttribute(
         'data-measure-key',
@@ -2199,7 +2309,9 @@ describe('App editor state', () => {
       clientY: getPitchY({ step: 'D', octave: 4 }, 'treble', 0),
     });
 
-    expect(screen.getByText('Cannot insert: target-note-required')).toBeInTheDocument();
+    expect(
+      screen.getByText('Cannot insert: choose an existing note boundary first'),
+    ).toBeInTheDocument();
     expect(screen.queryByLabelText('Note D4 measure 1 beat 4')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Note C4 measure 1 beat 1')).toBeInTheDocument();
     expect(screen.getByLabelText('Note E4 measure 1 beat 2')).toBeInTheDocument();
@@ -2593,7 +2705,7 @@ C8 D8 z4 | [EGB]8 |`,
     expect(screen.getAllByTestId('score-event').length).toBeGreaterThan(0);
     expect(
       within(screen.getByLabelText('Current editor state')).getByText(
-        'ABC imported',
+        'ABC imported: imported.abc',
       ),
     ).toBeInTheDocument();
   });
@@ -2624,7 +2736,7 @@ C8 D8 z4 | [EGB]8 |`,
     expect(revokeObjectUrlSpy).toHaveBeenCalledWith('blob:sheetlab-abc');
     expect(
       within(screen.getByLabelText('Current editor state')).getByText(
-        'ABC downloaded',
+        'ABC downloaded: untitled-piano-exercise.abc',
       ),
     ).toBeInTheDocument();
 
@@ -2742,7 +2854,7 @@ C8 D8 z4 | [EGB]8 |`,
     expect(revokeObjectUrlSpy).toHaveBeenCalledWith('blob:sheetlab-pdf');
     expect(
       within(screen.getByLabelText('Current editor state')).getByText(
-        'PDF downloaded',
+        'PDF downloaded: untitled-piano-exercise.pdf',
       ),
     ).toBeInTheDocument();
 

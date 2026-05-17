@@ -46,6 +46,93 @@ const CLEF_CHANGE_LABEL = {
   treble: 'Insert treble clef',
 } as const;
 
+function formatScoreEventSummary(
+  selectedEvent: ReturnType<typeof findScoreEvent>,
+  selectedPitchIndex: number | null,
+) {
+  if (!selectedEvent) {
+    return 'None';
+  }
+
+  const beatLabel = `M${selectedEvent.measureIndex + 1} B${
+    selectedEvent.event.beat + 1
+  }`;
+  const durationLabel = DURATION_LABEL[selectedEvent.event.duration];
+
+  if (selectedEvent.event.kind === 'rest') {
+    return `${durationLabel} rest ${beatLabel}`;
+  }
+
+  if (selectedEvent.event.kind === 'note') {
+    return `${durationLabel} note ${formatPitch(
+      selectedEvent.event.pitch,
+    )} ${beatLabel}`;
+  }
+
+  const selectedPitch = selectedEvent.event.pitches[selectedPitchIndex ?? 0];
+  const pitchLabel = selectedPitch
+    ? formatPitch(selectedPitch)
+    : selectedEvent.event.pitches.map(formatPitch).join(' ');
+
+  return `${durationLabel} chord ${pitchLabel} ${beatLabel}`;
+}
+
+function getComposerAction({
+  eventCount,
+  inputCursor,
+  musicIssueCount,
+  rhythmIssueCount,
+  selectedClefChange,
+  selectedEventId,
+  selectedMeasure,
+  toolState,
+}: {
+  eventCount: number;
+  inputCursor: InputCursor | null;
+  musicIssueCount: number;
+  rhythmIssueCount: number;
+  selectedClefChange: ClefChangeTarget | null;
+  selectedEventId: string | null;
+  selectedMeasure: { staffId: StaffId; measureIndex: number } | null;
+  toolState: EditorToolState;
+}) {
+  if (musicIssueCount > 0) {
+    return 'Review music validation';
+  }
+
+  if (rhythmIssueCount > 0) {
+    return 'Review rhythm';
+  }
+
+  if (selectedClefChange) {
+    return 'Edit selected clef change';
+  }
+
+  if (selectedEventId) {
+    return 'Edit selected event';
+  }
+
+  if (selectedMeasure) {
+    return 'Edit selected measure';
+  }
+
+  if (toolState.clefChange) {
+    return CLEF_CHANGE_LABEL[toolState.clefChange];
+  }
+
+  if (toolState.isInputArmed) {
+    return inputCursor
+      ? `${DURATION_LABEL[inputCursor.duration]} ${
+          toolState.entryMode === 'note' ? 'note' : 'rest'
+        } ready`
+      : `${DURATION_LABEL[toolState.duration]} ${
+          toolState.entryMode === 'note' ? 'note' : 'rest'
+        } armed`;
+  }
+
+  return eventCount === 0 ? 'Score is empty' : 'Select or continue writing';
+}
+
 interface ScoreSettingsPanelProps {
   canvasZoom: number;
   editorMessage: string;
@@ -150,6 +237,26 @@ export function ScoreSettingsPanel({
           (measure) => measure.index === selectedSectionMeasureIndex,
         )?.sectionMarker ?? ''
       : '';
+  const eventCount = countScoreEvents(score);
+  const selectedSummary = selectedClefChange && selectedClefChangeInfo
+    ? `${selectedClefChangeInfo.change.clef} clef M${
+        selectedClefChangeInfo.measureIndex + 1
+      } B${selectedClefChangeInfo.change.beat + 1}`
+    : selectedEventId
+      ? formatScoreEventSummary(selectedEvent, selectedPitchIndex)
+      : selectedMeasure
+        ? `${selectedMeasure.staffId} measure ${selectedMeasure.measureIndex + 1}`
+        : 'None';
+  const composerAction = getComposerAction({
+    eventCount,
+    inputCursor,
+    musicIssueCount,
+    rhythmIssueCount,
+    selectedClefChange,
+    selectedEventId,
+    selectedMeasure,
+    toolState,
+  });
 
   function normalizeNullableInput(value: string) {
     const trimmed = value.trim();
@@ -160,6 +267,20 @@ export function ScoreSettingsPanel({
   return (
     <aside className="left-panel" aria-label="Score settings">
       <h2>Score Setup</h2>
+      <section className="composer-flow-panel" aria-label="Composer flow">
+        <div>
+          <span>Now</span>
+          <strong>{composerAction}</strong>
+        </div>
+        <div>
+          <span>Target</span>
+          <strong>{selectedSummary}</strong>
+        </div>
+        <div>
+          <span>Events</span>
+          <strong>{eventCount}</strong>
+        </div>
+      </section>
       <label>
         Score type
         <select
@@ -516,7 +637,7 @@ export function ScoreSettingsPanel({
         </div>
         <div>
           <dt>Events</dt>
-          <dd>{countScoreEvents(score)}</dd>
+          <dd>{eventCount}</dd>
         </div>
         <div>
           <dt>Rhythm</dt>
@@ -562,24 +683,7 @@ export function ScoreSettingsPanel({
         </div>
         <div>
           <dt>Selected</dt>
-          <dd>
-            {selectedClefChange && selectedClefChangeInfo ? (
-              `${selectedClefChangeInfo.change.clef} clef M${
-                selectedClefChangeInfo.measureIndex + 1
-              } B${selectedClefChangeInfo.change.beat + 1}`
-            ) : selectedEventId ? (
-              <>
-                {selectedEvent?.event.id ?? 'None'}
-                {selectedPitchIndex !== null
-                  ? ` pitch ${selectedPitchIndex + 1}`
-                  : ''}
-              </>
-            ) : selectedMeasure ? (
-              `${selectedMeasure.staffId} M${selectedMeasure.measureIndex + 1}`
-            ) : (
-              'None'
-            )}
-          </dd>
+          <dd>{selectedSummary}</dd>
         </div>
         <div>
           <dt>History</dt>

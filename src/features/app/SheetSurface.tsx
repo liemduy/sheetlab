@@ -3,7 +3,9 @@ import type {
   MouseEvent as ReactMouseEvent,
   RefObject,
 } from 'react';
+import { countScoreEvents } from '../../domain/score/editing';
 import type { EditorToolState } from '../editor/editorState';
+import { DURATION_LABEL, VOICE_LABEL } from '../editor/editorState';
 import type { InputCursor } from '../editor/inputCursor';
 import { StaffRenderer } from '../sheet/StaffRenderer';
 import type { MusicPosition } from '../sheet/interaction';
@@ -52,6 +54,11 @@ interface SheetSurfaceProps {
     clientY: number,
   ) => void;
   onAnnotationPlacementChange: (side: AnnotationPlacementSide) => void;
+  onAnnotationOffsetChange: (
+    eventId: string,
+    kind: AnnotationKind,
+    offset: { x: number; y: number },
+  ) => void;
   onDeleteEvent: (eventId: string, pitchIndex?: number | null) => void;
   onHoverPositionChange: (position: MusicPosition | null) => void;
   onLyricMapChange: (eventId: string, targetEventIds: string[]) => void;
@@ -117,6 +124,7 @@ export function SheetSurface({
   onConfirmClearMeasureContent,
   onConfirmDeleteMeasure,
   onAnnotationContextMenu,
+  onAnnotationOffsetChange,
   onAnnotationPlacementChange,
   onDeleteEvent,
   onHoverPositionChange,
@@ -138,6 +146,9 @@ export function SheetSurface({
   onSheetStageClick,
   onUpdateScoreMetadata,
 }: SheetSurfaceProps) {
+  const eventCount = countScoreEvents(score);
+  const showComposerStartCue = !isPdfExportMode && eventCount === 0;
+
   return (
     <section
       className="sheet-stage"
@@ -183,6 +194,25 @@ export function SheetSurface({
           className="notation-scroll"
           aria-label="Notation viewport"
         >
+          {showComposerStartCue ? (
+            <div
+              className="composer-start-cue"
+              aria-label="Empty score composer state"
+            >
+              <span>First event</span>
+              <strong>
+                {toolState.isInputArmed
+                  ? `${DURATION_LABEL[toolState.duration]} ${
+                      toolState.entryMode === 'note' ? 'note' : 'rest'
+                    }`
+                  : 'Select mode'}
+              </strong>
+              <span>
+                {VOICE_LABEL[toolState.voiceIndex]} /{' '}
+                {toolState.placementMode === 'insert' ? 'Insert' : 'Place'}
+              </span>
+            </div>
+          ) : null}
           <StaffRenderer
             duration={toolState.duration}
             dots={toolState.dots}
@@ -204,6 +234,7 @@ export function SheetSurface({
             voiceIndex={toolState.voiceIndex}
             onClearInteraction={onClearInteraction}
             onAnnotationContextMenu={onAnnotationContextMenu}
+            onAnnotationOffsetChange={onAnnotationOffsetChange}
             onHoverPositionChange={onHoverPositionChange}
             onLyricMapChange={onLyricMapChange}
             onPlaceAtPosition={onPlaceAtPosition}

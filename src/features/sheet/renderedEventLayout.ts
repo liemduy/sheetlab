@@ -40,6 +40,8 @@ export interface RenderedAnnotationLayout {
   measureIndex: number;
   minX: number;
   minY: number;
+  offsetX: number;
+  offsetY: number;
   row: number;
   side: Exclude<AnnotationPlacementSide, 'auto'>;
   staffId: string;

@@ -10,6 +10,7 @@ import type {
 import { getMeasureBeats } from '../../domain/score/timeSignatures';
 import { getKeySignatureSymbolMoveIssue } from '../../domain/score/keySignatures';
 import { getEventDots } from '../../domain/score/events';
+import { clampAnnotationOffset } from '../../domain/score/annotationOffsets';
 import { getLyricMapTargetEventIds } from '../../domain/score/lyricMapping';
 import { getActiveClef } from '../../domain/score/clefChanges';
 import type { EntryMode, PlacementMode } from '../editor/editorState';
@@ -65,7 +66,10 @@ import {
   InvalidMeasureWarning,
   MeasureHitTarget,
 } from './OverlayMeasureLayer';
-import { AnnotationHitTargets } from './OverlayAnnotationLayer';
+import {
+  AnnotationDragPreview,
+  AnnotationHitTargets,
+} from './OverlayAnnotationLayer';
 import {
   LyricMapConnectors,
   LyricMapPreview,
@@ -112,6 +116,11 @@ interface NotationOverlayProps {
     kind: AnnotationKind,
     clientX: number,
     clientY: number,
+  ) => void;
+  onAnnotationOffsetChange?: (
+    eventId: string,
+    kind: AnnotationKind,
+    offset: { x: number; y: number },
   ) => void;
   onLyricMapChange?: (eventId: string, targetEventIds: string[]) => void;
   onMoveEvent?: (
@@ -175,6 +184,7 @@ export function NotationOverlay({
   onMoveClefChange,
   onMoveKeySignatureSymbol,
   onAnnotationContextMenu,
+  onAnnotationOffsetChange,
   onLyricMapChange,
   onPlaceAtPosition,
   onDeleteEvent,
@@ -229,6 +239,17 @@ export function NotationOverlay({
   const [lyricMapDragState, setLyricMapDragState] = useState<(LyricMapDragAnchor & {
     previewPoint: { x: number; y: number } | null;
   }) | null>(null);
+  const [annotationDragState, setAnnotationDragState] = useState<{
+    hasMoved: boolean;
+    layout: RenderedAnnotationLayout;
+    previewOffset: { x: number; y: number } | null;
+    startClientX: number;
+    startClientY: number;
+    startOffsetX: number;
+    startOffsetY: number;
+    startSvgX: number;
+    startSvgY: number;
+  } | null>(null);
   const [deleteHoverEventId, setDeleteHoverEventId] = useState<string | null>(
     null,
   );
@@ -285,6 +306,7 @@ export function NotationOverlay({
     !keySignatureDragState &&
     !clefChangeDragState &&
     !lyricMapDragState &&
+    !annotationDragState &&
     !deleteHoverEventId &&
     !selectedEventId;
   const displayHoverPosition =
@@ -407,6 +429,29 @@ export function NotationOverlay({
       measureIndex: targetMeasureIndex,
       y,
     };
+  }
+
+  function getAnnotationAttachmentPoint(layout: RenderedAnnotationLayout) {
+    const eventLayout = eventLayouts[layout.eventId];
+
+    if (!eventLayout) {
+      return null;
+    }
+
+    const pitchLayout =
+      eventLayout.pitchLayouts.length > 0
+        ? eventLayout.pitchLayouts.reduce((anchoredPitch, candidate) => {
+            if (layout.side === 'above') {
+              return candidate.y < anchoredPitch.y ? candidate : anchoredPitch;
+            }
+
+            return candidate.y > anchoredPitch.y ? candidate : anchoredPitch;
+          })
+        : null;
+
+    return pitchLayout
+      ? { x: pitchLayout.x, y: pitchLayout.y }
+      : { x: eventLayout.x, y: eventLayout.y };
   }
 
   function getKeySignatureDragMusicPosition(event: MouseEvent<SVGSVGElement>) {
@@ -549,6 +594,33 @@ export function NotationOverlay({
       role="img"
       viewBox={`0 0 ${svgWidth} ${svgHeight}`}
       onMouseMove={(event) => {
+        if (annotationDragState) {
+          const point = getSvgPoint(event, svgHeight);
+          const clientMovement = Math.hypot(
+            event.clientX - annotationDragState.startClientX,
+            event.clientY - annotationDragState.startClientY,
+          );
+          const svgDeltaX = point.x - annotationDragState.startSvgX;
+          const svgDeltaY = point.y - annotationDragState.startSvgY;
+          const svgMovement = Math.hypot(svgDeltaX, svgDeltaY);
+          const hasMoved =
+            annotationDragState.hasMoved ||
+            Math.max(clientMovement, svgMovement) > 3;
+
+          setAnnotationDragState({
+            ...annotationDragState,
+            hasMoved,
+            previewOffset: hasMoved
+              ? clampAnnotationOffset({
+                  x: annotationDragState.startOffsetX + svgDeltaX,
+                  y: annotationDragState.startOffsetY + svgDeltaY,
+                })
+              : annotationDragState.previewOffset,
+          });
+          onHoverPositionChange?.(null);
+          return;
+        }
+
         if (lyricMapDragState) {
           const point = getSvgPoint(event, svgHeight);
 
@@ -658,10 +730,28 @@ export function NotationOverlay({
         setKeySignatureDragState(null);
         setClefChangeDragState(null);
         setLyricMapDragState(null);
+        setAnnotationDragState(null);
         setDeleteHoverEventId(null);
         onHoverPositionChange?.(null);
       }}
       onMouseUp={(event) => {
+        if (annotationDragState) {
+          if (
+            annotationDragState.hasMoved &&
+            annotationDragState.previewOffset
+          ) {
+            suppressNextPlaceRef.current = true;
+            onAnnotationOffsetChange?.(
+              annotationDragState.layout.eventId,
+              annotationDragState.layout.kind,
+              annotationDragState.previewOffset,
+            );
+          }
+
+          setAnnotationDragState(null);
+          return;
+        }
+
         if (lyricMapDragState) {
           const point = getSvgPoint(event, svgHeight);
           const targetEventId = getClosestPitchedEventId(point, eventLayouts);
@@ -965,6 +1055,23 @@ export function NotationOverlay({
       <AnnotationHitTargets
         layouts={annotationLayouts}
         onAnnotationContextMenu={onAnnotationContextMenu}
+        onAnnotationStartDrag={(layout, dragEvent) => {
+          const startPoint = getNestedSvgPoint(dragEvent);
+
+          suppressNextPlaceRef.current = true;
+          setAnnotationDragState({
+            hasMoved: false,
+            layout,
+            previewOffset: null,
+            startClientX: dragEvent.clientX,
+            startClientY: dragEvent.clientY,
+            startOffsetX: layout.offsetX,
+            startOffsetY: layout.offsetY,
+            startSvgX: startPoint.x,
+            startSvgY: startPoint.y,
+          });
+          onHoverPositionChange?.(null);
+        }}
       />
       {keySignatureSymbolLayouts.map((layout) => (
         <KeySignatureSymbolTarget
@@ -1053,6 +1160,13 @@ export function NotationOverlay({
           isInvalid={Boolean(clefChangeDragState.previewIssue)}
           position={clefChangeDragState.previewPosition}
           score={score}
+        />
+      ) : null}
+      {annotationDragState?.previewOffset ? (
+        <AnnotationDragPreview
+          attachmentPoint={getAnnotationAttachmentPoint(annotationDragState.layout)}
+          layout={annotationDragState.layout}
+          offset={annotationDragState.previewOffset}
         />
       ) : null}
     </svg>

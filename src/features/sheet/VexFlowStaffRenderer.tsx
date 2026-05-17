@@ -675,6 +675,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         onLyricMapChange={props.onLyricMapChange}
         onMeasureContextMenu={props.onMeasureContextMenu}
         onAnnotationContextMenu={props.onAnnotationContextMenu}
+        onAnnotationOffsetChange={props.onAnnotationOffsetChange}
         onMoveEvent={props.onMoveEvent}
         onMoveClefChange={props.onMoveClefChange}
         onMoveKeySignatureSymbol={props.onMoveKeySignatureSymbol}

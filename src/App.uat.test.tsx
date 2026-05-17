@@ -295,7 +295,7 @@ describe('user acceptance song flows', () => {
     expect(revokeObjectUrlSpy).toHaveBeenCalledWith('blob:sheetlab-uat-pdf');
     expect(
       within(screen.getByLabelText('Current editor state')).getByText(
-        'PDF downloaded',
+        'PDF downloaded: untitled-piano-exercise.pdf',
       ),
     ).toBeInTheDocument();
 

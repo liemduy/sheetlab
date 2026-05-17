@@ -185,6 +185,7 @@ function SheetLabApp() {
     markInvalidMeasure,
     onInactivePlace: handleClearInteraction,
     score,
+    setEditorMessage,
     toolState,
     updateToolState,
   });
@@ -351,14 +352,17 @@ function SheetLabApp() {
 
   function handleEntryModeChange(entryMode: EntryMode) {
     updateToolState({ clefChange: null, entryMode });
+    setEditorMessage(entryMode === 'note' ? 'Note entry enabled' : 'Rest entry enabled');
   }
 
   function handleVoiceIndexChange(voiceIndex: EditableVoiceIndex) {
     updateToolState({ voiceIndex });
+    setEditorMessage(VOICE_LABEL[voiceIndex]);
   }
 
   function handlePlacementModeChange(placementMode: PlacementMode) {
     updateToolState({ placementMode });
+    setEditorMessage(`${PLACEMENT_MODE_LABEL[placementMode]} mode`);
   }
 
   function handleClefChangeToolChange(clef: Clef) {
@@ -536,6 +540,7 @@ function SheetLabApp() {
 
   const {
     handleAnnotationContextMenu,
+    handleAnnotationOffsetChange,
     handleAnnotationPlacementChange,
     handleLyricMapChange,
     handleSelectedEventAnnotationChange,
@@ -1243,6 +1248,7 @@ function SheetLabApp() {
           onConfirmClearMeasureContent={handleConfirmClearMeasureContent}
           onConfirmDeleteMeasure={handleConfirmDeleteMeasure}
           onAnnotationContextMenu={handleAnnotationContextMenu}
+          onAnnotationOffsetChange={handleAnnotationOffsetChange}
           onAnnotationPlacementChange={handleAnnotationPlacementChange}
           onDeleteEvent={handleDeleteEvent}
           onHoverPositionChange={handleHoverPositionChange}

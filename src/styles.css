@@ -115,6 +115,45 @@ button {
   background: rgb(255 255 255 / 48%);
 }
 
+.toolbar-group[aria-label="Entry tools"] {
+  order: 1;
+}
+
+.toolbar-group[aria-label="Duration tools"] {
+  order: 2;
+}
+
+.toolbar-group[aria-label="Modifier tools"] {
+  order: 3;
+}
+
+.toolbar-group[aria-label="Placement tools"] {
+  order: 4;
+}
+
+.toolbar-group[aria-label="Transport and history"] {
+  order: 5;
+}
+
+.toolbar-group[aria-label="Entry tools"],
+.toolbar-group[aria-label="Duration tools"],
+.toolbar-group[aria-label="Placement tools"],
+.toolbar-group[aria-label="Transport and history"] {
+  border-color: rgb(23 107 84 / 22%);
+  background: rgb(255 255 255 / 72%);
+}
+
+.toolbar-group[aria-label="Key signature tools"],
+.toolbar-group[aria-label="Time signature tools"],
+.toolbar-group[aria-label="Clef tools"],
+.toolbar-group[aria-label="Voice tools"],
+.toolbar-group[aria-label="Repeat and jump tools"],
+.toolbar-group[aria-label="Annotation view tools"],
+.toolbar-group[aria-label="Canvas zoom tools"],
+.toolbar-group[aria-label="Project tools"] {
+  order: 10;
+}
+
 .toolbar-group-label {
   padding-inline: 0.45rem 0.25rem;
   color: var(--muted);
@@ -381,6 +420,36 @@ button {
 .left-panel h2 {
   margin: 0 0 1rem;
   font-size: 1rem;
+}
+
+.composer-flow-panel {
+  display: grid;
+  gap: 0.55rem;
+  border: 1px solid rgb(23 107 84 / 18%);
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+  background: rgb(255 255 255 / 64%);
+}
+
+.composer-flow-panel div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.85rem;
+}
+
+.composer-flow-panel span {
+  color: var(--muted);
+  font-family: ui-sans-serif, "Segoe UI", sans-serif;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.composer-flow-panel strong {
+  color: var(--ink);
+  font-size: 0.86rem;
+  text-align: right;
 }
 
 .left-panel label {
@@ -897,10 +966,39 @@ button {
 }
 
 .notation-scroll {
+  position: relative;
   margin-top: clamp(1.75rem, 3vw, 2.75rem);
   overflow-x: auto;
   overflow-y: visible;
   padding-bottom: 0.35rem;
+}
+
+.composer-start-cue {
+  position: absolute;
+  z-index: 3;
+  top: 0.15rem;
+  right: 0.35rem;
+  display: grid;
+  gap: 0.12rem;
+  max-width: min(15rem, 56vw);
+  border: 1px solid rgb(23 107 84 / 22%);
+  border-radius: 0.5rem;
+  padding: 0.55rem 0.65rem;
+  background: rgb(255 255 255 / 88%);
+  box-shadow: 0 10px 24px rgb(30 45 56 / 10%);
+}
+
+.composer-start-cue span {
+  color: var(--muted);
+  font-family: ui-sans-serif, "Segoe UI", sans-serif;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.composer-start-cue strong {
+  color: var(--ink);
+  font-size: 0.9rem;
 }
 
 .vexflow-stage {
@@ -1215,8 +1313,40 @@ button {
 
 .annotation-hit-target {
   fill: transparent;
-  cursor: context-menu;
+  cursor: grab;
   pointer-events: all;
+}
+
+.annotation-hit-target:active {
+  cursor: grabbing;
+}
+
+.annotation-drag-preview {
+  pointer-events: none;
+}
+
+.annotation-drag-guide {
+  stroke: #2b67ff;
+  stroke-dasharray: 5 4;
+  stroke-linecap: round;
+  stroke-width: 1.3;
+  vector-effect: non-scaling-stroke;
+}
+
+.annotation-drag-preview rect {
+  fill: rgb(43 103 255 / 10%);
+  stroke: #2b67ff;
+  stroke-dasharray: 4 3;
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+}
+
+.annotation-drag-preview text {
+  fill: #1f4ed8;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  text-anchor: middle;
 }
 
 .lyric-map-layer {
@@ -1590,7 +1720,8 @@ button {
   }
 
   .paper::before,
-  .notation-overlay {
+  .notation-overlay,
+  .composer-start-cue {
     display: none;
   }
 

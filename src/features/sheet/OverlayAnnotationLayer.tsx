@@ -1,4 +1,5 @@
-import type { AnnotationKind } from '../../domain/score/types';
+import type { MouseEvent } from 'react';
+import type { AnnotationKind, AnnotationOffset } from '../../domain/score/types';
 import type { RenderedAnnotationLayout } from './renderedEventLayout';
 
 interface AnnotationHitTargetsProps {
@@ -9,13 +10,18 @@ interface AnnotationHitTargetsProps {
     clientX: number,
     clientY: number,
   ) => void;
+  onAnnotationStartDrag?: (
+    layout: RenderedAnnotationLayout,
+    event: MouseEvent<SVGElement>,
+  ) => void;
 }
 
 export function AnnotationHitTargets({
   layouts,
   onAnnotationContextMenu,
+  onAnnotationStartDrag,
 }: AnnotationHitTargetsProps) {
-  if (!onAnnotationContextMenu) {
+  if (!onAnnotationContextMenu && !onAnnotationStartDrag) {
     return null;
   }
 
@@ -27,6 +33,8 @@ export function AnnotationHitTargets({
           aria-label={`${layout.kind} annotation ${layout.text}`}
           className="annotation-hit-target"
           data-annotation-kind={layout.kind}
+          data-annotation-offset-x={layout.offsetX}
+          data-annotation-offset-y={layout.offsetY}
           data-annotation-side={layout.side}
           data-event-id={layout.eventId}
           data-testid="annotation-hit-target"
@@ -36,7 +44,24 @@ export function AnnotationHitTargets({
           width={layout.maxX - layout.minX + 8}
           x={layout.minX - 4}
           y={layout.minY - 4}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onMouseDown={(event) => {
+            if (event.button !== 0 || !onAnnotationStartDrag) {
+              return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            onAnnotationStartDrag(layout, event);
+          }}
           onContextMenu={(event) => {
+            if (!onAnnotationContextMenu) {
+              return;
+            }
+
             event.preventDefault();
             event.stopPropagation();
             onAnnotationContextMenu(
@@ -49,5 +74,48 @@ export function AnnotationHitTargets({
         />
       ))}
     </>
+  );
+}
+
+export function AnnotationDragPreview({
+  attachmentPoint,
+  layout,
+  offset,
+}: {
+  attachmentPoint?: { x: number; y: number } | null;
+  layout: RenderedAnnotationLayout;
+  offset: AnnotationOffset;
+}) {
+  const deltaX = offset.x - layout.offsetX;
+  const deltaY = offset.y - layout.offsetY;
+  const guideEndY =
+    layout.side === 'below' ? layout.minY + deltaY - 4 : layout.maxY + deltaY + 4;
+
+  return (
+    <g
+      className="annotation-drag-preview"
+      data-annotation-kind={layout.kind}
+      data-testid="annotation-drag-preview"
+    >
+      {attachmentPoint ? (
+        <line
+          className="annotation-drag-guide"
+          data-testid="annotation-drag-guide"
+          x1={attachmentPoint.x}
+          x2={layout.x + deltaX}
+          y1={attachmentPoint.y}
+          y2={guideEndY}
+        />
+      ) : null}
+      <rect
+        height={layout.maxY - layout.minY + 8}
+        width={layout.maxX - layout.minX + 8}
+        x={layout.minX + deltaX - 4}
+        y={layout.minY + deltaY - 4}
+      />
+      <text x={layout.x + deltaX} y={layout.y + deltaY}>
+        {layout.text}
+      </text>
+    </g>
   );
 }

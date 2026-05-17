@@ -1,5 +1,6 @@
 import type {
   Accidental,
+  AnnotationOffset,
   ArticulationKind,
   AnnotationKind,
   AnnotationPlacementSide,
@@ -17,6 +18,7 @@ import type {
   TieMark,
   TupletInfo,
 } from './types';
+import { setAnnotationOffset } from './annotationOffsets';
 import { normalizeArticulations } from './articulations';
 import {
   getEventDurationBeats,
@@ -126,6 +128,10 @@ export interface UpdateScoreEventRequest {
     kind: AnnotationKind;
     side: AnnotationPlacementSide;
   };
+  annotationOffset?: {
+    kind: AnnotationKind;
+    offset: AnnotationOffset | null;
+  };
   lyric?: string | null;
   lyricMap?: LyricMap | null;
   pedal?: PedalMark | null;
@@ -209,6 +215,7 @@ function clampScoreEventToStaffRange(
         kind: 'note',
         beat: event.beat,
         annotationPlacements: event.annotationPlacements,
+        annotationOffsets: event.annotationOffsets,
         articulations: event.articulations,
         chordSymbol: event.chordSymbol,
         dynamic: event.dynamic,
@@ -288,6 +295,7 @@ function mergePitchedEventWithNote(
     glissando: existingEvent.glissando,
     hairpin: existingEvent.hairpin,
     annotationPlacements: existingEvent.annotationPlacements,
+    annotationOffsets: existingEvent.annotationOffsets,
     lyric: existingEvent.lyric,
     lyricMap: existingEvent.lyricMap,
     pedal: existingEvent.pedal,
@@ -351,9 +359,15 @@ function createUpdatedEventBase(
   const lyric = normalizeAnnotationText(update.lyric);
   const articulations = normalizeArticulations(update.articulations);
   let annotationPlacements = event.annotationPlacements;
+  let annotationOffsets = event.annotationOffsets;
 
   if (update.annotationPlacement) {
     annotationPlacements = { ...(event.annotationPlacements ?? {}) };
+    annotationOffsets = setAnnotationOffset(
+      annotationOffsets,
+      update.annotationPlacement.kind,
+      null,
+    );
 
     if (update.annotationPlacement.side === 'auto') {
       delete annotationPlacements[update.annotationPlacement.kind];
@@ -361,6 +375,14 @@ function createUpdatedEventBase(
       annotationPlacements[update.annotationPlacement.kind] =
         update.annotationPlacement.side;
     }
+  }
+
+  if (update.annotationOffset) {
+    annotationOffsets = setAnnotationOffset(
+      annotationOffsets,
+      update.annotationOffset.kind,
+      update.annotationOffset.offset,
+    );
   }
 
   const normalizedAnnotationPlacements =
@@ -394,6 +416,7 @@ function createUpdatedEventBase(
     hairpin:
       update.hairpin === undefined ? event.hairpin : update.hairpin ?? undefined,
     annotationPlacements: normalizedAnnotationPlacements,
+    annotationOffsets,
     lyric: lyric === undefined ? event.lyric : lyric ?? undefined,
     lyricMap:
       update.lyricMap === undefined ? event.lyricMap : update.lyricMap ?? undefined,

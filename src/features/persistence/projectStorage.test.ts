@@ -65,6 +65,40 @@ describe('project storage', () => {
     expect(loadProjectFromStorage(storageLike)).toEqual(score);
   });
 
+  it('preserves manual annotation offsets through project JSON', () => {
+    const storage = new Map<string, string>();
+    const storageLike = {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        storage.set(key, value);
+      },
+    };
+    const scoreWithNote = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'stored-annotation-offset-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const score = tryUpdateScoreEvent(
+      scoreWithNote,
+      'stored-annotation-offset-note',
+      {
+        lyric: 'la',
+        annotationOffset: {
+          kind: 'lyric',
+          offset: { x: 18, y: -10 },
+        },
+      },
+    ).score;
+
+    saveProjectToStorage(score, storageLike);
+
+    expect(loadProjectFromStorage(storageLike)).toEqual(score);
+  });
+
   it('rejects stored rests with articulations', () => {
     const score = createEmptyScore('treble');
     const brokenScore = {

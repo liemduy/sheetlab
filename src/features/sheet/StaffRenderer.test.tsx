@@ -3674,6 +3674,117 @@ describe('StaffRenderer', () => {
     );
   });
 
+  it('renders manual annotation offsets on the text and its drag handle', async () => {
+    const noteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'offset-annotation-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const annotatedScore = tryUpdateScoreEvent(noteScore, 'offset-annotation-note', {
+      lyric: 'la',
+    }).score;
+    const { rerender } = render(<StaffRenderer score={annotatedScore} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-lyric')).toHaveTextContent('la');
+    });
+
+    const baseX = Number(screen.getByTestId('rendered-lyric').getAttribute('x'));
+    const baseY = Number(screen.getByTestId('rendered-lyric').getAttribute('y'));
+    const offsetScore = tryUpdateScoreEvent(
+      annotatedScore,
+      'offset-annotation-note',
+      {
+        annotationOffset: {
+          kind: 'lyric',
+          offset: { x: 24, y: -12 },
+        },
+      },
+    ).score;
+
+    rerender(<StaffRenderer score={offsetScore} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-lyric')).toHaveAttribute(
+        'data-annotation-offset-x',
+        '24',
+      );
+    });
+
+    const lyric = screen.getByTestId('rendered-lyric');
+    const hitTarget = screen.getByTestId('annotation-hit-target');
+
+    expect(Number(lyric.getAttribute('x'))).toBeCloseTo(baseX + 24, 2);
+    expect(Number(lyric.getAttribute('y'))).toBeCloseTo(baseY - 12, 2);
+    expect(hitTarget).toHaveAttribute('data-annotation-offset-x', '24');
+    expect(hitTarget).toHaveAttribute('data-annotation-offset-y', '-12');
+  });
+
+  it('drags an annotation hit target within its bounded local offset range', async () => {
+    const noteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'drag-annotation-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const score = tryUpdateScoreEvent(noteScore, 'drag-annotation-note', {
+      lyric: 'move',
+    }).score;
+    const onAnnotationOffsetChange = vi.fn();
+
+    render(
+      <StaffRenderer
+        score={score}
+        onAnnotationOffsetChange={onAnnotationOffsetChange}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('annotation-hit-target')).toBeInTheDocument();
+    });
+
+    const overlay = screen.getByTestId('staff-renderer');
+    const bounds = setVisibleSheetBounds(overlay);
+    const hitTarget = screen.getByTestId('annotation-hit-target');
+    const hitX =
+      Number(hitTarget.getAttribute('x')) +
+      Number(hitTarget.getAttribute('width')) / 2;
+    const hitY =
+      Number(hitTarget.getAttribute('y')) +
+      Number(hitTarget.getAttribute('height')) / 2;
+    const startPoint = svgToClientPoint(bounds, hitX, hitY);
+    const endPoint = svgToClientPoint(bounds, hitX + 70, hitY - 60);
+
+    fireEvent.mouseDown(hitTarget, { button: 0, ...startPoint });
+    fireEvent.mouseMove(overlay, endPoint);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('annotation-drag-preview')).toBeInTheDocument();
+    });
+
+    const guide = screen.getByTestId('annotation-drag-guide');
+
+    expect(Number.isFinite(Number(guide.getAttribute('x1')))).toBe(true);
+    expect(Number.isFinite(Number(guide.getAttribute('y1')))).toBe(true);
+    expect(Number.isFinite(Number(guide.getAttribute('x2')))).toBe(true);
+    expect(Number.isFinite(Number(guide.getAttribute('y2')))).toBe(true);
+
+    fireEvent.mouseUp(overlay, endPoint);
+
+    expect(onAnnotationOffsetChange).toHaveBeenCalledWith(
+      'drag-annotation-note',
+      'lyric',
+      { x: 56, y: -42 },
+    );
+  });
+
   it('widens the grand staff gap so treble annotations do not overlap the bass staff', async () => {
     const noteScore = placeScoreEvent(createEmptyScore('grand'), {
       eventId: 'grand-low-annotated-note',

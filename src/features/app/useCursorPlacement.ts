@@ -17,8 +17,8 @@ import {
   getTupletSlotDuration,
   type SupportedTupletActualNotes,
 } from '../../domain/score/tuplets';
-import type { EditorToolState } from '../editor/editorState';
-import type { InputCursor } from '../editor/inputCursor';
+import { DURATION_LABEL, type EditorToolState } from '../editor/editorState';
+import { formatInputCursor, type InputCursor } from '../editor/inputCursor';
 import { playPitchPreview } from '../playback/audioEngine';
 import type { MusicPosition } from '../sheet/interaction';
 import { snapInsertPositionToEventBoundary } from '../sheet/insertPosition';
@@ -50,6 +50,7 @@ interface UseCursorPlacementOptions {
   ) => void;
   onInactivePlace: () => void;
   score: Score;
+  setEditorMessage: (message: string) => void;
   toolState: EditorToolState;
   updateToolState: (update: Partial<EditorToolState>) => void;
 }
@@ -205,6 +206,7 @@ export function useCursorPlacement({
   markInvalidMeasure,
   onInactivePlace,
   score,
+  setEditorMessage,
   toolState,
   updateToolState,
 }: UseCursorPlacementOptions) {
@@ -603,6 +605,7 @@ export function useCursorPlacement({
       )
     ) {
       clearPointerState();
+      setEditorMessage('Cannot insert: target-note-required');
       return null;
     }
 
@@ -616,6 +619,7 @@ export function useCursorPlacement({
       })
     ) {
       clearPointerState();
+      setEditorMessage('Cannot place: next-slot-required');
       return null;
     }
 
@@ -692,7 +696,11 @@ export function useCursorPlacement({
     }
 
     updateToolState(activeToolState);
-    setKeyboardCursorAtPosition(nextPosition, activeToolState);
+    const nextCursor = setKeyboardCursorAtPosition(nextPosition, activeToolState);
+
+    if (nextCursor) {
+      setEditorMessage(`Cursor moved: ${formatInputCursor(nextCursor)}`);
+    }
   }
 
   function handleKeyboardCursorStaffChange(staffId: StaffId) {
@@ -739,7 +747,15 @@ export function useCursorPlacement({
     }
 
     updateToolState(activeToolState);
-    setKeyboardCursorAtPosition(nextPosition, activeToolState);
+    const nextCursor = setKeyboardCursorAtPosition(nextPosition, activeToolState);
+
+    if (nextCursor) {
+      setEditorMessage(
+        staffId === 'bass'
+          ? `Left hand input: ${formatInputCursor(nextCursor)}`
+          : `Right hand input: ${formatInputCursor(nextCursor)}`,
+      );
+    }
   }
 
   function handleKeyboardCursorDurationChange(
@@ -765,7 +781,15 @@ export function useCursorPlacement({
       isInputArmed: true,
       tuplet: null,
     });
-    setKeyboardCursorAtPosition(currentPosition, activeToolState);
+    const nextCursor = setKeyboardCursorAtPosition(currentPosition, activeToolState);
+
+    if (nextCursor) {
+      setEditorMessage(
+        `${DURATION_LABEL[activeToolState.duration]} entry: ${formatInputCursor(
+          nextCursor,
+        )}`,
+      );
+    }
   }
 
   function handleKeyboardPlaceAtCursor() {

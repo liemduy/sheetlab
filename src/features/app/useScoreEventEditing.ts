@@ -8,6 +8,7 @@ import {
   tryUpdateScoreEvent,
 } from '../../domain/score/editing';
 import {
+  DURATION_LABEL,
   DURATION_OPTIONS,
   type AccidentalChoice,
   type EditorToolState,
@@ -142,6 +143,9 @@ export function useScoreEventEditing({
   }
 
   function handleDurationChange(duration: DurationValue) {
+    const shouldReportToolChange =
+      !selectedEventId || selectedEventSource !== 'manual';
+
     updateToolState({ clefChange: null, duration, isInputArmed: true, tuplet: null });
     clearPointerState();
     clearMeasureSelection();
@@ -150,10 +154,15 @@ export function useScoreEventEditing({
       'Event duration updated',
       { allowInvalidMeasure: true },
     );
+    if (shouldReportToolChange) {
+      setEditorMessage(`${DURATION_LABEL[duration]} entry enabled`);
+    }
   }
 
   function handleDottedChange(dotted: boolean) {
     const dots = dotted ? 1 : 0;
+    const shouldReportToolChange =
+      !selectedEventId || selectedEventSource !== 'manual';
 
     updateToolState({ clefChange: null, dots, tuplet: null });
     clearPointerState();
@@ -163,6 +172,9 @@ export function useScoreEventEditing({
       dotted ? 'Dotted note enabled' : 'Dotted note disabled',
       { allowInvalidMeasure: true },
     );
+    if (shouldReportToolChange) {
+      setEditorMessage(dotted ? 'Dotted entry enabled' : 'Dotted entry cleared');
+    }
   }
 
   function handleTupletChange(actualNotes: SupportedTupletActualNotes | null) {
@@ -252,11 +264,21 @@ export function useScoreEventEditing({
   }
 
   function handleAccidentalChange(accidental: AccidentalChoice) {
+    const shouldReportToolChange =
+      !selectedEventId || selectedEventSource !== 'manual';
+
     updateToolState({ accidental, clefChange: null });
     updateSelectedEvent(
       { accidental: accidental === 'none' ? null : accidental },
       'Event accidental updated',
     );
+    if (shouldReportToolChange) {
+      setEditorMessage(
+        accidental === 'none'
+          ? 'Accidental cleared'
+          : `${accidental} entry enabled`,
+      );
+    }
   }
 
   function handleDeleteSelected() {

@@ -29,6 +29,11 @@ export interface StaffRendererProps {
     clientX: number,
     clientY: number,
   ) => void;
+  onAnnotationOffsetChange?: (
+    eventId: string,
+    kind: AnnotationKind,
+    offset: { x: number; y: number },
+  ) => void;
   onLyricMapChange?: (eventId: string, targetEventIds: string[]) => void;
   onMoveEvent?: (
     eventId: string,

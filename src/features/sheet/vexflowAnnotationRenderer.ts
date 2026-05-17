@@ -3,6 +3,7 @@ import type {
   Score,
   Staff,
 } from '../../domain/score/types';
+import { getEventAnnotationOffset } from '../../domain/score/annotationOffsets';
 import { isGeneratedRestEvent } from '../../domain/score/events';
 import { getLyricMapEventIds } from '../../domain/score/lyricMapping';
 import {
@@ -122,6 +123,8 @@ function createRenderedAnnotationLayout({
   eventId,
   kind,
   measureIndex,
+  offsetX,
+  offsetY,
   placement,
   staffId,
   text,
@@ -131,6 +134,8 @@ function createRenderedAnnotationLayout({
   eventId: string;
   kind: AnnotationKind;
   measureIndex: number;
+  offsetX: number;
+  offsetY: number;
   placement: AnnotationPlacement;
   staffId: string;
   text: string;
@@ -146,6 +151,8 @@ function createRenderedAnnotationLayout({
     measureIndex,
     minX: placement.minX,
     minY: placement.minY,
+    offsetX,
+    offsetY,
     row: placement.row,
     side: placement.side,
     staffId,
@@ -153,6 +160,19 @@ function createRenderedAnnotationLayout({
     voiceIndex,
     x,
     y: placement.maxY - ANNOTATION_METRICS[kind].descent,
+  };
+}
+
+function moveAnnotationPlacement(
+  placement: AnnotationPlacement,
+  offset: { x: number; y: number },
+): AnnotationPlacement {
+  return {
+    ...placement,
+    maxX: placement.maxX + offset.x,
+    maxY: placement.maxY + offset.y,
+    minX: placement.minX + offset.x,
+    minY: placement.minY + offset.y,
   };
 }
 
@@ -440,6 +460,10 @@ export function drawTextAnnotations(
                 voiceState.abovePlacements,
                 voiceState.belowPlacements,
               );
+              const sidePlacements =
+                side === 'below'
+                  ? voiceState.belowPlacements
+                  : voiceState.abovePlacements;
               const placement = placeAnnotationInRows({
                 blockers: [
                   ...staffInkBlockers,
@@ -447,10 +471,7 @@ export function drawTextAnnotations(
                   ...systemAnnotationPlacements,
                 ],
                 direction: side,
-                placements:
-                  side === 'below'
-                    ? voiceState.belowPlacements
-                    : voiceState.abovePlacements,
+                placements: sidePlacements,
                 preferredBounds: getAnnotationBounds({
                   kind,
                   text,
@@ -462,16 +483,26 @@ export function drawTextAnnotations(
                   }),
                 }),
               });
-              systemAnnotationPlacements.push(placement);
+              const offset = getEventAnnotationOffset(event, kind);
+              const shiftedPlacement = moveAnnotationPlacement(placement, offset);
+              const placementIndex = sidePlacements.indexOf(placement);
+
+              if (placementIndex >= 0) {
+                sidePlacements[placementIndex] = shiftedPlacement;
+              }
+
+              systemAnnotationPlacements.push(shiftedPlacement);
               const renderedAnnotationLayout = createRenderedAnnotationLayout({
                 eventId: event.id,
                 kind,
                 measureIndex: measure.index,
-                placement,
+                offsetX: offset.x,
+                offsetY: offset.y,
+                placement: shiftedPlacement,
                 staffId: staff.id,
                 text,
                 voiceIndex,
-                x: annotationX,
+                x: annotationX + offset.x,
               });
 
               annotationLayouts.push(renderedAnnotationLayout);
@@ -479,7 +510,9 @@ export function drawTextAnnotations(
                 className,
                 dataset: {
                   'data-annotation-kind': kind,
-                  'data-annotation-row': String(placement.row),
+                  'data-annotation-offset-x': String(offset.x),
+                  'data-annotation-offset-y': String(offset.y),
+                  'data-annotation-row': String(shiftedPlacement.row),
                   'data-annotation-side': side,
                   'data-event-id': event.id,
                   'data-testid': testId,
@@ -487,7 +520,7 @@ export function drawTextAnnotations(
                 },
                 svg,
                 text,
-                x: annotationX,
+                x: annotationX + offset.x,
                 y: renderedAnnotationLayout.y,
               });
             };

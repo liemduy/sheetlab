@@ -83,6 +83,13 @@ export type AnnotationPlacements = Partial<
   Record<AnnotationKind, AnnotationPlacementSide>
 >;
 
+export interface AnnotationOffset {
+  x: number;
+  y: number;
+}
+
+export type AnnotationOffsets = Partial<Record<AnnotationKind, AnnotationOffset>>;
+
 export interface LyricMap {
   eventIds: string[];
 }
@@ -207,6 +214,7 @@ export interface BaseScoreEvent {
   glissando?: boolean;
   hairpin?: HairpinMark;
   annotationPlacements?: AnnotationPlacements;
+  annotationOffsets?: AnnotationOffsets;
   lyric?: string;
   lyricMap?: LyricMap;
   pedal?: PedalMark;
