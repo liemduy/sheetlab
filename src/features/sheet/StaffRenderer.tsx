@@ -14,6 +14,8 @@ import type { MusicPosition } from './interaction';
 import type { ScorePageViewport } from './pageLayout';
 import { VexFlowStaffRenderer } from './VexFlowStaffRenderer';
 
+export type PracticeFeedbackStatus = 'correct' | 'missed' | 'partial' | 'wrong';
+
 export interface StaffRendererProps {
   score: Score;
   hoverPosition?: MusicPosition | null;
@@ -78,6 +80,7 @@ export interface StaffRendererProps {
   selectedMeasure?: { staffId: StaffId; measureIndex: number } | null;
   activeEventId?: string | null;
   activeEventIds?: readonly string[];
+  practiceFeedbackByEventId?: Readonly<Record<string, PracticeFeedbackStatus>>;
   playbackBeat?: number | null;
   placementMode?: PlacementMode;
   inputCursor?: InputCursor | null;

@@ -74,6 +74,7 @@ import { snapInsertPositionToEventBoundary } from '../sheet/insertPosition';
 import { getInsertTargetEvent } from '../sheet/insertPreview';
 import type { MusicPosition } from '../sheet/interaction';
 import { usePlaybackController } from './usePlaybackController';
+import { PracticePage } from '../practice/PracticePage';
 import { useProjectActions } from './useProjectActions';
 import { SheetSurface } from './SheetSurface';
 import { useCursorPlacement } from './useCursorPlacement';
@@ -218,6 +219,7 @@ function SheetLabApp() {
     selectMeasure,
   });
   const [openPalette, setOpenPalette] = useState<ToolbarPalette>(null);
+  const [appMode, setAppMode] = useState<'editor' | 'practice'>('editor');
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [annotationContextMenu, setAnnotationContextMenu] =
     useState<AnnotationContextMenuState | null>(null);
@@ -774,6 +776,18 @@ function SheetLabApp() {
     ]),
   ];
 
+  function handlePracticeOpen() {
+    if (isPlaying) {
+      void handlePlaybackToggle();
+    }
+
+    setOpenPalette(null);
+    setIsCommandPaletteOpen(false);
+    clearTransientInteraction();
+    setAppMode('practice');
+    setEditorMessage('Practice mode');
+  }
+
   function handleDemoScoreLoad(fixtureId: string) {
     const fixture = getScoreFixtureById(fixtureId);
 
@@ -1091,6 +1105,12 @@ function SheetLabApp() {
       run: () => void handlePlaybackFromSelectedEvent(selectedEventId),
     },
     {
+      group: 'Practice',
+      id: 'practice-mode',
+      label: 'Practice mode',
+      run: handlePracticeOpen,
+    },
+    {
       group: 'Score',
       id: 'add-measure',
       label: 'Add measure',
@@ -1099,6 +1119,7 @@ function SheetLabApp() {
   ];
 
   useEditorShortcuts({
+    disabled: appMode === 'practice',
     futureScores,
     inputCursorActive: Boolean(inputCursor),
     isInputArmed: toolState.isInputArmed,
@@ -1135,6 +1156,18 @@ function SheetLabApp() {
     toolEntryMode: toolState.entryMode,
     toolPlacementMode: toolState.placementMode,
   });
+
+  if (appMode === 'practice') {
+    return (
+      <PracticePage
+        score={score}
+        onBackToEditor={() => {
+          setAppMode('editor');
+          setEditorMessage('Editor mode');
+        }}
+      />
+    );
+  }
 
   return (
     <main
@@ -1196,6 +1229,7 @@ function SheetLabApp() {
           onOpenPaletteChange={setOpenPalette}
           onPlacementModeChange={handlePlacementModeChange}
           onPlaybackToggle={handlePlaybackToggle}
+          onPracticeOpen={handlePracticeOpen}
           onRedo={handleRedo}
           onRepeatJumpChange={handleRepeatJumpChange}
           onResetScore={handleResetScore}

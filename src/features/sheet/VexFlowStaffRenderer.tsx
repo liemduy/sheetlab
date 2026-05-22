@@ -460,6 +460,7 @@ function syncVexFlowSelection(
   activeEventId?: string | null,
   activeEventIds: readonly string[] = [],
   invalidMeasureKeys: readonly string[] = [],
+  practiceFeedbackByEventId: StaffRendererProps['practiceFeedbackByEventId'] = {},
 ) {
   const invalidMeasureKeySet = new Set(invalidMeasureKeys);
   const activeEventIdSet = new Set([
@@ -469,6 +470,9 @@ function syncVexFlowSelection(
 
   container.querySelectorAll('.vf-user-event').forEach((element) => {
     const eventId = element.getAttribute('data-event-id');
+    const practiceFeedbackStatus = eventId
+      ? practiceFeedbackByEventId[eventId]
+      : undefined;
     const pitchCount = Number(element.getAttribute('data-pitch-count'));
     const staffId = element.getAttribute('data-staff-id');
     const measureIndex = Number(element.getAttribute('data-measure-index'));
@@ -488,11 +492,30 @@ function syncVexFlowSelection(
       'is-playing',
       eventId !== null && activeEventIdSet.has(eventId),
     );
+    element.classList.toggle(
+      'is-practice-correct',
+      practiceFeedbackStatus === 'correct',
+    );
+    element.classList.toggle(
+      'is-practice-partial',
+      practiceFeedbackStatus === 'partial',
+    );
+    element.classList.toggle(
+      'is-practice-wrong',
+      practiceFeedbackStatus === 'wrong',
+    );
+    element.classList.toggle(
+      'is-practice-missed',
+      practiceFeedbackStatus === 'missed',
+    );
     element.classList.toggle('is-invalid-measure', isInvalidMeasure);
   });
 
   container.querySelectorAll('.vf-user-notehead').forEach((element) => {
     const eventId = element.getAttribute('data-event-id');
+    const practiceFeedbackStatus = eventId
+      ? practiceFeedbackByEventId[eventId]
+      : undefined;
     const pitchIndex = Number(element.getAttribute('data-pitch-index'));
     const isSelectedPitch =
       eventId === selectedEventId &&
@@ -502,6 +525,22 @@ function syncVexFlowSelection(
       pitchIndex === selectedPitchIndex;
 
     element.classList.toggle('is-selected-notehead', isSelectedPitch);
+    element.classList.toggle(
+      'is-practice-correct',
+      practiceFeedbackStatus === 'correct',
+    );
+    element.classList.toggle(
+      'is-practice-partial',
+      practiceFeedbackStatus === 'partial',
+    );
+    element.classList.toggle(
+      'is-practice-wrong',
+      practiceFeedbackStatus === 'wrong',
+    );
+    element.classList.toggle(
+      'is-practice-missed',
+      practiceFeedbackStatus === 'missed',
+    );
   });
 
   container.querySelectorAll('.sheetlab-clef-change').forEach((element) => {
@@ -614,9 +653,10 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         props.activeEventId,
         props.activeEventIds,
         props.invalidMeasureKeys,
+        props.practiceFeedbackByEventId,
       );
     }
-  }, [props.pageViewport, props.score]);
+  }, [props.pageViewport, props.score, props.practiceFeedbackByEventId]);
 
   useEffect(() => {
     if (containerRef.current) {
@@ -628,12 +668,14 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         props.activeEventId,
         props.activeEventIds,
         props.invalidMeasureKeys,
+        props.practiceFeedbackByEventId,
       );
     }
   }, [
     eventLayouts,
     props.activeEventId,
     props.invalidMeasureKeys,
+    props.practiceFeedbackByEventId,
     props.selectedClefChangeId,
     props.selectedEventId,
     props.selectedPitchIndex,

@@ -16,6 +16,7 @@ import type {
 } from './selectionTypes';
 
 interface UseEditorShortcutsOptions {
+  disabled?: boolean;
   futureScores: Score[];
   inputCursorActive: boolean;
   isInputArmed: boolean;
@@ -86,6 +87,7 @@ const DURATION_SHORTCUTS: Record<string, DurationValue> = {
 const PITCH_SHORTCUTS = new Set(['A', 'B', 'C', 'D', 'E', 'F', 'G']);
 
 export function useEditorShortcuts({
+  disabled = false,
   futureScores,
   inputCursorActive,
   isInputArmed,
@@ -123,6 +125,10 @@ export function useEditorShortcuts({
   toolPlacementMode,
 }: UseEditorShortcutsOptions) {
   useEffect(() => {
+    if (disabled) {
+      return;
+    }
+
     function handleWindowKeyDown(event: KeyboardEvent) {
       const key = event.key.toLowerCase();
       const isModifierShortcut = event.ctrlKey || event.metaKey;
@@ -364,6 +370,7 @@ export function useEditorShortcuts({
 
     return () => window.removeEventListener('keydown', handleWindowKeyDown);
   }, [
+    disabled,
     futureScores,
     inputCursorActive,
     isInputArmed,

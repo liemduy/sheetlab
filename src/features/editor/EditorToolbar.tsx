@@ -250,6 +250,7 @@ interface EditorToolbarProps {
   onOpenPaletteChange: (palette: ToolbarPalette) => void;
   onPlacementModeChange: (placementMode: PlacementMode) => void;
   onPlaybackToggle: () => void | Promise<void>;
+  onPracticeOpen: () => void;
   onRedo: () => void;
   onRepeatJumpChange: (repeatJump: RepeatJumpKind | null) => void;
   onResetScore: () => void;
@@ -300,6 +301,7 @@ export function EditorToolbar({
   onOpenPaletteChange,
   onPlacementModeChange,
   onPlaybackToggle,
+  onPracticeOpen,
   onRedo,
   onRepeatJumpChange,
   onResetScore,
@@ -739,6 +741,14 @@ export function EditorToolbar({
           <span className="tool-symbol" aria-hidden="true">
             {isPlaying ? '\u25a0' : '\u25b6'}
           </span>
+        </button>
+        <button
+          type="button"
+          aria-label="Practice mode"
+          className="tool-button"
+          onClick={onPracticeOpen}
+        >
+          Practice
         </button>
         <button
           type="button"
