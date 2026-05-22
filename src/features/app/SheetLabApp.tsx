@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type {
   MouseEvent as ReactMouseEvent,
 } from 'react';
@@ -744,8 +744,11 @@ function SheetLabApp() {
     score,
     setEditorMessage,
   });
-  const rhythmIssues = getScoreRhythmIssues(score);
-  const musicIssues = getScoreMusicIssues(score);
+  const rhythmIssues = useMemo(() => getScoreRhythmIssues(score), [score]);
+  const musicIssues = useMemo(
+    () => getScoreMusicIssues(score, rhythmIssues),
+    [rhythmIssues, score],
+  );
   const blockingMusicIssues = musicIssues.filter(
     (issue) => issue.severity === 'error',
   );

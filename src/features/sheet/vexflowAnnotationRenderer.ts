@@ -11,6 +11,7 @@ import {
   getScoreStaffTop,
   getScoreSystemMeasureIndexes,
   getSystemIndex,
+  STAFF_LINE_SPACING,
 } from './layout';
 import type {
   RenderedAnnotationLayout,
@@ -18,21 +19,23 @@ import type {
 } from './renderedEventLayout';
 import {
   ANNOTATION_METRICS,
-  ABOVE_STAFF_INK_GAP,
-  BELOW_STAFF_INK_GAP,
+  NOTEHEAD_ANNOTATION_INK_PADDING,
   type AnnotationBounds,
   type AnnotationPlacement,
   type AnnotationSide,
+  getAnnotationBaseline,
+  createManualAnnotationPlacement,
   doAnnotationBoundsOverlap,
   getAnnotationBounds,
   getAutomaticAnnotationSide,
   getEventAnnotationText,
+  hasManualAnnotationLayout,
+  keepAnnotationPlacementOutsideStaff,
   placeAnnotationInRows,
 } from './annotationLayoutPolicy';
 import {
+  getRenderedEventInkBounds,
   getRenderedSystemStaffSymbolInkBounds,
-  getRenderedSystemVoiceBounds,
-  getRenderedSystemVoiceEventInkBounds,
 } from './renderedVoiceZones';
 
 function appendSvgText({
@@ -69,22 +72,19 @@ function appendSvgText({
   return textElement;
 }
 
-function getAnnotationY({
-  kind,
-  side,
-  voiceBounds,
-}: {
-  kind: AnnotationKind;
-  side: AnnotationSide;
-  voiceBounds: { maxY: number; minY: number };
-}) {
-  const metrics = ANNOTATION_METRICS[kind];
-
-  if (side === 'below') {
-    return voiceBounds.maxY + BELOW_STAFF_INK_GAP + metrics.height;
+function getRenderedEventAnnotationAnchorBounds(
+  layout: RenderedEventLayout,
+): { maxY: number; minY: number } {
+  if (layout.pitchLayouts.length === 0) {
+    return getRenderedEventInkBounds(layout);
   }
 
-  return voiceBounds.minY - ABOVE_STAFF_INK_GAP - metrics.descent;
+  const pitchYs = layout.pitchLayouts.map((pitchLayout) => pitchLayout.y);
+
+  return {
+    maxY: Math.max(...pitchYs) + NOTEHEAD_ANNOTATION_INK_PADDING,
+    minY: Math.min(...pitchYs) - NOTEHEAD_ANNOTATION_INK_PADDING,
+  };
 }
 
 function getLyricAnnotationX({
@@ -258,6 +258,7 @@ export function drawTextAnnotations(
   container: HTMLDivElement,
   score: Score,
   eventLayouts: Record<string, RenderedEventLayout>,
+  visibleMeasureIndexes?: ReadonlySet<number> | null,
 ) {
   const svg = container.querySelector('svg');
   const annotationLayouts: RenderedAnnotationLayout[] = [];
@@ -283,33 +284,45 @@ export function drawTextAnnotations(
   const staves = score.parts[0]?.staves ?? [];
 
   staves.forEach((staff, staffIndex) => {
+    const visibleMeasures = visibleMeasureIndexes
+      ? staff.measures.filter((measure) =>
+          visibleMeasureIndexes.has(measure.index),
+        )
+      : staff.measures;
     const systemIndexes = [
       ...new Set(
-        staff.measures.map((measure) => getSystemIndex(measure.index, score)),
+        visibleMeasures.map((measure) =>
+          getSystemIndex(measure.index, score),
+        ),
       ),
     ];
 
     systemIndexes.forEach((systemIndex) => {
-      const systemMeasures = staff.measures.filter(
+      const systemMeasures = visibleMeasures.filter(
         (measure) => getSystemIndex(measure.index, score) === systemIndex,
       );
       const systemFirstMeasureIndex =
         getScoreSystemMeasureIndexes(score, systemIndex)[0] ?? 0;
       const staffTop = getScoreStaffTop(score, staffIndex, systemFirstMeasureIndex);
+      const staffBounds = {
+        maxY: staffTop + STAFF_LINE_SPACING * 4,
+        minY: staffTop,
+      };
       const systemAnnotationPlacements: AnnotationPlacement[] = [];
       const voiceStates = new Map<
         number,
         {
           abovePlacements: AnnotationPlacement[];
           belowPlacements: AnnotationPlacement[];
-          voiceBounds: { maxY: number; minY: number };
         }
       >();
-      const staffInkBlockers = getRenderedSystemVoiceEventInkBounds(
-        eventLayouts,
-        score,
-        staff.id,
-        systemIndex,
+      const staffInkBlockers = Object.entries(eventLayouts).flatMap(
+        ([eventId, eventLayout]) =>
+          eventLayout.staffId === staff.id &&
+          getSystemIndex(eventLayout.measureIndex, score) === systemIndex &&
+          !eventLayout.isGeneratedRest
+            ? [{ bounds: getRenderedEventInkBounds(eventLayout), eventId }]
+            : [],
       );
       const staffSymbolInkBlockers = getRenderedSystemStaffSymbolInkBounds(
         score,
@@ -326,17 +339,6 @@ export function drawTextAnnotations(
         const nextState = {
           abovePlacements: [],
           belowPlacements: [],
-          voiceBounds: getRenderedSystemVoiceBounds({
-            eventLayouts,
-            includeStaffBounds: true,
-            includeStaffSymbols: false,
-            measureIndex: systemFirstMeasureIndex,
-            score,
-            staffId: staff.id,
-            staffIndex,
-            systemIndex,
-            voiceIndex,
-          }),
         };
 
         voiceStates.set(voiceIndex, nextState);
@@ -465,34 +467,43 @@ export function drawTextAnnotations(
                 side === 'below'
                   ? voiceState.belowPlacements
                   : voiceState.abovePlacements;
-              const placement = placeAnnotationInRows({
-                blockers: [
-                  ...staffInkBlockers,
-                  ...staffSymbolInkBlockers,
-                  ...systemAnnotationPlacements,
-                ],
-                direction: side,
-                placements: sidePlacements,
-                preferredBounds: getAnnotationBounds({
+              const offset = getEventAnnotationOffset(event, kind);
+              const eventInkBounds = getRenderedEventAnnotationAnchorBounds(layout);
+              const preferredBounds = getAnnotationBounds({
+                kind,
+                text,
+                x: annotationX,
+                y: getAnnotationBaseline({
+                  eventInkBounds,
                   kind,
-                  text,
-                  x: annotationX,
-                  y: getAnnotationY({
-                    kind,
-                    side,
-                    voiceBounds: voiceState.voiceBounds,
-                  }),
+                  side,
+                  staffBounds,
                 }),
               });
-              const offset = getEventAnnotationOffset(event, kind);
-              const shiftedPlacement = moveAnnotationPlacement(placement, offset);
-              const placementIndex = sidePlacements.indexOf(placement);
+              const isManualLayout = hasManualAnnotationLayout(event, kind);
+              const placement = isManualLayout
+                ? createManualAnnotationPlacement(preferredBounds, side)
+                : placeAnnotationInRows({
+                    blockers: [
+                      ...staffInkBlockers
+                        .filter((blocker) => blocker.eventId !== event.id)
+                        .map((blocker) => blocker.bounds),
+                      ...staffSymbolInkBlockers,
+                      ...systemAnnotationPlacements,
+                    ],
+                    direction: side,
+                    placements: sidePlacements,
+                    preferredBounds,
+                  });
+              const shiftedPlacement = keepAnnotationPlacementOutsideStaff(
+                moveAnnotationPlacement(placement, offset),
+                staffBounds,
+              );
 
-              if (placementIndex >= 0) {
-                sidePlacements[placementIndex] = shiftedPlacement;
+              if (!isManualLayout) {
+                systemAnnotationPlacements.push(placement);
               }
 
-              systemAnnotationPlacements.push(shiftedPlacement);
               const renderedAnnotationLayout = createRenderedAnnotationLayout({
                 eventId: event.id,
                 kind,

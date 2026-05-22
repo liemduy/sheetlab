@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { Score } from '../../domain/score/types';
-import { playTimelineAudio } from '../playback/audioEngine';
+import { playTimelineAudio, warmUpPlaybackAudio } from '../playback/audioEngine';
 import type { PlaybackController } from '../playback/audioEngine';
 import {
   buildPlaybackTimeline,
@@ -28,6 +28,7 @@ export function usePlaybackController({
   const playbackEndTimer = useRef<number | null>(null);
   const playbackAnimationFrame = useRef<number | null>(null);
   const playbackRunId = useRef(0);
+  const playbackTimeline = useMemo(() => buildPlaybackTimeline(score), [score]);
 
   function stopPlayback() {
     playbackRunId.current += 1;
@@ -87,10 +88,15 @@ export function usePlaybackController({
     }
 
     playbackController.current = controller;
-    setEditorMessage(messages.started);
+    setEditorMessage(
+      controller.audioStarted === false
+        ? 'Playback cursor started; browser audio is not available'
+        : messages.started,
+    );
     const updatePlaybackClock = () => {
       setPlaybackElapsedSeconds(
-        (performance.now() - controller.startedAtMs) / 1000,
+        controller.getElapsedSeconds?.() ??
+          (performance.now() - controller.startedAtMs) / 1000,
       );
       playbackAnimationFrame.current =
         window.requestAnimationFrame(updatePlaybackClock);
@@ -123,7 +129,8 @@ export function usePlaybackController({
       return;
     }
 
-    const timeline = buildPlaybackTimeline(score);
+    await warmUpPlaybackAudio();
+    const timeline = playbackTimeline;
 
     if (timeline.length === 0) {
       setEditorMessage('Nothing to play');
@@ -142,7 +149,8 @@ export function usePlaybackController({
       return;
     }
 
-    const timeline = buildPlaybackTimeline(score);
+    await warmUpPlaybackAudio();
+    const timeline = playbackTimeline;
 
     if (timeline.length === 0) {
       setEditorMessage('Nothing to play');
@@ -162,7 +170,6 @@ export function usePlaybackController({
     });
   }
 
-  const playbackTimeline = buildPlaybackTimeline(score);
   const isPlaybackClockStarted = playbackElapsedSeconds >= 0;
   const playbackClockSeconds = isPlaybackClockStarted
     ? playbackStartOffsetSeconds + playbackElapsedSeconds

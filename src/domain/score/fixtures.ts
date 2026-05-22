@@ -125,6 +125,9 @@ function chordEvent(
   };
 }
 
+type NoteEventExtra = Parameters<typeof noteEvent>[4];
+type ChordEventExtra = Parameters<typeof chordEvent>[4];
+
 function withMeasurePatch(
   score: Score,
   staffId: StaffId,
@@ -281,6 +284,766 @@ export const grandStaffStudyFixture = withMeasureEvents(
     },
   ],
 );
+
+const annotationDragLabBase = setMeasureSectionMarker(
+  createEmptyScore('treble', {
+    id: 'fixture-annotation-drag-lab',
+    title: 'Annotation Drag Lab',
+    composer: 'SheetLab',
+    measureCount: 4,
+    tempo: 88,
+  }),
+  0,
+  'Arrange',
+);
+
+const annotationDragLabMeasure0 = withMeasureEvents(
+  annotationDragLabBase,
+  'treble',
+  0,
+  [
+    noteEvent('annotation-lab-anchor', 0, 'quarter', { step: 'E', octave: 4 }, {
+      annotationOffsets: {
+        pedal: { x: -58, y: 0 },
+      },
+      annotationPlacements: {
+        pedal: 'below',
+      },
+      chordSymbol: 'Cmaj7',
+      lyric: 'move',
+      pedal: 'start',
+    }),
+    noteEvent('annotation-lab-nearby', 3, 'quarter', { step: 'F', octave: 4 }, {
+      annotationPlacements: {
+        dynamic: 'above',
+      },
+      dynamic: 'pp',
+      lyric: 'near',
+    }),
+  ],
+);
+
+const annotationDragLabMeasure2 = withMeasureEvents(
+  annotationDragLabMeasure0,
+  'treble',
+  2,
+  [
+    noteEvent('annotation-lab-gliss', 0, 'quarter', { step: 'G', octave: 4 }, {
+      annotationPlacements: {
+        fermata: 'above',
+      },
+      fermata: true,
+      glissando: true,
+      lyric: 'slide',
+    }),
+  ],
+);
+
+export const annotationDragLabFixture = withMeasureEvents(
+  annotationDragLabMeasure2,
+  'treble',
+  3,
+  [
+    noteEvent('annotation-lab-target', 3, 'quarter', { step: 'A', octave: 4 }, {
+      chordSymbol: 'A7alt',
+      dynamic: 'p',
+    }),
+  ],
+);
+
+const pianoPracticeLoopBase = setMeasureSectionMarker(
+  setMeasureKeySignature(
+    createEmptyScore('grand', {
+      id: 'fixture-piano-practice-loop',
+      title: 'Piano Practice Loop',
+      composer: 'SheetLab',
+      measureCount: 4,
+      tempo: 72,
+    }),
+    0,
+    'C',
+  ),
+  0,
+  'Practice',
+);
+
+const pianoPracticeLoopTrebleM0 = withMeasureEvents(
+  pianoPracticeLoopBase,
+  'treble',
+  0,
+  [
+    noteEvent('practice-rh-c4', 0, 'quarter', { step: 'C', octave: 4 }, {
+      chordSymbol: 'Cadd9',
+      lyric: 'one',
+    }),
+    noteEvent('practice-rh-d4', 3, 'quarter', { step: 'D', octave: 4 }, {
+      dynamic: 'cresc.',
+    }),
+  ],
+);
+
+const pianoPracticeLoopTreble = withMeasureEvents(
+  pianoPracticeLoopTrebleM0,
+  'treble',
+  1,
+  [
+    noteEvent('practice-rh-e4', 0, 'quarter', { step: 'E', octave: 4 }, {
+      chordSymbol: 'Am7',
+      dynamic: 'p',
+    }),
+    noteEvent('practice-rh-g4', 3, 'quarter', { step: 'G', octave: 4 }, {
+      annotationPlacements: {
+        fermata: 'above',
+      },
+      fermata: true,
+      lyric: 'hold',
+    }),
+  ],
+);
+
+const pianoPracticeLoopBassM0 = withMeasureEvents(
+  pianoPracticeLoopTreble,
+  'bass',
+  0,
+  [
+    chordEvent('practice-lh-c-open', 0, 'half', [
+      { step: 'C', octave: 2 },
+      { step: 'G', octave: 2 },
+    ], {
+      annotationPlacements: {
+        dynamic: 'above',
+      },
+      dynamic: 'p',
+      pedal: 'start',
+    }),
+  ],
+);
+
+export const pianoPracticeLoopFixture = withMeasureEvents(
+  pianoPracticeLoopBassM0,
+  'bass',
+  1,
+  [
+    chordEvent('practice-lh-c-close', 0, 'half', [
+      { step: 'E', octave: 2 },
+      { step: 'G', octave: 2 },
+    ], {
+      pedal: 'release',
+    }),
+  ],
+);
+
+const composerSketchBase = setMeasureSectionMarker(
+  setMeasureKeySignature(
+    setScoreTimeSignature(
+      createEmptyScore('treble', {
+        id: 'fixture-composer-sketch',
+        title: 'Composer Sketch',
+        composer: 'SheetLab',
+        measureCount: 4,
+        tempo: 96,
+      }),
+      { beats: 3, beatUnit: 4 },
+    ),
+    0,
+    'G',
+  ),
+  0,
+  'Idea',
+);
+
+const composerSketchM0 = withMeasureEvents(
+  composerSketchBase,
+  'treble',
+  0,
+  [
+    noteEvent('sketch-opening', 0, 'quarter', { step: 'G', octave: 4 }, {
+      articulations: ['tenuto'],
+      chordSymbol: 'Gmaj9',
+      lyric: 'breathe',
+    }),
+  ],
+);
+
+const composerSketchM1 = withMeasureEvents(
+  composerSketchM0,
+  'treble',
+  1,
+  [
+    noteEvent('sketch-answer', 0, 'quarter', { step: 'A', octave: 4 }, {
+      annotationOffsets: {
+        pedal: { x: -50, y: 0 },
+      },
+      annotationPlacements: {
+        pedal: 'below',
+      },
+      chordSymbol: 'D/F#',
+      hairpin: 'crescendo',
+      pedal: 'start-release',
+    }),
+  ],
+);
+
+export const composerSketchFixture = withMeasureEvents(
+  composerSketchM1,
+  'treble',
+  2,
+  [
+    chordEvent('sketch-cadence', 0, 'quarter', [
+      { step: 'B', octave: 4 },
+      { step: 'D', octave: 5 },
+    ], {
+      annotationPlacements: {
+        fermata: 'above',
+      },
+      dynamic: 'ff',
+      fermata: true,
+    }),
+  ],
+);
+
+const DU_CHO_TAN_THE_MEASURE_COUNT = 86;
+
+type DuChoChord =
+  | 'A'
+  | 'A2'
+  | 'B'
+  | 'Bm'
+  | 'C#m'
+  | 'D'
+  | 'E'
+  | 'E7/D'
+  | 'F#m';
+
+const DU_CHO_TAN_THE_CHORDS = [
+  null,
+  'D',
+  'E7/D',
+  'C#m',
+  'F#m',
+  'Bm',
+  'E',
+  'A2',
+  null,
+  'D',
+  'E7/D',
+  'C#m',
+  'F#m',
+  'Bm',
+  'E',
+  'A2',
+  'A2',
+  'D',
+  'E7/D',
+  'C#m',
+  'F#m',
+  'Bm',
+  'E',
+  'A2',
+  'A2',
+  'D',
+  'E7/D',
+  'C#m',
+  'F#m',
+  'Bm',
+  'D',
+  'E',
+  'B',
+  null,
+  'D',
+  'E7/D',
+  'C#m',
+  'F#m',
+  'Bm',
+  'E',
+  'A',
+  'D',
+  'E7/D',
+  'C#m',
+  'F#m',
+  'Bm',
+  'E',
+  'A2',
+  null,
+  null,
+  'D',
+  'E7/D',
+  'C#m',
+  'F#m',
+  'Bm',
+  'E',
+  'A',
+  null,
+  'D',
+  'E7/D',
+  'C#m',
+  'F#m',
+  'D',
+  'E',
+  'A2',
+  null,
+  null,
+  'D',
+  'E7/D',
+  'C#m',
+  'F#m',
+  'Bm',
+  'E',
+  'A',
+  'D',
+  'E7/D',
+  'C#m',
+  'F#m',
+  'Bm',
+  'E',
+  'A2',
+  null,
+  null,
+  'Bm',
+  'E',
+  'A2',
+] satisfies Array<DuChoChord | null>;
+
+const DU_CHO_TAN_THE_LYRICS = [
+  'Anh',
+  'có',
+  'nỗi',
+  'sợ',
+  'sợ',
+  'ta',
+  'mất',
+  'nhau',
+  'Tình',
+  'yêu',
+  'bắt',
+  'đầu',
+  'không',
+  'phải',
+  'đi',
+  'tìm',
+  'nỗi',
+  'đau',
+  'Sợ',
+  'giây',
+  'phút',
+  'này',
+  'chẳng',
+  'còn',
+  'thấy',
+  'em',
+  'bên',
+  'anh',
+  'về',
+  'sau',
+  'Nhiều',
+  'khi',
+  'nóng',
+  'giận',
+  'nhiều',
+  'khi',
+  'cãi',
+  'nhau',
+  'để',
+  'rồi',
+  'cuối',
+  'cùng',
+  'ta',
+  'lại',
+  'trở',
+  'về',
+  'với',
+  'nhau',
+  'Đôi',
+  'tay',
+  'này',
+  'cần',
+  'nâng',
+  'niu',
+  'vì',
+  'em',
+  'là',
+  'người',
+  'anh',
+  'yêu',
+  'Dù',
+  'cho',
+  'tận',
+  'thế',
+  'vẫn',
+  'yêu',
+  'em',
+  'luôn',
+  'yêu',
+  'em',
+  'Đừng',
+  'hòng',
+  'ai',
+  'giật',
+  'lấy',
+  'anh',
+  'không',
+  'buông',
+  'anh',
+  'không',
+  'buông',
+  'dẫu',
+  'cho',
+  'thời',
+  'gian',
+  'khiến',
+  'anh',
+  'quên',
+  'lãng',
+  'vẫn',
+  'nhớ',
+  'một',
+  'mình',
+  'em',
+  'vì',
+  'em',
+  'xứng',
+  'đáng',
+  'Tận',
+  'sâu',
+  'tiềm',
+  'thức',
+  'anh',
+  'yêu',
+  'em',
+  'luôn',
+  'yêu',
+  'em',
+  'thật',
+  'tâm',
+  'anh',
+  'chỉ',
+  'muốn',
+  'em',
+  'bên',
+  'mình',
+  'mãi',
+  'không',
+  'cho',
+  'phép',
+  'em',
+  'đến',
+  'với',
+  'một',
+  'ai',
+  'nếu',
+  'như',
+  'anh',
+  'vẫn',
+  'tồn',
+  'tại',
+  'vì',
+  'em',
+  'xứng',
+  'đáng',
+  'Tận',
+  'sâu',
+  'tiềm',
+  'thức',
+  'anh',
+  'yêu',
+  'em',
+  'luôn',
+  'yêu',
+  'em',
+  'thật',
+  'tâm',
+  'anh',
+  'chỉ',
+  'muốn',
+  'em',
+  'bên',
+  'mình',
+  'mãi',
+  'không',
+  'cho',
+  'phép',
+  'em',
+  'đến',
+  'với',
+  'một',
+  'ai',
+  'nếu',
+  'như',
+  'anh',
+  'vẫn',
+  'tồn',
+  'tại',
+];
+
+const DU_CHO_TAN_THE_SECTION_MARKERS: Array<[number, string]> = [
+  [0, 'Intro'],
+  [16, 'A1'],
+  [24, 'A2'],
+  [32, 'B'],
+  [50, 'Ad libitum'],
+  [67, '2.'],
+  [78, 'Coda'],
+];
+
+const DU_CHO_TAN_THE_REPEAT_PATCHES: Array<[number, MeasureFixturePatch]> = [
+  [16, { repeatJump: 'repeat-start' }],
+  [49, { repeatJump: 'ending-1' }],
+  [66, { repeatJump: 'ending-2' }],
+  [78, { repeatJump: 'coda' }],
+  [85, { repeatJump: 'fine' }],
+];
+
+const DU_CHO_TAN_THE_TREBLE_PATTERNS = {
+  adlib: [0, 1, 2, 1],
+  chorus: [2, 3, 2, 1],
+  coda: [1, 0, 2, 3],
+  intro: [0, 2, 3, 2],
+  verse: [1, 2, 1, 0],
+} as const;
+
+function duPitch(step: Pitch['step'], octave: number, accidental?: Pitch['accidental']) {
+  return accidental ? { accidental, octave, step } : { octave, step };
+}
+
+function getDuChoSection(measureIndex: number) {
+  if (measureIndex < 16) return 'intro';
+  if (measureIndex < 32) return 'verse';
+  if (measureIndex < 50) return 'chorus';
+  if (measureIndex < 67) return 'adlib';
+  if (measureIndex < 73) return 'intro';
+  if (measureIndex < 83) return 'chorus';
+  return 'coda';
+}
+
+function shouldUseDuChoLyrics(measureIndex: number) {
+  const section = getDuChoSection(measureIndex);
+
+  return section === 'verse' || section === 'chorus' || section === 'coda';
+}
+
+function getDuChoTrebleTones(chord: DuChoChord | null) {
+  const tones = {
+    A: [
+      duPitch('A', 4),
+      duPitch('C', 5, 'sharp'),
+      duPitch('E', 5),
+      duPitch('A', 5),
+    ],
+    A2: [
+      duPitch('A', 4),
+      duPitch('B', 4),
+      duPitch('C', 5, 'sharp'),
+      duPitch('E', 5),
+    ],
+    B: [
+      duPitch('B', 4),
+      duPitch('D', 5, 'sharp'),
+      duPitch('F', 5, 'sharp'),
+      duPitch('B', 5),
+    ],
+    Bm: [
+      duPitch('B', 4),
+      duPitch('D', 5),
+      duPitch('F', 5, 'sharp'),
+      duPitch('B', 5),
+    ],
+    'C#m': [
+      duPitch('C', 5, 'sharp'),
+      duPitch('E', 5),
+      duPitch('G', 5, 'sharp'),
+      duPitch('B', 5),
+    ],
+    D: [
+      duPitch('D', 5),
+      duPitch('F', 5, 'sharp'),
+      duPitch('A', 5),
+      duPitch('D', 6),
+    ],
+    E: [
+      duPitch('E', 5),
+      duPitch('G', 5, 'sharp'),
+      duPitch('B', 5),
+      duPitch('E', 6),
+    ],
+    'E7/D': [
+      duPitch('D', 5),
+      duPitch('E', 5),
+      duPitch('G', 5, 'sharp'),
+      duPitch('B', 5),
+    ],
+    'F#m': [
+      duPitch('F', 5, 'sharp'),
+      duPitch('A', 5),
+      duPitch('C', 6, 'sharp'),
+      duPitch('F', 6, 'sharp'),
+    ],
+  } satisfies Record<DuChoChord, Pitch[]>;
+
+  return tones[chord ?? 'A2'] ?? tones.A2;
+}
+
+function getDuChoBassPitches(chord: DuChoChord | null) {
+  const pitches = {
+    A: [duPitch('A', 1), duPitch('E', 2)],
+    A2: [duPitch('A', 1), duPitch('E', 2)],
+    B: [duPitch('B', 1), duPitch('F', 2, 'sharp')],
+    Bm: [duPitch('B', 1), duPitch('F', 2, 'sharp')],
+    'C#m': [duPitch('C', 2, 'sharp'), duPitch('G', 2, 'sharp')],
+    D: [duPitch('D', 2), duPitch('A', 2)],
+    E: [duPitch('E', 2), duPitch('B', 2)],
+    'E7/D': [duPitch('D', 2), duPitch('E', 2)],
+    'F#m': [duPitch('F', 2, 'sharp'), duPitch('C', 3, 'sharp')],
+  } satisfies Record<DuChoChord, Pitch[]>;
+
+  return pitches[chord ?? 'A2'] ?? pitches.A2;
+}
+
+function getDuChoTrebleExtra({
+  chord,
+  lyric,
+  measureIndex,
+  noteIndex,
+}: {
+  chord: DuChoChord | null;
+  lyric?: string;
+  measureIndex: number;
+  noteIndex: number;
+}): NoteEventExtra {
+  const extra: NoteEventExtra = {};
+
+  if (noteIndex === 0 && chord) {
+    extra.chordSymbol = chord;
+    extra.annotationPlacements = { chordSymbol: 'above' };
+  }
+
+  if (lyric) {
+    extra.lyric = lyric;
+  }
+
+  if (noteIndex === 0) {
+    if (measureIndex === 32) {
+      extra.dynamic = 'mf';
+    }
+
+    if (measureIndex === 50) {
+      extra.dynamic = 'ad lib.';
+    }
+
+    if (measureIndex === 78) {
+      extra.dynamic = 'pp';
+    }
+
+    if (measureIndex === 73 || measureIndex === 78 || measureIndex === 85) {
+      extra.annotationPlacements = {
+        ...extra.annotationPlacements,
+        fermata: 'above',
+      };
+      extra.fermata = true;
+    }
+
+    if (measureIndex === 73) {
+      extra.glissando = true;
+    }
+
+    if (measureIndex === 83) {
+      extra.dynamic = 'rit.';
+    }
+  }
+
+  return extra;
+}
+
+function createDuChoTrebleEvents(
+  measureIndex: number,
+  chord: DuChoChord | null,
+  lyrics: string[],
+) {
+  const section = getDuChoSection(measureIndex);
+  const pattern = DU_CHO_TAN_THE_TREBLE_PATTERNS[section];
+  const tones = getDuChoTrebleTones(chord);
+
+  return [0, 0.5, 1, 1.5].map((beat, noteIndex) => {
+    const lyric = shouldUseDuChoLyrics(measureIndex) ? lyrics.shift() : undefined;
+    const pitch = tones[pattern[noteIndex] ?? 0] ?? tones[0];
+
+    return noteEvent(
+      `du-full-t${measureIndex + 1}-${noteIndex + 1}`,
+      beat,
+      'eighth',
+      pitch,
+      getDuChoTrebleExtra({ chord, lyric, measureIndex, noteIndex }),
+    );
+  });
+}
+
+function createDuChoBassEvents(measureIndex: number, chord: DuChoChord | null) {
+  const bassPitches = getDuChoBassPitches(chord);
+  const bassExtra: ChordEventExtra =
+    measureIndex % 2 === 0 || measureIndex >= 78
+      ? { annotationPlacements: { pedal: 'below' }, pedal: 'start' }
+      : {};
+
+  return [
+    chordEvent(
+      `du-full-b${measureIndex + 1}-open`,
+      0,
+      'quarter',
+      bassPitches,
+      bassExtra,
+    ),
+    chordEvent(
+      `du-full-b${measureIndex + 1}-answer`,
+      1,
+      'quarter',
+      [bassPitches[1] ?? bassPitches[0]],
+    ),
+  ];
+}
+
+function buildDuChoTanTheFullFixture() {
+  let score = setMeasureKeySignature(
+    setScoreTimeSignature(
+      createEmptyScore('grand', {
+        composer: 'Nguyễn Phúc Thiện & Trần Thân',
+        id: 'fixture-du-cho-tan-the-full',
+        measureCount: DU_CHO_TAN_THE_MEASURE_COUNT,
+        tempo: 76,
+        title: 'Dù Cho Tận Thế - Full Demo',
+      }),
+      { beatUnit: 4, beats: 2 },
+    ),
+    0,
+    'A',
+  );
+  const lyrics = [...DU_CHO_TAN_THE_LYRICS];
+
+  DU_CHO_TAN_THE_SECTION_MARKERS.forEach(([measureIndex, marker]) => {
+    score = setMeasureSectionMarker(score, measureIndex, marker);
+  });
+
+  DU_CHO_TAN_THE_REPEAT_PATCHES.forEach(([measureIndex, patch]) => {
+    score = withMeasurePatch(score, 'treble', measureIndex, patch);
+  });
+
+  DU_CHO_TAN_THE_CHORDS.forEach((chord, measureIndex) => {
+    score = withMeasureEvents(
+      score,
+      'treble',
+      measureIndex,
+      createDuChoTrebleEvents(measureIndex, chord, lyrics),
+    );
+    score = withMeasureEvents(
+      score,
+      'bass',
+      measureIndex,
+      createDuChoBassEvents(measureIndex, chord),
+    );
+  });
+
+  return score;
+}
+
+export const duChoTanTheFullFixture = buildDuChoTanTheFullFixture();
 
 const realWorldBase = setMeasureSectionMarker(
   setMeasureKeySignature(

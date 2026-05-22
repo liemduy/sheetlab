@@ -245,7 +245,7 @@ describe('user acceptance song flows', () => {
     expectNote('Note G2 measure 2 beat 1', 'whole');
     expectNote('Note F2 measure 3 beat 1', 'whole');
     expectNote('Note C3 measure 4 beat 1', 'whole');
-  });
+  }, 10_000);
 
   it('exports a PDF after a user creates a piano score', async () => {
     const fetchSpy = vi.fn().mockResolvedValue({

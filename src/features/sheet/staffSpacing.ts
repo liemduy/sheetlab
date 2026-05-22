@@ -3,6 +3,7 @@ import type {
   Pitch,
   Score,
 } from '../../domain/score/types';
+import { getEventAnnotationOffset } from '../../domain/score/annotationOffsets';
 import {
   getEventPitches,
   isGeneratedRestEvent,
@@ -29,19 +30,20 @@ import {
   STAFF_LINE_SPACING,
 } from './layoutConstants';
 import {
-  ANNOTATION_METRICS,
-  ABOVE_STAFF_INK_GAP,
-  BELOW_STAFF_INK_GAP,
   NOTEHEAD_ANNOTATION_INK_PADDING,
   type AnnotationPlacement,
+  createManualAnnotationPlacement,
+  getAnnotationBaseline,
   getAnnotationBounds,
   getAutomaticAnnotationSide,
   getEventAnnotationKinds,
   getEventAnnotationText,
+  hasManualAnnotationLayout,
+  keepAnnotationPlacementOutsideStaff,
+  moveAnnotationBounds,
   placeAnnotationInRows,
 } from './annotationLayoutPolicy';
 
-type PitchBounds = { maxY: number; minY: number };
 const STEM_INK_ESTIMATE = STAFF_LINE_SPACING * 2;
 const INTER_STAFF_MIN_CLEARANCE = 22;
 
@@ -91,55 +93,6 @@ function getStaffPitchBounds(
             );
           }),
         ),
-      ) ?? [];
-
-  if (!staff || pitchYs.length === 0) {
-    return {
-      maxY: STAFF_LINE_SPACING * 4,
-      minY: 0,
-    };
-  }
-
-  return {
-    maxY: Math.max(STAFF_LINE_SPACING * 4, ...pitchYs),
-    minY: Math.min(0, ...pitchYs),
-  };
-}
-
-function getStaffVoicePitchBounds(
-  score: Score,
-  staffIndex: number,
-  systemIndex: number,
-  voiceIndex: number,
-  measureIndexes?: number[],
-) {
-  const staff = score.parts[0]?.staves[staffIndex];
-  const measureStart = systemIndex * MEASURES_PER_SYSTEM;
-  const measureEnd = measureStart + MEASURES_PER_SYSTEM;
-  const pitchYs =
-    staff?.measures
-      .filter(
-        (measure) =>
-          measureIndexes
-            ? measureIndexes.includes(measure.index)
-            : measure.index >= measureStart && measure.index < measureEnd,
-      )
-      .flatMap((measure) =>
-        measure.voices[voiceIndex]?.events.flatMap((event) => {
-          const activeClef = getActiveClef(
-            score,
-            staff.id,
-            measure.index,
-            event.beat,
-          );
-
-          return getEventPitches(event).map((pitch) =>
-            getPitchYRelativeToStaffTop(
-              clampPitchToClefRange(pitch, activeClef),
-              activeClef,
-            ),
-          );
-        }) ?? [],
       ) ?? [];
 
   if (!staff || pitchYs.length === 0) {
@@ -382,19 +335,53 @@ function getEventPitchBounds(
   };
 }
 
+function getEstimatedEventInkBounds({
+  beat,
+  eventPitches,
+  measureIndex,
+  score,
+  staffIndex,
+  x,
+}: {
+  beat: number;
+  eventPitches: Pitch[];
+  measureIndex: number;
+  score: Score;
+  staffIndex: number;
+  x: number;
+}) {
+  const eventPitchBounds = getEventPitchBounds(
+    score,
+    staffIndex,
+    measureIndex,
+    beat,
+    eventPitches,
+  );
+
+  return {
+    maxX: x + 24,
+    maxY: eventPitchBounds.maxY + BELOW_STAFF_NOTE_INK_ESTIMATE,
+    minX: x - 24,
+    minY: eventPitchBounds.minY - NOTEHEAD_ANNOTATION_INK_PADDING,
+  };
+}
+
 function getStaffSystemAnnotationExtents(
   score: Score,
   staffIndex: number,
   systemIndex: number,
   measureIndexes?: number[],
 ) {
+  const staffBounds = {
+    maxY: STAFF_LINE_SPACING * 4,
+    minY: 0,
+  };
   const systemAnnotationPlacements: AnnotationPlacement[] = [];
   const voiceStates = new Map<
     number,
     {
       abovePlacements: AnnotationPlacement[];
       belowPlacements: AnnotationPlacement[];
-      voiceBounds: PitchBounds;
     }
   >();
   const systemEvents = getSystemMeasures(score, staffIndex, systemIndex, measureIndexes)
@@ -413,13 +400,6 @@ function getStaffSystemAnnotationExtents(
         a.event.id.localeCompare(b.event.id),
     );
   const staffInkBlockers = systemEvents.map(({ event, measure }) => {
-    const eventPitchBounds = getEventPitchBounds(
-      score,
-      staffIndex,
-      measure.index,
-      event.beat,
-      getEventPitches(event),
-    );
     const x = getEstimatedEventX(
       score,
       measure.index,
@@ -427,12 +407,14 @@ function getStaffSystemAnnotationExtents(
       measureIndexes,
     );
 
-    return {
-      maxX: x + 24,
-      maxY: eventPitchBounds.maxY + BELOW_STAFF_NOTE_INK_ESTIMATE,
-      minX: x - 24,
-      minY: eventPitchBounds.minY - NOTEHEAD_ANNOTATION_INK_PADDING,
-    };
+    return getEstimatedEventInkBounds({
+      beat: event.beat,
+      eventPitches: getEventPitches(event),
+      measureIndex: measure.index,
+      score,
+      staffIndex,
+      x,
+    });
   });
   const getVoiceState = (voiceIndex: number) => {
     const existingState = voiceStates.get(voiceIndex);
@@ -441,20 +423,9 @@ function getStaffSystemAnnotationExtents(
       return existingState;
     }
 
-    const voicePitchBounds = getStaffVoicePitchBounds(
-      score,
-      staffIndex,
-      systemIndex,
-      voiceIndex,
-      measureIndexes,
-    );
     const nextState = {
       abovePlacements: [],
       belowPlacements: [],
-      voiceBounds: {
-        maxY: voicePitchBounds.maxY + BELOW_STAFF_NOTE_INK_ESTIMATE,
-        minY: voicePitchBounds.minY - NOTEHEAD_ANNOTATION_INK_PADDING,
-      },
     };
 
     voiceStates.set(voiceIndex, nextState);
@@ -494,13 +465,40 @@ function getStaffSystemAnnotationExtents(
           voiceState.abovePlacements,
           voiceState.belowPlacements,
         );
-        const metrics = ANNOTATION_METRICS[kind];
-        const y =
-          side === 'below'
-            ? voiceState.voiceBounds.maxY + BELOW_STAFF_INK_GAP + metrics.height
-            : voiceState.voiceBounds.minY -
-              ABOVE_STAFF_INK_GAP -
-              metrics.descent;
+        const isManualLayout = hasManualAnnotationLayout(event, kind);
+        const eventInkBounds = getEstimatedEventInkBounds({
+          beat: event.beat,
+          eventPitches: getEventPitches(event),
+          measureIndex: measure.index,
+          score,
+          staffIndex,
+          x,
+        });
+
+        const preferredBounds = getAnnotationBounds({
+          kind,
+          text,
+          x: annotationX,
+          y: getAnnotationBaseline({
+            eventInkBounds,
+            kind,
+            side,
+            staffBounds,
+          }),
+        });
+
+        if (isManualLayout) {
+          const placement = keepAnnotationPlacementOutsideStaff(
+            moveAnnotationBounds(
+              createManualAnnotationPlacement(preferredBounds, side),
+              getEventAnnotationOffset(event, kind),
+            ),
+            staffBounds,
+          );
+
+          systemAnnotationPlacements.push(placement);
+          return;
+        }
 
         const placement = placeAnnotationInRows({
           blockers: [
@@ -512,12 +510,7 @@ function getStaffSystemAnnotationExtents(
             side === 'below'
               ? voiceState.belowPlacements
               : voiceState.abovePlacements,
-          preferredBounds: getAnnotationBounds({
-            kind,
-            text,
-            x: annotationX,
-            y,
-          }),
+          preferredBounds,
         });
 
         systemAnnotationPlacements.push(placement);

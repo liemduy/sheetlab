@@ -1,13 +1,14 @@
 import { countScoreEvents } from './editing';
 import {
-  duChoTanTheExcerptFixture,
+  annotationDragLabFixture,
+  composerSketchFixture,
+  duChoTanTheFullFixture,
   extremeClefOttavaChromaticFixture,
   extremeTupletRepeatEtudeFixture,
   extremeVocalPianoFixture,
-  grandStaffStudyFixture,
+  pianoPracticeLoopFixture,
   readableSpacingStressFixture,
   stressPianoHardeningFixture,
-  trebleStudyFixture,
 } from './fixtures';
 import type { Score, ScoreEvent } from './types';
 
@@ -15,6 +16,7 @@ export type ScoreFixtureCategory = 'basic' | 'excerpt' | 'extreme';
 
 export type ScoreFixtureCapability =
   | 'articulations'
+  | 'annotations'
   | 'clef-changes'
   | 'grand-staff'
   | 'key-signatures'
@@ -52,6 +54,18 @@ function hasConnections(score: Score) {
 function hasArticulations(score: Score) {
   return getFixtureEvents(score).some((event) =>
     Boolean(event.articulations?.length),
+  );
+}
+
+function hasAnnotations(score: Score) {
+  return getFixtureEvents(score).some((event) =>
+    Boolean(
+      event.chordSymbol ||
+        event.dynamic ||
+        event.fermata ||
+        event.lyric ||
+        event.pedal,
+    ),
   );
 }
 
@@ -116,6 +130,10 @@ function inferCapabilities(score: Score): ScoreFixtureCapability[] {
     capabilities.push('articulations');
   }
 
+  if (hasAnnotations(score)) {
+    capabilities.push('annotations');
+  }
+
   if (hasClefChanges(score)) {
     capabilities.push('clef-changes');
   }
@@ -159,25 +177,35 @@ function createFixtureMetadata({
 export const scoreFixtureCatalog = [
   createFixtureMetadata({
     category: 'basic',
-    id: 'treble-study',
-    label: 'Treble Study',
+    id: 'annotation-drag-lab',
+    label: 'Annotation Drag Lab',
     risk: 'low',
-    score: trebleStudyFixture,
+    score: annotationDragLabFixture,
   }),
   createFixtureMetadata({
     category: 'basic',
-    id: 'grand-staff-study',
-    label: 'Grand Staff Study',
+    id: 'piano-practice-loop',
+    label: 'Piano Practice Loop',
     risk: 'low',
-    score: grandStaffStudyFixture,
+    score: pianoPracticeLoopFixture,
+  }),
+  createFixtureMetadata({
+    category: 'basic',
+    id: 'composer-sketch',
+    label: 'Composer Sketch',
+    risk: 'low',
+    score: composerSketchFixture,
   }),
   createFixtureMetadata({
     category: 'excerpt',
-    id: 'du-cho-tan-the-excerpt',
-    label: 'Du Cho Tan The Excerpt',
+    id: 'du-cho-tan-the-full',
+    label: 'Dù Cho Tận Thế Full',
     risk: 'medium',
-    score: duChoTanTheExcerptFixture,
+    score: duChoTanTheFullFixture,
   }),
+] as const satisfies readonly ScoreFixtureMetadata[];
+
+export const extremeScoreFixtureCatalog = [
   createFixtureMetadata({
     category: 'extreme',
     id: 'stress-piano-hardening',
@@ -215,10 +243,10 @@ export const scoreFixtureCatalog = [
   }),
 ] as const satisfies readonly ScoreFixtureMetadata[];
 
-export const extremeScoreFixtureCatalog = scoreFixtureCatalog.filter(
-  (fixture) => fixture.category === 'extreme',
-);
-
 export function getScoreFixtureById(id: string) {
-  return scoreFixtureCatalog.find((fixture) => fixture.id === id) ?? null;
+  return (
+    scoreFixtureCatalog.find((fixture) => fixture.id === id) ??
+    extremeScoreFixtureCatalog.find((fixture) => fixture.id === id) ??
+    null
+  );
 }

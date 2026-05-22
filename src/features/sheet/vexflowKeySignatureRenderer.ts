@@ -9,6 +9,7 @@ const KEY_SIGNATURE_SYMBOL_TEXT = {
 export function drawKeySignatureSymbols(
   container: HTMLDivElement,
   score: Score,
+  visibleMeasureIndexes?: ReadonlySet<number> | null,
 ) {
   const svg = container.querySelector('svg');
 
@@ -26,6 +27,13 @@ export function drawKeySignatureSymbols(
     );
 
   getKeySignatureSymbolLayouts(score).forEach((layout) => {
+    if (
+      visibleMeasureIndexes &&
+      !visibleMeasureIndexes.has(layout.measureIndex)
+    ) {
+      return;
+    }
+
     const symbol = document.createElementNS('http://www.w3.org/2000/svg', 'text');
 
     symbol.classList.add('sheetlab-key-signature-symbol');

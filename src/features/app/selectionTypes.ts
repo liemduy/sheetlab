@@ -1,4 +1,9 @@
-import type { AnnotationKind, StaffId } from '../../domain/score/types';
+import type {
+  AnnotationKind,
+  AnnotationOffset,
+  AnnotationPlacementSide,
+  StaffId,
+} from '../../domain/score/types';
 
 export interface MeasureTarget {
   staffId: StaffId;
@@ -19,6 +24,8 @@ export interface AnnotationContextMenuState {
   clientY: number;
   eventId: string;
   kind: AnnotationKind;
+  offset: AnnotationOffset;
+  side: Exclude<AnnotationPlacementSide, 'auto'>;
 }
 
 export interface AnnotationTarget {

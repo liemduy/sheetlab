@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { deserializeScore, serializeScore } from './factories';
 import {
+  annotationDragLabFixture,
+  composerSketchFixture,
   duChoTanTheExcerptFixture,
+  duChoTanTheFullFixture,
   extremeClefOttavaChromaticFixture,
   extremeScoreFixtures,
   extremeTupletRepeatEtudeFixture,
   extremeVocalPianoFixture,
   grandStaffStudyFixture,
+  pianoPracticeLoopFixture,
   readableSpacingStressFixture,
   stressPianoHardeningFixture,
   trebleStudyFixture,
@@ -27,6 +31,28 @@ function getAllEvents(score: Score) {
       ),
     ),
   );
+}
+
+function getManualAnnotationOffsetCount(score: Score) {
+  return getAllEvents(score).reduce(
+    (count, event) =>
+      count + Object.keys(event.annotationOffsets ?? {}).length,
+    0,
+  );
+}
+
+function getAnnotationKinds(score: Score) {
+  const annotationKinds = new Set<string>();
+
+  for (const event of getAllEvents(score)) {
+    if (event.chordSymbol) annotationKinds.add('chordSymbol');
+    if (event.dynamic) annotationKinds.add('dynamic');
+    if (event.fermata) annotationKinds.add('fermata');
+    if (event.lyric) annotationKinds.add('lyric');
+    if (event.pedal) annotationKinds.add('pedal');
+  }
+
+  return annotationKinds;
 }
 
 describe('score fixtures', () => {
@@ -113,6 +139,98 @@ describe('score fixtures', () => {
     expect(bassEvents?.[0]).toMatchObject({
       pedal: 'release',
     });
+  });
+
+  it('provides current-stage user-facing demo fixtures', () => {
+    const annotationEvents = getAllEvents(annotationDragLabFixture);
+    const anchor = annotationEvents.find(
+      (event) => event.id === 'annotation-lab-anchor',
+    );
+    const pianoStaves = pianoPracticeLoopFixture.parts[0]?.staves;
+    const composerEvents = getAllEvents(composerSketchFixture);
+
+    expect(annotationDragLabFixture.title).toBe('Annotation Drag Lab');
+    expect(annotationEvents).toHaveLength(4);
+    expect(anchor).toMatchObject({
+      annotationOffsets: {
+        pedal: { x: -58, y: 0 },
+      },
+      annotationPlacements: {
+        pedal: 'below',
+      },
+      chordSymbol: 'Cmaj7',
+      lyric: 'move',
+      pedal: 'start',
+    });
+    expect(getManualAnnotationOffsetCount(annotationDragLabFixture)).toBe(1);
+    expect(getAnnotationKinds(annotationDragLabFixture)).toEqual(
+      new Set(['chordSymbol', 'dynamic', 'fermata', 'lyric', 'pedal']),
+    );
+    expect(pianoPracticeLoopFixture.type).toBe('grand');
+    expect(pianoStaves?.map((staff) => staff.id)).toEqual(['treble', 'bass']);
+    expect(getManualAnnotationOffsetCount(pianoPracticeLoopFixture)).toBe(0);
+    expect(getAnnotationKinds(pianoPracticeLoopFixture)).toEqual(
+      new Set(['chordSymbol', 'dynamic', 'fermata', 'lyric', 'pedal']),
+    );
+    expect(composerSketchFixture.timeSignature).toEqual({
+      beats: 3,
+      beatUnit: 4,
+    });
+    expect(getManualAnnotationOffsetCount(composerSketchFixture)).toBe(1);
+    expect(getAnnotationKinds(composerSketchFixture)).toEqual(
+      new Set(['chordSymbol', 'dynamic', 'fermata', 'lyric', 'pedal']),
+    );
+    expect(composerEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ chordSymbol: 'Gmaj9' }),
+        expect.objectContaining({ hairpin: 'crescendo' }),
+        expect.objectContaining({ fermata: true }),
+      ]),
+    );
+  });
+
+  it('provides a full-form Du Cho Tan The demo fixture', () => {
+    const staves = duChoTanTheFullFixture.parts[0]?.staves;
+    const trebleMeasures = staves?.[0]?.measures;
+    const bassMeasures = staves?.[1]?.measures;
+    const events = getAllEvents(duChoTanTheFullFixture);
+
+    expect(duChoTanTheFullFixture.type).toBe('grand');
+    expect(duChoTanTheFullFixture.title).toBe('Dù Cho Tận Thế - Full Demo');
+    expect(duChoTanTheFullFixture.timeSignature).toEqual({
+      beats: 2,
+      beatUnit: 4,
+    });
+    expect(trebleMeasures).toHaveLength(86);
+    expect(bassMeasures).toHaveLength(86);
+    expect(trebleMeasures?.[0]).toMatchObject({
+      keySignature: 'A',
+      sectionMarker: 'Intro',
+    });
+    expect(trebleMeasures?.[16]).toMatchObject({
+      repeatJump: 'repeat-start',
+      sectionMarker: 'A1',
+    });
+    expect(trebleMeasures?.[78]).toMatchObject({
+      repeatJump: 'coda',
+      sectionMarker: 'Coda',
+    });
+    expect(trebleMeasures?.[85]).toMatchObject({
+      repeatJump: 'fine',
+    });
+    expect(events.length).toBeGreaterThan(500);
+    expect(getAnnotationKinds(duChoTanTheFullFixture)).toEqual(
+      new Set(['chordSymbol', 'dynamic', 'fermata', 'lyric', 'pedal']),
+    );
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ chordSymbol: 'D' }),
+        expect.objectContaining({ chordSymbol: 'E7/D' }),
+        expect.objectContaining({ dynamic: 'ad lib.' }),
+        expect.objectContaining({ dynamic: 'rit.' }),
+        expect.objectContaining({ glissando: true }),
+      ]),
+    );
   });
 
   it('provides a hardening fixture with dense valid notation cases', () => {
@@ -241,14 +359,10 @@ describe('score fixtures', () => {
 
   it('catalogs demo and extreme fixtures with stable metadata', () => {
     expect(scoreFixtureCatalog.map((fixture) => fixture.id)).toEqual([
-      'treble-study',
-      'grand-staff-study',
-      'du-cho-tan-the-excerpt',
-      'stress-piano-hardening',
-      'extreme-tuplet-repeat',
-      'extreme-vocal-piano',
-      'extreme-clef-ottava-chromatic',
-      'readable-spacing-stress',
+      'annotation-drag-lab',
+      'piano-practice-loop',
+      'composer-sketch',
+      'du-cho-tan-the-full',
     ]);
     expect(extremeScoreFixtureCatalog.map((fixture) => fixture.score)).toEqual(
       extremeScoreFixtures,

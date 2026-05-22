@@ -56,6 +56,7 @@ type ScoreLayoutCache = {
 };
 
 const scoreLayoutCache = new WeakMap<Score, ScoreLayoutCache>();
+const ANNOTATION_INTERACTION_PADDING = 72;
 
 export function getScoreSystemCount(score: Score | ScoreType) {
   if (typeof score === 'string') {
@@ -468,6 +469,36 @@ export function getStaticMeasureX(measureIndex: number) {
   return STAFF_LEFT + getLocalMeasureIndex(measureIndex) * MEASURE_WIDTH;
 }
 
+function getAnnotationInteractionPadding(score: Score | ScoreType) {
+  if (typeof score === 'string') {
+    return 0;
+  }
+
+  let hasAnnotations = false;
+
+  score.parts.forEach((part) => {
+    part.staves.forEach((staff) => {
+      staff.measures.forEach((measure) => {
+        measure.voices.forEach((voice) => {
+          voice.events.forEach((event) => {
+            if (
+              event.chordSymbol ||
+              event.dynamic ||
+              event.fermata ||
+              event.lyric ||
+              event.pedal
+            ) {
+              hasAnnotations = true;
+            }
+          });
+        });
+      });
+    });
+  });
+
+  return hasAnnotations ? ANNOTATION_INTERACTION_PADDING : 0;
+}
+
 export function getScoreSvgHeight(score: Score | ScoreType) {
   const scoreType = typeof score === 'string' ? score : score.type;
   const systemCount = getScoreSystemCount(score);
@@ -483,13 +514,18 @@ export function getScoreSvgHeight(score: Score | ScoreType) {
       getScoreStaffTop(score, 1, lastMeasureIndex) +
       STAFF_LINE_SPACING * 4;
 
-    return Math.max(420, lastStaffBottom + 128);
+    return (
+      Math.max(420, lastStaffBottom + 128) +
+      getAnnotationInteractionPadding(score)
+    );
   }
 
-  return Math.max(
-    280,
-    getScoreStaffTop(score, 0, lastMeasureIndex) +
-      STAFF_LINE_SPACING * 4 +
-      110,
+  return (
+    Math.max(
+      280,
+      getScoreStaffTop(score, 0, lastMeasureIndex) +
+        STAFF_LINE_SPACING * 4 +
+        110,
+    ) + getAnnotationInteractionPadding(score)
   );
 }

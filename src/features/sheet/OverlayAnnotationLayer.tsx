@@ -10,6 +10,8 @@ interface AnnotationHitTargetsProps {
     kind: AnnotationKind,
     clientX: number,
     clientY: number,
+    side: RenderedAnnotationLayout['side'],
+    offset: AnnotationOffset,
   ) => void;
   onAnnotationStartDrag?: (
     layout: RenderedAnnotationLayout,
@@ -92,6 +94,8 @@ export function AnnotationHitTargets({
                 layout.kind,
                 event.clientX,
                 event.clientY,
+                layout.side,
+                { x: layout.offsetX, y: layout.offsetY },
               );
             }}
           />

@@ -1,9 +1,17 @@
-import type { AnnotationKind, Clef, Score, StaffId } from '../../domain/score/types';
+import type {
+  AnnotationKind,
+  AnnotationOffset,
+  AnnotationPlacementSide,
+  Clef,
+  Score,
+  StaffId,
+} from '../../domain/score/types';
 import type { DurationValue } from '../../domain/score/types';
 import type { InputCursor } from '../editor/inputCursor';
 import type { EntryMode, PlacementMode } from '../editor/editorState';
 import type { AnnotationTarget } from '../app/selectionTypes';
 import type { MusicPosition } from './interaction';
+import type { ScorePageViewport } from './pageLayout';
 import { VexFlowStaffRenderer } from './VexFlowStaffRenderer';
 
 export interface StaffRendererProps {
@@ -29,6 +37,8 @@ export interface StaffRendererProps {
     kind: AnnotationKind,
     clientX: number,
     clientY: number,
+    side: Exclude<AnnotationPlacementSide, 'auto'>,
+    offset: AnnotationOffset,
   ) => void;
   onAnnotationOffsetChange?: (
     eventId: string,
@@ -71,6 +81,7 @@ export interface StaffRendererProps {
   playbackBeat?: number | null;
   placementMode?: PlacementMode;
   inputCursor?: InputCursor | null;
+  pageViewport?: ScorePageViewport;
   clefChange?: Clef | null;
   invalidMeasureKeys?: readonly string[];
   showLayoutZones?: boolean;

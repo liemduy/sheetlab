@@ -363,13 +363,13 @@ function createUpdatedEventBase(
 
   if (update.annotationPlacement) {
     annotationPlacements = { ...(event.annotationPlacements ?? {}) };
-    annotationOffsets = setAnnotationOffset(
-      annotationOffsets,
-      update.annotationPlacement.kind,
-      null,
-    );
 
     if (update.annotationPlacement.side === 'auto') {
+      annotationOffsets = setAnnotationOffset(
+        annotationOffsets,
+        update.annotationPlacement.kind,
+        null,
+      );
       delete annotationPlacements[update.annotationPlacement.kind];
     } else {
       annotationPlacements[update.annotationPlacement.kind] =
@@ -724,6 +724,62 @@ function replaceVoiceEvents(
       ),
     })),
   };
+}
+
+function replaceScoreEventInPlace(
+  score: Score,
+  staffId: StaffId,
+  measureIndex: number,
+  voiceIndex: number,
+  eventId: string,
+  nextEvent: ScoreEvent,
+): Score {
+  return {
+    ...score,
+    parts: score.parts.map((part) => ({
+      ...part,
+      staves: part.staves.map((staff) =>
+        staff.id === staffId
+          ? {
+              ...staff,
+              measures: staff.measures.map((measure) =>
+                measure.index === measureIndex
+                  ? {
+                      ...measure,
+                      voices: measure.voices.map((voice, index) =>
+                        index === voiceIndex
+                          ? {
+                              ...voice,
+                              events: voice.events.map((event) =>
+                                event.id === eventId ? nextEvent : event,
+                              ),
+                            }
+                          : voice,
+                      ),
+                    }
+                  : measure,
+              ),
+            }
+          : staff,
+      ),
+    })),
+  };
+}
+
+function canUpdateScoreEventInPlace(update: UpdateScoreEventRequest) {
+  return (
+    update.accidental === undefined &&
+    update.allowInvalidMeasure === undefined &&
+    update.beat === undefined &&
+    update.duration === undefined &&
+    update.dots === undefined &&
+    update.measureIndex === undefined &&
+    update.pitch === undefined &&
+    update.pitchIndex === undefined &&
+    update.staffId === undefined &&
+    update.tuplet === undefined &&
+    update.voiceIndex === undefined
+  );
 }
 
 function roundBeat(beat: number) {
@@ -1459,7 +1515,6 @@ export function tryUpdateScoreEvent(
     };
   }
 
-  const scoreWithoutEvent = deleteScoreEvent(score, eventId);
   const duration = update.duration ?? found.event.duration;
   const targetStaffId = update.staffId ?? found.staffId;
   const targetMeasureIndex = update.measureIndex ?? found.measureIndex;
@@ -1472,6 +1527,22 @@ export function tryUpdateScoreEvent(
     duration,
     update,
   );
+
+  if (canUpdateScoreEventInPlace(update)) {
+    return {
+      score: replaceScoreEventInPlace(
+        score,
+        found.staffId,
+        found.measureIndex,
+        found.voiceIndex,
+        eventId,
+        candidateEvent,
+      ),
+      updated: true,
+    };
+  }
+
+  const scoreWithoutEvent = deleteScoreEvent(score, eventId);
   const result = writeScoreEvent(
     scoreWithoutEvent,
     targetStaffId,

@@ -127,6 +127,7 @@ function isSystemStartClefChange(
 export function drawSystemStartClefChangeMarkers(
   container: HTMLDivElement,
   score: Score,
+  visibleMeasureIndexes?: ReadonlySet<number> | null,
 ) {
   const svg = container.querySelector('svg');
 
@@ -142,6 +143,13 @@ export function drawSystemStartClefChangeMarkers(
 
   staves.forEach((staff, staffIndex) => {
     staff.measures.forEach((measure) => {
+      if (
+        visibleMeasureIndexes &&
+        !visibleMeasureIndexes.has(measure.index)
+      ) {
+        return;
+      }
+
       getMeasureClefChanges(score, staff.id, measure.index)
         .filter((change) =>
           isSystemStartClefChange(score, measure.index, change.beat),

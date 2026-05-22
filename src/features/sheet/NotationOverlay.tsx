@@ -3,6 +3,7 @@ import type { MouseEvent } from 'react';
 import type { Score } from '../../domain/score/types';
 import type {
   AnnotationKind,
+  AnnotationPlacementSide,
   Clef,
   DurationValue,
   StaffId,
@@ -79,6 +80,7 @@ import {
   type LyricMapDragAnchor,
 } from './OverlayLyricMapLayer';
 import { PlaybackLayer } from './OverlayPlaybackLayer';
+import type { ScorePageViewport } from './pageLayout';
 import { VoiceZoneDebugOverlay } from './OverlayVoiceZoneLayer';
 import { getNestedSvgPoint, getSvgPoint } from './overlaySvgPoint';
 import type {
@@ -118,6 +120,8 @@ interface NotationOverlayProps {
     kind: AnnotationKind,
     clientX: number,
     clientY: number,
+    side: Exclude<AnnotationPlacementSide, 'auto'>,
+    offset: { x: number; y: number },
   ) => void;
   onAnnotationOffsetChange?: (
     eventId: string,
@@ -150,6 +154,7 @@ interface NotationOverlayProps {
     staffId: StaffId;
   }) => void;
   onSelectMeasure?: (staffId: StaffId, measureIndex: number) => void;
+  pageViewport?: ScorePageViewport;
   playbackBeat?: number | null;
   placementMode?: PlacementMode;
   score: Score;
@@ -197,6 +202,7 @@ export function NotationOverlay({
   onSelectMeasure,
   onSelectEvent,
   onSelectClefChange,
+  pageViewport,
   playbackBeat,
   placementMode = 'place',
   score,
@@ -262,6 +268,19 @@ export function NotationOverlay({
   const suppressNextPlaceRef = useRef(false);
   const staves = score.parts[0]?.staves ?? [];
   const beatsPerMeasure = getMeasureBeats(score.timeSignature);
+  const visibleMeasureIndexSet = pageViewport
+    ? new Set(pageViewport.measureIndexes)
+    : null;
+  const isMeasureVisible = (measureIndex: number) =>
+    !visibleMeasureIndexSet || visibleMeasureIndexSet.has(measureIndex);
+  const playbackMeasureIndex =
+    playbackBeat !== null && playbackBeat !== undefined
+      ? Math.floor(playbackBeat / beatsPerMeasure)
+      : null;
+  const visiblePlaybackBeat =
+    playbackMeasureIndex === null || isMeasureVisible(playbackMeasureIndex)
+      ? playbackBeat
+      : null;
   const keySignatureSymbolLayouts = getKeySignatureSymbolLayouts(score);
   const clefChangeTargetLayouts = getClefChangeTargetLayouts({
     eventLayouts,
@@ -598,7 +617,7 @@ export function NotationOverlay({
       className="staff-renderer notation-overlay"
       data-testid="staff-renderer"
       role="img"
-      viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+      viewBox={`0 ${pageViewport?.y ?? 0} ${svgWidth} ${svgHeight}`}
       onMouseMove={(event) => {
         if (annotationDragState) {
           const point = getSvgPoint(event, svgHeight);
@@ -618,8 +637,6 @@ export function NotationOverlay({
             hasMoved,
             previewOffset: hasMoved
               ? resolveAnnotationDragOffset({
-                  eventLayout: eventLayouts[annotationDragState.layout.eventId],
-                  layout: annotationDragState.layout,
                   offset: clampAnnotationOffset({
                     x: annotationDragState.startOffsetX + svgDeltaX,
                     y: annotationDragState.startOffsetY + svgDeltaY,
@@ -877,7 +894,13 @@ export function NotationOverlay({
         );
       }}
     >
-      <rect className="staff-page-bg" x={0} y={0} width={svgWidth} height={svgHeight} />
+      <rect
+        className="staff-page-bg"
+        x={0}
+        y={pageViewport?.y ?? 0}
+        width={svgWidth}
+        height={svgHeight}
+      />
       <VoiceZoneDebugOverlay
         show={showLayoutZones}
         zones={voiceZoneLayouts}
@@ -898,6 +921,7 @@ export function NotationOverlay({
       ) : null}
       {score.type === 'grand' && staves.length > 1
         ? (staves[0]?.measures ?? [])
+            .filter((measure) => isMeasureVisible(measure.index))
             .filter((measure) => getLocalMeasureIndex(measure.index, score) === 0)
             .map((measure) => (
               <line
@@ -941,23 +965,25 @@ export function NotationOverlay({
       ) : null}
       {staves.map((staff, staffIndex) => (
         <g key={staff.id} data-testid={`staff-${staff.id}`}>
-          {staff.measures.map((measure) => (
-            <MeasureHitTarget
-              key={`measure-hit-${staff.id}-${measure.index}`}
-              isInputArmed={isInputArmed}
-              isSelected={
-                selectedMeasure?.staffId === staff.id &&
-                selectedMeasure.measureIndex === measure.index
-              }
-              measureIndex={measure.index}
-              onMeasureContextMenu={onMeasureContextMenu}
-              onSelectMeasure={onSelectMeasure}
-              score={score}
-              staff={staff}
-              staffIndex={staffIndex}
-            />
-          ))}
-          {staff.measures.map((measure) =>
+          {staff.measures
+            .filter((measure) => isMeasureVisible(measure.index))
+            .map((measure) => (
+              <MeasureHitTarget
+                key={`measure-hit-${staff.id}-${measure.index}`}
+                isInputArmed={isInputArmed}
+                isSelected={
+                  selectedMeasure?.staffId === staff.id &&
+                  selectedMeasure.measureIndex === measure.index
+                }
+                measureIndex={measure.index}
+                onMeasureContextMenu={onMeasureContextMenu}
+                onSelectMeasure={onSelectMeasure}
+                score={score}
+                staff={staff}
+                staffIndex={staffIndex}
+              />
+            ))}
+          {staff.measures.filter((measure) => isMeasureVisible(measure.index)).map((measure) =>
             invalidMeasureKeySet.has(getMeasureKey(staff.id, measure.index)) ? (
               <InvalidMeasureWarning
                 key={`invalid-${staff.id}-${measure.index}`}
@@ -968,7 +994,7 @@ export function NotationOverlay({
               />
             ) : null,
           )}
-          {staff.measures.flatMap((measure, measureOffset) => {
+          {staff.measures.filter((measure) => isMeasureVisible(measure.index)).flatMap((measure, measureOffset) => {
             const staffTop = getScoreStaffTop(score, staffIndex, measure.index);
             const lines = [
               {
@@ -999,7 +1025,7 @@ export function NotationOverlay({
               />
             ));
           })}
-          {staff.measures.flatMap((measure) =>
+          {staff.measures.filter((measure) => isMeasureVisible(measure.index)).flatMap((measure) =>
             measure.voices.flatMap((voice, voiceIndexForTarget) =>
               voice.events.map((event) => (
                 <EventHitTarget
@@ -1085,7 +1111,9 @@ export function NotationOverlay({
           onHoverPositionChange?.(null);
         }}
       />
-      {keySignatureSymbolLayouts.map((layout) => (
+      {keySignatureSymbolLayouts
+        .filter((layout) => isMeasureVisible(layout.sourceMeasureIndex))
+        .map((layout) => (
         <KeySignatureSymbolTarget
           key={layout.id}
           layout={layout}
@@ -1105,7 +1133,9 @@ export function NotationOverlay({
           }}
         />
       ))}
-      {clefChangeTargetLayouts.map((layout) => (
+      {clefChangeTargetLayouts
+        .filter((layout) => isMeasureVisible(layout.measureIndex))
+        .map((layout) => (
         <ClefChangeTarget
           key={layout.id}
           isInputArmed={isInputArmed}
@@ -1138,7 +1168,7 @@ export function NotationOverlay({
       <PlaybackLayer
         beatsPerMeasure={beatsPerMeasure}
         eventLayouts={eventLayouts}
-        playbackBeat={playbackBeat}
+        playbackBeat={visiblePlaybackBeat}
         score={score}
         staffCount={staves.length}
       />

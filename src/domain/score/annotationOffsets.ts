@@ -6,8 +6,8 @@ import type {
 } from './types';
 
 export const ANNOTATION_OFFSET_LIMIT = {
-  x: 56,
-  y: 42,
+  x: 120,
+  y: 80,
 } as const;
 
 function clamp(value: number, limit: number) {

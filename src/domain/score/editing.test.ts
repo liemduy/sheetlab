@@ -31,6 +31,7 @@ import {
   getDefaultTupletNormalNotes,
   SUPPORTED_TUPLET_ACTUAL_NOTES,
 } from './tuplets';
+import { annotationDragLabFixture } from './fixtures';
 
 function getVoiceEvents(
   score: Score,
@@ -1288,6 +1289,16 @@ describe('score editing', () => {
       {
         annotationPlacement: {
           kind: 'lyric',
+          side: 'above',
+        },
+      },
+    );
+    const autoScore = tryUpdateScoreEvent(
+      resetScore.score,
+      'event-offset-annotation',
+      {
+        annotationPlacement: {
+          kind: 'lyric',
           side: 'auto',
         },
       },
@@ -1305,10 +1316,48 @@ describe('score editing', () => {
         lyric: 'drag',
       });
     expect(resetScore.updated).toBe(true);
+    expect(findScoreEvent(resetScore.score, 'event-offset-annotation')?.event)
+      .toMatchObject({
+        annotationOffsets: {
+          lyric: {
+            x: ANNOTATION_OFFSET_LIMIT.x,
+            y: -ANNOTATION_OFFSET_LIMIT.y,
+          },
+        },
+        annotationPlacements: {
+          lyric: 'above',
+        },
+      });
+    expect(autoScore.updated).toBe(true);
     expect(
-      findScoreEvent(resetScore.score, 'event-offset-annotation')?.event
+      findScoreEvent(autoScore.score, 'event-offset-annotation')?.event
         .annotationOffsets,
     ).toBeUndefined();
+  });
+
+  it('updates annotation offsets in place without rematerializing measure rhythm', () => {
+    const beforeEvents = getVoiceEvents(annotationDragLabFixture, 'treble', 0);
+    const result = tryUpdateScoreEvent(
+      annotationDragLabFixture,
+      'annotation-lab-anchor',
+      {
+        annotationOffset: {
+          kind: 'lyric',
+          offset: { x: 40, y: 18 },
+        },
+      },
+    );
+    const afterEvents = getVoiceEvents(result.score, 'treble', 0);
+
+    expect(result.updated).toBe(true);
+    expect(beforeEvents?.map((event) => event.id)).toEqual([
+      'annotation-lab-anchor',
+      'annotation-lab-nearby',
+    ]);
+    expect(afterEvents?.map((event) => event.id)).toEqual(
+      beforeEvents?.map((event) => event.id),
+    );
+    expect(afterEvents?.[1]).toBe(beforeEvents?.[1]);
   });
 
   it('updates performance markings on a selected event', () => {

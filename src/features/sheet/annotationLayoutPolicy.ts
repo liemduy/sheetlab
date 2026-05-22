@@ -26,12 +26,13 @@ export const PEDAL_MARK_TEXT = {
   'start-release': 'Ped. *',
 } as const;
 
-export const BELOW_STAFF_INK_GAP = 10;
+export const BELOW_STAFF_INK_GAP = 6;
 export const ANNOTATION_ROW_GAP = 26;
-export const ABOVE_STAFF_INK_GAP = 10;
+export const ABOVE_STAFF_INK_GAP = 6;
+export const STAFF_OUTSIDE_ANNOTATION_GAP = 10;
 export const ABOVE_STAFF_CLOSE_BASELINE_OFFSET = -18;
 export const ABOVE_STAFF_FAR_BASELINE_OFFSET = -42;
-export const NOTEHEAD_ANNOTATION_INK_PADDING = 12;
+export const NOTEHEAD_ANNOTATION_INK_PADDING = 10;
 export const ANNOTATION_HORIZONTAL_GAP = 6;
 export const MAX_ANNOTATION_ROW_ATTEMPTS = 8;
 export const MAX_AUTO_BELOW_ANNOTATION_ROWS = 2;
@@ -39,7 +40,7 @@ export const MAX_AUTO_BELOW_ANNOTATION_ROWS = 2;
 export const ANNOTATION_METRICS = {
   chordSymbol: { charWidth: 9.5, descent: 5, height: 20, minWidth: 22 },
   dynamic: { charWidth: 9, descent: 5, height: 21, minWidth: 18 },
-  fermata: { charWidth: 14, descent: 5, height: 26, minWidth: 18 },
+  fermata: { charWidth: 14, descent: 36, height: 54, minWidth: 18 },
   lyric: { charWidth: 8.2, descent: 5, height: 18, minWidth: 18 },
   pedal: { charWidth: 8.5, descent: 5, height: 19, minWidth: 20 },
   sectionMarker: { charWidth: 8, descent: 5, height: 20, minWidth: 34 },
@@ -111,6 +112,19 @@ export function moveAnnotationBoundsY(
   };
 }
 
+export function moveAnnotationBounds<TBounds extends AnnotationBounds>(
+  bounds: TBounds,
+  offset: { x: number; y: number },
+): TBounds {
+  return {
+    ...bounds,
+    maxX: bounds.maxX + offset.x,
+    maxY: bounds.maxY + offset.y,
+    minX: bounds.minX + offset.x,
+    minY: bounds.minY + offset.y,
+  } as TBounds;
+}
+
 export function placeAnnotationInRows({
   blockers = [],
   direction,
@@ -161,6 +175,59 @@ export function getAnnotationRowCount(placements: AnnotationPlacement[]) {
   return placements.length === 0
     ? 0
     : Math.max(...placements.map((placement) => placement.row)) + 1;
+}
+
+export function createManualAnnotationPlacement(
+  bounds: AnnotationBounds,
+  side: AnnotationSide,
+): AnnotationPlacement {
+  return {
+    ...bounds,
+    row: 0,
+    side,
+  };
+}
+
+export function keepAnnotationPlacementOutsideStaff<TPlacement extends AnnotationPlacement>(
+  placement: TPlacement,
+  staffBounds?: Pick<AnnotationBounds, 'maxY' | 'minY'>,
+): TPlacement {
+  if (!staffBounds) {
+    return placement;
+  }
+
+  if (placement.side === 'above') {
+    const maxAllowedY = staffBounds.minY - STAFF_OUTSIDE_ANNOTATION_GAP;
+
+    return placement.maxY > maxAllowedY
+      ? moveAnnotationBounds(placement, {
+          x: 0,
+          y: maxAllowedY - placement.maxY,
+        })
+      : placement;
+  }
+
+  const minAllowedY = staffBounds.maxY + STAFF_OUTSIDE_ANNOTATION_GAP;
+
+  return placement.minY < minAllowedY
+    ? moveAnnotationBounds(placement, {
+        x: 0,
+        y: minAllowedY - placement.minY,
+      })
+    : placement;
+}
+
+export function hasManualAnnotationLayout(
+  event: ScoreEvent,
+  kind: AnnotationKind,
+) {
+  const override = event.annotationPlacements?.[kind];
+
+  return (
+    override === 'above' ||
+    override === 'below' ||
+    event.annotationOffsets?.[kind] !== undefined
+  );
 }
 
 export function getAutomaticAnnotationSide(
@@ -219,6 +286,37 @@ export function getEventAnnotationKinds(event: ScoreEvent) {
     event.fermata ? 'fermata' : null,
     event.pedal ? 'pedal' : null,
   ].filter(Boolean) as AnnotationKind[]);
+}
+
+export function getAnnotationBaseline({
+  eventInkBounds,
+  kind,
+  side,
+  staffBounds,
+}: {
+  eventInkBounds: { maxY: number; minY: number };
+  kind: AnnotationKind;
+  side: AnnotationSide;
+  staffBounds?: Pick<AnnotationBounds, 'maxY' | 'minY'>;
+}) {
+  const metrics = ANNOTATION_METRICS[kind];
+
+  if (side === 'below') {
+    const noteBaseline =
+      eventInkBounds.maxY + BELOW_STAFF_INK_GAP + metrics.height;
+    const staffBaseline = staffBounds
+      ? staffBounds.maxY + STAFF_OUTSIDE_ANNOTATION_GAP + metrics.height
+      : noteBaseline;
+
+    return Math.max(noteBaseline, staffBaseline);
+  }
+
+  const noteBaseline = eventInkBounds.minY - ABOVE_STAFF_INK_GAP - metrics.descent;
+  const staffBaseline = staffBounds
+    ? staffBounds.minY - STAFF_OUTSIDE_ANNOTATION_GAP - metrics.descent
+    : noteBaseline;
+
+  return Math.min(noteBaseline, staffBaseline);
 }
 
 export function getAboveAnnotationBaseline({

@@ -63,13 +63,15 @@ export function useAnnotationCommands({
     kind: AnnotationKind,
     clientX: number,
     clientY: number,
+    side: Exclude<AnnotationPlacementSide, 'auto'>,
+    offset: AnnotationOffset,
   ) {
     updateToolState({ clefChange: null, isInputArmed: false });
     clearPointerState();
     clearMeasureUiState();
     selectEvent(eventId, null);
     selectAnnotation({ eventId, kind });
-    setAnnotationContextMenu({ clientX, clientY, eventId, kind });
+    setAnnotationContextMenu({ clientX, clientY, eventId, kind, offset, side });
     setEditorMessage('Annotation selected');
   }
 
@@ -78,11 +80,24 @@ export function useAnnotationCommands({
       return;
     }
 
+    const sideChanged =
+      side !== 'auto' && side !== annotationContextMenu.side;
     const result = tryUpdateScoreEvent(score, annotationContextMenu.eventId, {
       annotationPlacement: {
         kind: annotationContextMenu.kind,
         side,
       },
+      ...(sideChanged
+        ? {
+            annotationOffset: {
+              kind: annotationContextMenu.kind,
+              offset: {
+                x: annotationContextMenu.offset.x,
+                y: 0,
+              },
+            },
+          }
+        : {}),
     });
 
     if (result.updated) {

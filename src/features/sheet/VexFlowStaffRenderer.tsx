@@ -305,11 +305,18 @@ function drawVexFlowMeasureEvents({
   });
 }
 
-function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps['score']) {
+function drawVexFlowStaves(
+  container: HTMLDivElement,
+  score: StaffRendererProps['score'],
+  pageViewport?: StaffRendererProps['pageViewport'],
+) {
   const staves = score.parts[0]?.staves ?? [];
-  const height = getScoreSvgHeight(score);
+  const height = pageViewport?.height ?? getScoreSvgHeight(score);
   const width = getScoreSvgWidth(score);
   const beatsPerMeasure = getMeasureBeats(score.timeSignature);
+  const visibleMeasureIndexes = pageViewport
+    ? new Set(pageViewport.measureIndexes)
+    : null;
 
   container.innerHTML = '';
 
@@ -320,6 +327,10 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
   const noteRefs = new Map<string, RenderedNoteRef>();
   const renderedStaves = staves.map((staff, staffIndex) =>
     staff.measures.map((measure) => {
+      if (visibleMeasureIndexes && !visibleMeasureIndexes.has(measure.index)) {
+        return null;
+      }
+
       const stave = new Stave(
         getMeasureX(measure.index, score),
         getScoreStaffTop(score, staffIndex, measure.index) -
@@ -359,12 +370,16 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
   const svg = container.querySelector('svg');
 
   if (svg) {
-    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    svg.setAttribute('viewBox', `0 ${pageViewport?.y ?? 0} ${width} ${height}`);
     svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
   }
 
   if (score.type === 'grand' && renderedStaves.length >= 2) {
     renderedStaves[0].forEach((trebleStave, measureIndex) => {
+      if (!trebleStave) {
+        return;
+      }
+
       if (getLocalMeasureIndex(measureIndex, score) !== 0) {
         return;
       }
@@ -394,6 +409,10 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
     }
 
     staffStaves.forEach((stave, measureIndex) => {
+      if (!stave) {
+        return;
+      }
+
       Object.assign(
         eventLayouts,
         drawVexFlowMeasureEvents({
@@ -412,9 +431,14 @@ function drawVexFlowStaves(container: HTMLDivElement, score: StaffRendererProps[
 
   drawVexFlowConnectionMarks(context, score, noteRefs);
   drawVexFlowExpressionMarks({ context, noteRefs, score });
-  drawKeySignatureSymbols(container, score);
-  drawSystemStartClefChangeMarkers(container, score);
-  const annotationLayouts = drawTextAnnotations(container, score, eventLayouts);
+  drawKeySignatureSymbols(container, score, visibleMeasureIndexes);
+  drawSystemStartClefChangeMarkers(container, score, visibleMeasureIndexes);
+  const annotationLayouts = drawTextAnnotations(
+    container,
+    score,
+    eventLayouts,
+    visibleMeasureIndexes,
+  );
   const voiceZoneLayouts = computeRenderedVoiceZones({
     annotationLayouts,
     eventLayouts,
@@ -564,6 +588,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
     RenderedVoiceZoneLayout[]
   >([]);
   const height = getScoreSvgHeight(props.score);
+  const pageHeight = props.pageViewport?.height ?? height;
   const width = getScoreSvgWidth(props.score);
   const isOverfullWidth = width > SVG_WIDTH;
 
@@ -573,7 +598,11 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         annotationLayouts: nextAnnotationLayouts,
         eventLayouts: nextEventLayouts,
         voiceZoneLayouts: nextVoiceZoneLayouts,
-      } = drawVexFlowStaves(containerRef.current, props.score);
+      } = drawVexFlowStaves(
+        containerRef.current,
+        props.score,
+        props.pageViewport,
+      );
       setEventLayouts(nextEventLayouts);
       setAnnotationLayouts(nextAnnotationLayouts);
       setVoiceZoneLayouts(nextVoiceZoneLayouts);
@@ -587,7 +616,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         props.invalidMeasureKeys,
       );
     }
-  }, [props.score]);
+  }, [props.pageViewport, props.score]);
 
   useEffect(() => {
     if (containerRef.current) {
@@ -638,7 +667,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
       className="vexflow-stage"
       data-testid="vexflow-renderer"
       style={{
-        aspectRatio: `${width} / ${height}`,
+        aspectRatio: `${width} / ${pageHeight}`,
         ...(isOverfullWidth
           ? {
               maxWidth: 'none',
@@ -650,7 +679,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
       <div
         aria-hidden="true"
         className="vexflow-stage-spacer"
-        style={{ paddingBottom: `${(height / width) * 100}%` }}
+        style={{ paddingBottom: `${(pageHeight / width) * 100}%` }}
       />
       <div ref={containerRef} className="vexflow-output" aria-hidden="true" />
       <NotationOverlay
@@ -683,6 +712,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         onSelectEvent={props.onSelectEvent}
         onSelectClefChange={props.onSelectClefChange}
         playbackBeat={props.playbackBeat}
+        pageViewport={props.pageViewport}
         placementMode={props.placementMode}
         score={props.score}
         selectedAnnotation={props.selectedAnnotation}
@@ -692,7 +722,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         selectedPitchIndex={props.selectedPitchIndex}
         showLayoutZones={props.showLayoutZones ?? false}
         showLyricMap={props.showLyricMap ?? false}
-        svgHeight={height}
+        svgHeight={pageHeight}
         svgWidth={width}
         voiceIndex={props.voiceIndex}
       />

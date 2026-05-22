@@ -4,10 +4,7 @@ import {
   isGeneratedRestEvent,
   isPitchedScoreEvent,
 } from './events';
-import {
-  findScoreEventContext,
-  type ScoreEventContext,
-} from './eventLookup';
+import type { ScoreEventContext } from './eventLookup';
 import { applyActiveKeySignatureToPitch } from './keySignatures';
 import { pitchesMatch } from './noteConnections';
 import { getRepeatPlaybackIssues } from './repeatJumps';
@@ -48,6 +45,8 @@ export interface ScoreMusicIssue {
   voiceIndex?: number;
 }
 
+type EventContextById = Map<string, ScoreEventContext>;
+
 function getAllEventContexts(score: Score): ScoreEventContext[] {
   return score.parts.flatMap((part) =>
     part.staves.flatMap((staff, staffIndex) =>
@@ -63,6 +62,12 @@ function getAllEventContexts(score: Score): ScoreEventContext[] {
         ),
       ),
     ),
+  );
+}
+
+function getEventContextById(eventContexts: readonly ScoreEventContext[]) {
+  return new Map(
+    eventContexts.map((context) => [context.event.id, context]),
   );
 }
 
@@ -100,8 +105,9 @@ function getTieIssues(
   score: Score,
   sourceContext: ScoreEventContext,
   tie: TieMark,
+  eventContextById: EventContextById,
 ): ScoreMusicIssue[] {
-  const targetContext = findScoreEventContext(score, tie.targetEventId);
+  const targetContext = eventContextById.get(tie.targetEventId);
   const location = getIssueLocation(sourceContext);
 
   if (!isPitchedScoreEvent(sourceContext.event)) {
@@ -193,9 +199,10 @@ function getTieIssues(
 function getSlurIssues(
   score: Score,
   sourceContext: ScoreEventContext,
+  eventContextById: EventContextById,
 ): ScoreMusicIssue[] {
   return (sourceContext.event.slurs ?? []).flatMap((slur) => {
-    const targetContext = findScoreEventContext(score, slur.targetEventId);
+    const targetContext = eventContextById.get(slur.targetEventId);
     const location = getIssueLocation(sourceContext);
 
     if (!isPitchedScoreEvent(sourceContext.event)) {
@@ -250,7 +257,11 @@ function getSlurIssues(
   });
 }
 
-function getLyricMapIssues(score: Score, sourceContext: ScoreEventContext) {
+function getLyricMapIssues(
+  score: Score,
+  sourceContext: ScoreEventContext,
+  eventContextById: EventContextById,
+) {
   const lyricMap = sourceContext.event.lyricMap;
 
   if (!lyricMap) {
@@ -292,7 +303,7 @@ function getLyricMapIssues(score: Score, sourceContext: ScoreEventContext) {
   }
 
   const mappedContexts = lyricMap.eventIds.map((eventId) => ({
-    context: findScoreEventContext(score, eventId),
+    context: eventContextById.get(eventId),
     eventId,
   }));
 
@@ -350,11 +361,14 @@ function getLyricMapIssues(score: Score, sourceContext: ScoreEventContext) {
   return issues;
 }
 
-function getTupletIssues(score: Score) {
+function getTupletIssues(
+  score: Score,
+  eventContexts: readonly ScoreEventContext[],
+) {
   const groups = new Map<string, ScoreEventContext[]>();
   const issues: ScoreMusicIssue[] = [];
 
-  getAllEventContexts(score).forEach((context) => {
+  eventContexts.forEach((context) => {
     const tuplet = context.event.tuplet;
 
     if (!tuplet) {
@@ -490,7 +504,10 @@ function isRangeMark(mark: NotationMark): mark is RangeNotationMark {
   return mark.scope === 'range';
 }
 
-function getRangeMarkIssues(score: Score) {
+function getRangeMarkIssues(
+  score: Score,
+  eventContextById: EventContextById,
+) {
   return (score.marks ?? []).flatMap((mark): ScoreMusicIssue[] => {
     if (!isRangeMark(mark)) {
       return [];
@@ -498,10 +515,10 @@ function getRangeMarkIssues(score: Score) {
 
     const issues: ScoreMusicIssue[] = [];
     const sourceContext = mark.sourceEventId
-      ? findScoreEventContext(score, mark.sourceEventId)
+      ? eventContextById.get(mark.sourceEventId)
       : null;
     const targetContext = mark.targetEventId
-      ? findScoreEventContext(score, mark.targetEventId)
+      ? eventContextById.get(mark.targetEventId)
       : null;
     const location = {
       measureIndex: mark.start.measureIndex,
@@ -606,11 +623,11 @@ function getClefChangeIssues(score: Score) {
   return issues;
 }
 
-function getIdentityIssues(score: Score) {
+function getIdentityIssues(eventContexts: readonly ScoreEventContext[]) {
   const issues: ScoreMusicIssue[] = [];
   const eventIds = new Map<string, ScoreEventContext>();
 
-  getAllEventContexts(score).forEach((context) => {
+  eventContexts.forEach((context) => {
     const existing = eventIds.get(context.event.id);
 
     if (existing) {
@@ -629,11 +646,15 @@ function getIdentityIssues(score: Score) {
   return issues;
 }
 
-export function getScoreMusicIssues(score: Score): ScoreMusicIssue[] {
+export function getScoreMusicIssues(
+  score: Score,
+  rhythmIssues = getScoreRhythmIssues(score),
+): ScoreMusicIssue[] {
   const eventContexts = getAllEventContexts(score);
+  const eventContextById = getEventContextById(eventContexts);
   const issues: ScoreMusicIssue[] = [
-    ...getIdentityIssues(score),
-    ...getScoreRhythmIssues(score).map(
+    ...getIdentityIssues(eventContexts),
+    ...rhythmIssues.map(
       (issue): ScoreMusicIssue => ({
         category: 'rhythm',
         kind: `rhythm-${issue.reason}`,
@@ -652,17 +673,17 @@ export function getScoreMusicIssues(score: Score): ScoreMusicIssue[] {
         severity: 'error',
       }),
     ),
-    ...getTupletIssues(score),
-    ...getRangeMarkIssues(score),
+    ...getTupletIssues(score, eventContexts),
+    ...getRangeMarkIssues(score, eventContextById),
     ...getClefChangeIssues(score),
   ];
 
   eventContexts.forEach((context) => {
     issues.push(
-      ...getLyricMapIssues(score, context),
-      ...getSlurIssues(score, context),
+      ...getLyricMapIssues(score, context, eventContextById),
+      ...getSlurIssues(score, context, eventContextById),
       ...(context.event.ties ?? []).flatMap((tie) =>
-        getTieIssues(score, context, tie),
+        getTieIssues(score, context, tie, eventContextById),
       ),
     );
 

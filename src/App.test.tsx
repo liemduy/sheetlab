@@ -13,6 +13,7 @@ vi.mock('./features/playback/audioEngine', () => ({
   playTimelineAudio: vi.fn(() =>
     Promise.resolve({ startedAtMs: performance.now(), stop: vi.fn() }),
   ),
+  warmUpPlaybackAudio: vi.fn(() => Promise.resolve(true)),
 }));
 
 import App from './App';
@@ -142,45 +143,92 @@ describe('App editor state', () => {
     expect(
       within(screen.getByLabelText('Composer flow')).getByText('Score is empty'),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText('Empty score composer state')).toHaveTextContent(
-      'Select mode',
-    );
+    expect(
+      screen.queryByLabelText('Empty score composer state'),
+    ).not.toBeInTheDocument();
     expect(document.querySelector('.paper-a4')).not.toBeNull();
     expect(screen.queryByText(/notation surface/i)).not.toBeInTheDocument();
     expect(screen.getByText('96 BPM')).toBeInTheDocument();
   });
 
-  it('loads an extreme demo score and reports music validation status in the panel', async () => {
+  it('loads a current annotation demo score and reports validation status in the panel', async () => {
     render(<App />);
 
     fireEvent.change(screen.getByLabelText('Load demo score'), {
-      target: { value: 'extreme-vocal-piano' },
+      target: { value: 'annotation-drag-lab' },
     });
 
     await waitFor(() => {
       expect(screen.getByLabelText('Score title')).toHaveValue(
-        'Extreme Vocal Piano Map Study',
+        'Annotation Drag Lab',
       );
     });
 
     const stateSummary = within(screen.getByLabelText('Current editor state'));
 
-    expect(stateSummary.getByText('84 BPM')).toBeInTheDocument();
-    expect(stateSummary.getByText('49')).toBeInTheDocument();
+    expect(stateSummary.getByText('88 BPM')).toBeInTheDocument();
+    expect(stateSummary.getAllByText('4').length).toBeGreaterThanOrEqual(1);
     expect(stateSummary.getAllByText('OK').length).toBeGreaterThanOrEqual(2);
     expect(
-      screen.getByText('Demo loaded: Extreme Vocal Piano'),
+      screen.getByText('Demo loaded: Annotation Drag Lab'),
     ).toBeInTheDocument();
     await waitFor(() => {
       expect(
         document.querySelector(
-          '.vexflow-output .vf-user-event[data-event-id="extreme-vocal-triplet-word-2"]',
+          '.vexflow-output .vf-user-event[data-event-id="annotation-lab-anchor"]',
         ),
       ).not.toBeNull();
     });
     expect(
       screen.queryByRole('button', { name: 'Review first music issue' }),
     ).not.toBeInTheDocument();
+  });
+
+  it('moves an offset demo annotation above without carrying the old vertical drag offset', async () => {
+    const { container } = render(<App />);
+
+    fireEvent.change(screen.getByLabelText('Load demo score'), {
+      target: { value: 'annotation-drag-lab' },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Score title')).toHaveValue(
+        'Annotation Drag Lab',
+      );
+    });
+
+    const pedalTarget = container.querySelector(
+      '[data-testid="annotation-hit-target"][data-event-id="annotation-lab-anchor"][data-annotation-kind="pedal"]',
+    );
+
+    expect(pedalTarget).not.toBeNull();
+    expect(pedalTarget).toHaveAttribute('data-annotation-side', 'below');
+    expect(pedalTarget).toHaveAttribute('data-annotation-offset-x', '-58');
+    expect(pedalTarget).toHaveAttribute('data-annotation-offset-y', '0');
+
+    fireEvent.contextMenu(pedalTarget as Element, {
+      clientX: 420,
+      clientY: 220,
+    });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move above' }));
+
+    await waitFor(() => {
+      const movedTarget = container.querySelector(
+        '[data-testid="annotation-hit-target"][data-event-id="annotation-lab-anchor"][data-annotation-kind="pedal"]',
+      );
+
+      expect(movedTarget).not.toBeNull();
+      expect(movedTarget).toHaveAttribute('data-annotation-side', 'above');
+      expect(movedTarget).toHaveAttribute('data-annotation-offset-x', '-58');
+      expect(movedTarget).toHaveAttribute('data-annotation-offset-y', '0');
+    });
+
+    const movedPedal = container.querySelector(
+      '[data-testid="rendered-pedal"][data-event-id="annotation-lab-anchor"]',
+    );
+
+    expect(movedPedal).not.toBeNull();
+    expect(movedPedal).toHaveTextContent('Ped.');
   });
 
   it('keeps the cursor in select mode until a duration is chosen and clears write mode outside the staff', () => {
@@ -1278,6 +1326,25 @@ describe('App editor state', () => {
         'below',
       );
     });
+
+    const movedPedalTarget = container.querySelector(
+      '[data-testid="annotation-hit-target"][data-annotation-kind="pedal"]',
+    );
+
+    expect(movedPedalTarget).not.toBeNull();
+    fireEvent.contextMenu(movedPedalTarget as Element, {
+      clientX: 420,
+      clientY: 220,
+    });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move above' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-pedal')).toHaveAttribute(
+        'data-annotation-side',
+        'above',
+      );
+    });
+    expect(screen.getByTestId('rendered-pedal')).toHaveTextContent('Ped.');
   });
 
   it('drags a rendered annotation around its attached note', async () => {
@@ -1352,7 +1419,7 @@ describe('App editor state', () => {
     });
     expect(screen.getByTestId('rendered-lyric')).toHaveAttribute(
       'data-annotation-offset-y',
-      '-8',
+      '-16',
     );
     expect(
       within(screen.getByLabelText('Current editor state')).getByText(
@@ -1374,7 +1441,7 @@ describe('App editor state', () => {
     await waitFor(() => {
       expect(screen.getByTestId('rendered-lyric')).toHaveAttribute(
         'data-annotation-offset-y',
-        '-3',
+        '-11',
       );
     });
 

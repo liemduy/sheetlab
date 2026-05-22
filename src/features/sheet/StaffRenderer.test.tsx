@@ -17,6 +17,7 @@ import {
 import { tryToggleOttavaToNext } from '../../domain/score/ottava';
 import { createEmptyScore } from '../../domain/score/factories';
 import {
+  annotationDragLabFixture,
   duChoTanTheExcerptFixture,
   extremeClefOttavaChromaticFixture,
   trebleStudyFixture,
@@ -54,6 +55,7 @@ import {
   ABOVE_STAFF_INK_GAP,
   BELOW_STAFF_INK_GAP,
   NOTEHEAD_ANNOTATION_INK_PADDING,
+  STAFF_OUTSIDE_ANNOTATION_GAP,
 } from './annotationLayoutPolicy';
 
 const trebleHover: MusicPosition = {
@@ -3416,9 +3418,53 @@ describe('StaffRenderer', () => {
     );
     expect(
       Number(screen.getByTestId('rendered-pedal').getAttribute('data-annotation-row')),
-    ).toBeLessThanOrEqual(1);
+    ).toBeLessThanOrEqual(3);
     expect(dynamicY - lyricY).toBeGreaterThanOrEqual(24);
     expect(pedalY).toBeLessThan(lyricY);
+  });
+
+  it('keeps automatic text annotations outside the staff lines', async () => {
+    const noteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'outside-staff-annotation-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+    const score = tryUpdateScoreEvent(noteScore, 'outside-staff-annotation-note', {
+      chordSymbol: 'Cmaj7',
+      lyric: 'sing',
+    }).score;
+
+    render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-chord-symbol')).toHaveTextContent(
+        'Cmaj7',
+      );
+      expect(screen.getByTestId('rendered-lyric')).toHaveTextContent('sing');
+    });
+
+    const staffTop = getStaffTop(0);
+    const staffBottom = staffTop + STAFF_LINE_SPACING * 4;
+    const chordBaseline = Number(
+      screen.getByTestId('rendered-chord-symbol').getAttribute('y'),
+    );
+    const lyricBaseline = Number(
+      screen.getByTestId('rendered-lyric').getAttribute('y'),
+    );
+    const chordBottom =
+      chordBaseline + ANNOTATION_METRICS.chordSymbol.descent;
+    const lyricTop = lyricBaseline - ANNOTATION_METRICS.lyric.height;
+
+    expect(chordBottom).toBeLessThanOrEqual(
+      staffTop - STAFF_OUTSIDE_ANNOTATION_GAP,
+    );
+    expect(lyricTop).toBeGreaterThanOrEqual(
+      staffBottom + STAFF_OUTSIDE_ANNOTATION_GAP,
+    );
   });
 
   it('places below-staff annotations under low note ink instead of the fixed staff bottom', async () => {
@@ -3501,7 +3547,7 @@ describe('StaffRenderer', () => {
     expect(lyricY).toBeGreaterThan(lowerVoiceY + 24);
   });
 
-  it('aligns below-staff lyrics to the owning voice bottom within the system', async () => {
+  it('keeps below-staff lyrics close to the owning note within the system', async () => {
     const lowNoteScore = placeScoreEvent(createEmptyScore('treble'), {
       eventId: 'distant-low-note',
       staffId: 'treble',
@@ -3533,13 +3579,15 @@ describe('StaffRenderer', () => {
     const lyricY = Number(screen.getByTestId('rendered-lyric').getAttribute('y'));
     const lyric = screen.getByTestId('rendered-lyric');
     const lyricTop = lyricY - ANNOTATION_METRICS.lyric.height;
-    const lowPitchY = getPitchY({ step: 'C', octave: 3 }, 'treble', 0);
-    const expectedVoiceBottom =
-      lowPitchY + NOTEHEAD_ANNOTATION_INK_PADDING + BELOW_STAFF_INK_GAP;
+    const distantLowPitchY = getPitchY({ step: 'C', octave: 3 }, 'treble', 0);
+    const owningPitchY = getPitchY({ step: 'E', octave: 4 }, 'treble', 0);
+    const expectedOwningNoteBottom =
+      owningPitchY + NOTEHEAD_ANNOTATION_INK_PADDING + BELOW_STAFF_INK_GAP;
 
     expect(lyric).toHaveAttribute('data-voice-index', '0');
-    expect(lyricTop).toBeGreaterThanOrEqual(expectedVoiceBottom);
-    expect(lyricTop).toBeLessThanOrEqual(expectedVoiceBottom + 5);
+    expect(lyricTop).toBeGreaterThanOrEqual(expectedOwningNoteBottom);
+    expect(lyricTop).toBeLessThanOrEqual(expectedOwningNoteBottom + 5);
+    expect(lyricTop).toBeLessThan(distantLowPitchY);
   });
 
   it('keeps manual above annotation overrides close to the owning staff', async () => {
@@ -3586,7 +3634,7 @@ describe('StaffRenderer', () => {
     expect(lyricY).toBeLessThan(getStaffTop(0));
   });
 
-  it('keeps manual above lyrics clear of the owning voice ink', async () => {
+  it('keeps manual above lyrics outside the owning staff', async () => {
     const lowNoteScore = placeScoreEvent(createEmptyScore('treble'), {
       eventId: 'manual-above-low-note',
       staffId: 'treble',
@@ -3623,20 +3671,21 @@ describe('StaffRenderer', () => {
 
     const lyricY = Number(screen.getByTestId('rendered-lyric').getAttribute('y'));
     const lyricBottom = lyricY + ANNOTATION_METRICS.lyric.descent;
-    const highNoteInkTop =
-      getPitchY({ step: 'C', octave: 6 }, 'treble', 0) -
-      NOTEHEAD_ANNOTATION_INK_PADDING;
+    const staffTop = getStaffTop(0);
 
     expect(screen.getByTestId('rendered-lyric')).toHaveAttribute(
       'data-annotation-side',
       'above',
     );
     expect(lyricBottom).toBeLessThanOrEqual(
-      highNoteInkTop - ABOVE_STAFF_INK_GAP,
+      staffTop - STAFF_OUTSIDE_ANNOTATION_GAP,
+    );
+    expect(lyricBottom).toBeGreaterThanOrEqual(
+      staffTop - STAFF_OUTSIDE_ANNOTATION_GAP - 1,
     );
   });
 
-  it('honors a manual annotation placement override', async () => {
+  it('honors a manual annotation placement override without auto-rowing it', async () => {
     const noteScore = placeScoreEvent(createEmptyScore('treble'), {
       eventId: 'manual-annotation-note',
       staffId: 'treble',
@@ -3670,7 +3719,7 @@ describe('StaffRenderer', () => {
     );
     expect(screen.getByTestId('rendered-pedal')).toHaveAttribute(
       'data-annotation-row',
-      '2',
+      '0',
     );
   });
 
@@ -3817,8 +3866,131 @@ describe('StaffRenderer', () => {
     expect(onAnnotationOffsetChange).toHaveBeenCalledWith(
       'drag-annotation-note',
       'lyric',
-      { x: 56, y: -42 },
+      { x: 70, y: -80 },
     );
+  });
+
+  it('keeps sibling annotations stationary when one annotation receives a manual offset', async () => {
+    const { container, rerender } = render(
+      <StaffRenderer score={annotationDragLabFixture} />,
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector(
+          '[data-testid="annotation-hit-target"][data-event-id="annotation-lab-anchor"][data-annotation-kind="chordSymbol"]',
+        ),
+      ).toBeInTheDocument();
+    });
+
+    const getTargetFrame = (eventId: string, kind: string) => {
+      const target = container.querySelector(
+        `[data-testid="annotation-hit-target"][data-event-id="${eventId}"][data-annotation-kind="${kind}"]`,
+      );
+
+      expect(target).not.toBeNull();
+
+      return {
+        height: target?.getAttribute('height'),
+        width: target?.getAttribute('width'),
+        x: target?.getAttribute('x'),
+        y: target?.getAttribute('y'),
+      };
+    };
+    const getNoteheadX = (eventId: string) => {
+      const notehead = container.querySelector(
+        `.vf-user-notehead[data-event-id="${eventId}"]`,
+      );
+
+      expect(notehead).not.toBeNull();
+
+      return notehead?.getAttribute('data-notehead-x');
+    };
+    const stableLyricFrame = getTargetFrame('annotation-lab-anchor', 'lyric');
+    const stablePedalFrame = getTargetFrame('annotation-lab-anchor', 'pedal');
+    const stableNearbyNoteX = getNoteheadX('annotation-lab-nearby');
+    const stableNearbyDynamicFrame = getTargetFrame(
+      'annotation-lab-nearby',
+      'dynamic',
+    );
+    const stableNearbyLyricFrame = getTargetFrame('annotation-lab-nearby', 'lyric');
+    const movedScore = tryUpdateScoreEvent(
+      annotationDragLabFixture,
+      'annotation-lab-anchor',
+      {
+        annotationOffset: {
+          kind: 'chordSymbol',
+          offset: { x: -22, y: 42 },
+        },
+      },
+    ).score;
+
+    rerender(<StaffRenderer score={movedScore} />);
+
+    await waitFor(() => {
+      expect(
+        container.querySelector(
+          '[data-testid="annotation-hit-target"][data-event-id="annotation-lab-anchor"][data-annotation-kind="chordSymbol"]',
+        ),
+      ).toHaveAttribute('data-annotation-offset-y', '42');
+    });
+
+    expect(getTargetFrame('annotation-lab-anchor', 'lyric')).toEqual(
+      stableLyricFrame,
+    );
+    expect(getTargetFrame('annotation-lab-anchor', 'pedal')).toEqual(
+      stablePedalFrame,
+    );
+    expect(getNoteheadX('annotation-lab-nearby')).toBe(stableNearbyNoteX);
+    expect(getTargetFrame('annotation-lab-nearby', 'dynamic')).toEqual(
+      stableNearbyDynamicFrame,
+    );
+    expect(getTargetFrame('annotation-lab-nearby', 'lyric')).toEqual(
+      stableNearbyLyricFrame,
+    );
+  });
+
+  it('keeps a moved-above demo annotation visible near the owning staff', async () => {
+    const placedAboveScore = tryUpdateScoreEvent(
+      annotationDragLabFixture,
+      'annotation-lab-anchor',
+      {
+        annotationOffset: {
+          kind: 'pedal',
+          offset: { x: -24, y: 0 },
+        },
+        annotationPlacement: {
+          kind: 'pedal',
+          side: 'above',
+        },
+      },
+    ).score;
+
+    const { container } = render(<StaffRenderer score={placedAboveScore} />);
+
+    await waitFor(() => {
+      const pedal = container.querySelector(
+        '[data-testid="rendered-pedal"][data-event-id="annotation-lab-anchor"]',
+      );
+
+      expect(pedal).not.toBeNull();
+      expect(
+        pedal,
+      ).toHaveAttribute('data-annotation-side', 'above');
+    });
+
+    const pedal = container.querySelector(
+      '[data-testid="rendered-pedal"][data-event-id="annotation-lab-anchor"]',
+    );
+    if (!pedal) {
+      throw new Error('Expected annotation lab pedal to render');
+    }
+    const pedalY = Number(pedal.getAttribute('y'));
+
+    expect(pedal).toHaveAttribute('data-annotation-row', '0');
+    expect(pedal).toHaveAttribute('data-annotation-offset-y', '0');
+    expect(pedalY).toBeGreaterThan(getStaffTop(0) - 80);
+    expect(pedalY).toBeLessThan(getStaffTop(0) + 50);
   });
 
   it('widens the grand staff gap so treble annotations do not overlap the bass staff', async () => {

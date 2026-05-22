@@ -3,14 +3,20 @@ import type {
   MouseEvent as ReactMouseEvent,
   RefObject,
 } from 'react';
-import { countScoreEvents } from '../../domain/score/editing';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { getMeasureBeats } from '../../domain/score/timeSignatures';
 import type { EditorToolState } from '../editor/editorState';
-import { DURATION_LABEL, VOICE_LABEL } from '../editor/editorState';
 import type { InputCursor } from '../editor/inputCursor';
 import { StaffRenderer } from '../sheet/StaffRenderer';
 import type { MusicPosition } from '../sheet/interaction';
+import { getScoreSvgWidth } from '../sheet/layout';
+import {
+  getScorePageForMeasureIndex,
+  getScorePageViewports,
+} from '../sheet/pageLayout';
 import type {
   AnnotationKind,
+  AnnotationOffset,
   AnnotationPlacementSide,
   Score,
   StaffId,
@@ -54,6 +60,8 @@ interface SheetSurfaceProps {
     kind: AnnotationKind,
     clientX: number,
     clientY: number,
+    side: Exclude<AnnotationPlacementSide, 'auto'>,
+    offset: AnnotationOffset,
   ) => void;
   onAnnotationPlacementChange: (side: AnnotationPlacementSide) => void;
   onAnnotationOffsetChange: (
@@ -99,6 +107,39 @@ interface SheetSurfaceProps {
   onUpdateScoreMetadata: (
     update: Partial<Pick<Score, 'composer' | 'title'>>,
   ) => void;
+}
+
+function getInitialRenderedPageIndexes(pageCount: number) {
+  return pageCount <= 1 ? new Set([0]) : new Set<number>();
+}
+
+function addPageIndex(currentPageIndexes: Set<number>, pageIndex: number) {
+  if (currentPageIndexes.has(pageIndex)) {
+    return currentPageIndexes;
+  }
+
+  const nextPageIndexes = new Set(currentPageIndexes);
+
+  nextPageIndexes.add(pageIndex);
+  return nextPageIndexes;
+}
+
+function addNearbyPageIndexes(
+  currentPageIndexes: Set<number>,
+  pageIndex: number,
+  pageCount: number,
+) {
+  const nextPageIndexes = new Set(currentPageIndexes);
+  const start = Math.max(0, pageIndex - 1);
+  const end = Math.min(pageCount - 1, pageIndex + 1);
+
+  for (let index = start; index <= end; index += 1) {
+    nextPageIndexes.add(index);
+  }
+
+  return nextPageIndexes.size === currentPageIndexes.size
+    ? currentPageIndexes
+    : nextPageIndexes;
 }
 
 export function SheetSurface({
@@ -151,112 +192,305 @@ export function SheetSurface({
   onSheetStageClick,
   onUpdateScoreMetadata,
 }: SheetSurfaceProps) {
-  const eventCount = countScoreEvents(score);
-  const showComposerStartCue = !isPdfExportMode && eventCount === 0;
+  const pageViewports = useMemo(() => getScorePageViewports(score), [score]);
+  const [renderedPageIndexes, setRenderedPageIndexes] = useState<Set<number>>(
+    () => getInitialRenderedPageIndexes(1),
+  );
+  const beatsPerMeasure = getMeasureBeats(score.timeSignature);
+  const playbackMeasureIndex =
+    playbackBeat !== null ? Math.floor(playbackBeat / beatsPerMeasure) : null;
+  const scoreSvgWidth = getScoreSvgWidth(score);
+  const stageRef = useRef<HTMLElement | null>(null);
+  const lastFollowedPlaybackMeasureRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setRenderedPageIndexes(getInitialRenderedPageIndexes(pageViewports.length));
+  }, [pageViewports.length, score.id]);
+
+  useEffect(() => {
+    if (isPdfExportMode || pageViewports.length <= 1) {
+      return;
+    }
+
+    const firstPageDelay = window.setTimeout(() => {
+      setRenderedPageIndexes((currentPageIndexes) =>
+        addPageIndex(currentPageIndexes, 0),
+      );
+    }, 150);
+
+    return () => window.clearTimeout(firstPageDelay);
+  }, [isPdfExportMode, pageViewports.length, score.id]);
+
+  useEffect(() => {
+    if (isPdfExportMode || pageViewports.length <= 1) {
+      return;
+    }
+
+    if (typeof IntersectionObserver === 'undefined') {
+      setRenderedPageIndexes(
+        new Set(pageViewports.map((pageViewport) => pageViewport.index)),
+      );
+      return;
+    }
+
+    let observer: IntersectionObserver | null = null;
+    const observerDelay = window.setTimeout(() => {
+      const pageElements =
+        stageRef.current?.querySelectorAll<HTMLElement>('.paper-page') ?? [];
+
+      observer = new IntersectionObserver(
+        (entries) => {
+          setRenderedPageIndexes((currentPageIndexes) => {
+            let nextPageIndexes = currentPageIndexes;
+
+            entries.forEach((entry) => {
+              if (!entry.isIntersecting) {
+                return;
+              }
+
+              const pageIndex = Number(
+                (entry.target as HTMLElement).dataset.pageIndex,
+              );
+
+              if (!Number.isFinite(pageIndex)) {
+                return;
+              }
+
+              nextPageIndexes = addNearbyPageIndexes(
+                nextPageIndexes,
+                pageIndex,
+                pageViewports.length,
+              );
+            });
+
+            return nextPageIndexes;
+          });
+        },
+        {
+          root: null,
+          rootMargin: '360px 0px',
+        },
+      );
+
+      pageElements.forEach((pageElement) => observer?.observe(pageElement));
+    }, 1000);
+
+    return () => {
+      window.clearTimeout(observerDelay);
+      observer?.disconnect();
+    };
+  }, [isPdfExportMode, pageViewports.length]);
+
+  useEffect(() => {
+    if (playbackMeasureIndex === null) {
+      return;
+    }
+
+    const playbackPage = getScorePageForMeasureIndex(
+      pageViewports,
+      playbackMeasureIndex,
+    );
+
+    if (!playbackPage) {
+      return;
+    }
+
+    setRenderedPageIndexes((currentPageIndexes) =>
+      addNearbyPageIndexes(
+        currentPageIndexes,
+        playbackPage.index,
+        pageViewports.length,
+      ),
+    );
+  }, [pageViewports, playbackMeasureIndex]);
+
+  useEffect(() => {
+    if (!selectedMeasure) {
+      return;
+    }
+
+    const selectedPage = getScorePageForMeasureIndex(
+      pageViewports,
+      selectedMeasure.measureIndex,
+    );
+
+    if (!selectedPage) {
+      return;
+    }
+
+    setRenderedPageIndexes((currentPageIndexes) =>
+      addNearbyPageIndexes(
+        currentPageIndexes,
+        selectedPage.index,
+        pageViewports.length,
+      ),
+    );
+  }, [pageViewports, selectedMeasure]);
+
+  useEffect(() => {
+    if (playbackMeasureIndex === null) {
+      lastFollowedPlaybackMeasureRef.current = null;
+      return;
+    }
+
+    if (lastFollowedPlaybackMeasureRef.current === playbackMeasureIndex) {
+      return;
+    }
+
+    lastFollowedPlaybackMeasureRef.current = playbackMeasureIndex;
+    window.requestAnimationFrame(() => {
+      const playhead = stageRef.current?.querySelector('.playhead');
+
+      if (!(playhead instanceof SVGElement)) {
+        return;
+      }
+
+      const bounds = playhead.getBoundingClientRect();
+      const topGuard = 180;
+      const bottomGuard = window.innerHeight - 96;
+
+      if (bounds.top < topGuard || bounds.bottom > bottomGuard) {
+        playhead.scrollIntoView({
+          block: 'center',
+          inline: 'nearest',
+        });
+      }
+    });
+  }, [playbackMeasureIndex]);
 
   return (
     <section
+      ref={stageRef}
       className="sheet-stage"
       aria-label="Sheet surface"
       onClick={onSheetStageClick}
     >
       <div
-        className={`paper paper-${score.pageSize}`}
+        ref={notationViewportRef}
+        className="paper-stack"
         style={
           {
             '--canvas-zoom': isPdfExportMode ? 1 : canvasZoom / 100,
           } as CSSProperties
         }
       >
-        <div className="paper-heading">
-          <input
-            aria-label="Score title"
-            className="score-title-input"
-            value={score.title}
-            onChange={(event) =>
-              onUpdateScoreMetadata({ title: event.target.value })
-            }
-            onClick={onClearInteraction}
-            onFocus={onClearInteraction}
-          />
-          <div className="score-meta-row">
-            <span>Moderato {'\u2669'} = {toolState.tempo}</span>
-            <input
-              aria-label="Composer"
-              className="score-composer-input"
-              placeholder="Composer"
-              value={score.composer}
-              onChange={(event) =>
-                onUpdateScoreMetadata({ composer: event.target.value })
-              }
-              onClick={onClearInteraction}
-              onFocus={onClearInteraction}
-            />
-          </div>
-        </div>
-        <div
-          ref={notationViewportRef}
-          className="notation-scroll"
-          aria-label="Notation viewport"
-        >
-          {showComposerStartCue ? (
+        {pageViewports.map((pageViewport) => {
+          const isPlaybackPage =
+            playbackMeasureIndex !== null &&
+            pageViewport.measureIndexes.includes(playbackMeasureIndex);
+          const shouldRenderPage =
+            isPdfExportMode ||
+            pageViewports.length <= 1 ||
+            renderedPageIndexes.has(pageViewport.index) ||
+            isPlaybackPage;
+
+          return (
             <div
-              className="composer-start-cue"
-              aria-label="Empty score composer state"
+              key={pageViewport.index}
+              className={`paper paper-page paper-${score.pageSize}`}
+              data-page-index={pageViewport.index}
+              style={
+                {
+                  '--canvas-zoom': isPdfExportMode ? 1 : canvasZoom / 100,
+                } as CSSProperties
+              }
             >
-              <span>First event</span>
-              <strong>
-                {toolState.isInputArmed
-                  ? `${DURATION_LABEL[toolState.duration]} ${
-                      toolState.entryMode === 'note' ? 'note' : 'rest'
-                    }`
-                  : 'Select mode'}
-              </strong>
-              <span>
-                {VOICE_LABEL[toolState.voiceIndex]} /{' '}
-                {toolState.placementMode === 'insert' ? 'Insert' : 'Place'}
-              </span>
+              {pageViewport.index === 0 ? (
+                <div className="paper-heading">
+                  <input
+                    aria-label="Score title"
+                    className="score-title-input"
+                    value={score.title}
+                    onChange={(event) =>
+                      onUpdateScoreMetadata({ title: event.target.value })
+                    }
+                    onClick={onClearInteraction}
+                    onFocus={onClearInteraction}
+                  />
+                  <div className="score-meta-row">
+                    <span>Moderato {'\u2669'} = {toolState.tempo}</span>
+                    <input
+                      aria-label="Composer"
+                      className="score-composer-input"
+                      placeholder="Composer"
+                      value={score.composer}
+                      onChange={(event) =>
+                        onUpdateScoreMetadata({ composer: event.target.value })
+                      }
+                      onClick={onClearInteraction}
+                      onFocus={onClearInteraction}
+                    />
+                  </div>
+                </div>
+              ) : null}
+              <div
+                className="notation-scroll"
+                aria-label={
+                  pageViewports.length === 1
+                    ? 'Notation viewport'
+                    : `Notation viewport page ${pageViewport.index + 1}`
+                }
+              >
+                {shouldRenderPage ? (
+                  <StaffRenderer
+                    duration={toolState.duration}
+                    dots={toolState.dots}
+                    entryMode={toolState.entryMode}
+                    activeEventId={isPlaybackPage ? activeEventId : null}
+                    activeEventIds={isPlaybackPage ? activeEventIds : []}
+                    hoverPosition={hoverPosition}
+                    inputCursor={inputCursor}
+                    isInputArmed={toolState.isInputArmed}
+                    clefChange={toolState.clefChange}
+                    invalidMeasureKeys={activeInvalidMeasureKeys}
+                    pageViewport={pageViewport}
+                    playbackBeat={isPlaybackPage ? playbackBeat : null}
+                    placementMode={toolState.placementMode}
+                    selectedEventId={selectedEventId}
+                    selectedAnnotation={selectedAnnotation}
+                    selectedPitchIndex={selectedPitchIndex}
+                    score={score}
+                    showLayoutZones={toolState.showLayoutZones}
+                    showLyricMap={toolState.showLyricMap}
+                    voiceIndex={toolState.voiceIndex}
+                    onClearInteraction={onClearInteraction}
+                    onAnnotationContextMenu={onAnnotationContextMenu}
+                    onAnnotationOffsetChange={onAnnotationOffsetChange}
+                    onSelectAnnotation={onSelectAnnotation}
+                    onHoverPositionChange={onHoverPositionChange}
+                    onLyricMapChange={onLyricMapChange}
+                    onPlaceAtPosition={onPlaceAtPosition}
+                    onDeleteEvent={onDeleteEvent}
+                    onMoveKeySignatureSymbol={onMoveKeySignatureSymbol}
+                    onMoveClefChange={onMoveClefChange}
+                    onMeasureContextMenu={onMeasureContextMenu}
+                    onMoveEvent={onMoveEvent}
+                    onSelectMeasure={onSelectMeasure}
+                    onSelectEvent={onSelectEvent}
+                    onSelectClefChange={onSelectClefChange}
+                    selectedClefChangeId={
+                      selectedClefChange?.clefChangeId ?? null
+                    }
+                    selectedMeasure={selectedMeasure}
+                  />
+                ) : (
+                  <div
+                    aria-hidden="true"
+                    className="page-render-placeholder"
+                    style={{
+                      aspectRatio: `${scoreSvgWidth} / ${pageViewport.height}`,
+                    }}
+                  />
+                )}
+              </div>
+              {pageViewports.length > 1 ? (
+                <div className="paper-page-number">
+                  {pageViewport.index + 1} / {pageViewports.length}
+                </div>
+              ) : null}
             </div>
-          ) : null}
-          <StaffRenderer
-            duration={toolState.duration}
-            dots={toolState.dots}
-            entryMode={toolState.entryMode}
-            activeEventId={activeEventId}
-            activeEventIds={activeEventIds}
-            hoverPosition={hoverPosition}
-            inputCursor={inputCursor}
-            isInputArmed={toolState.isInputArmed}
-            clefChange={toolState.clefChange}
-            invalidMeasureKeys={activeInvalidMeasureKeys}
-            playbackBeat={playbackBeat}
-            placementMode={toolState.placementMode}
-            selectedEventId={selectedEventId}
-            selectedAnnotation={selectedAnnotation}
-            selectedPitchIndex={selectedPitchIndex}
-            score={score}
-            showLayoutZones={toolState.showLayoutZones}
-            showLyricMap={toolState.showLyricMap}
-            voiceIndex={toolState.voiceIndex}
-            onClearInteraction={onClearInteraction}
-            onAnnotationContextMenu={onAnnotationContextMenu}
-            onAnnotationOffsetChange={onAnnotationOffsetChange}
-            onSelectAnnotation={onSelectAnnotation}
-            onHoverPositionChange={onHoverPositionChange}
-            onLyricMapChange={onLyricMapChange}
-            onPlaceAtPosition={onPlaceAtPosition}
-            onDeleteEvent={onDeleteEvent}
-            onMoveKeySignatureSymbol={onMoveKeySignatureSymbol}
-            onMoveClefChange={onMoveClefChange}
-            onMeasureContextMenu={onMeasureContextMenu}
-            onMoveEvent={onMoveEvent}
-            onSelectMeasure={onSelectMeasure}
-            onSelectEvent={onSelectEvent}
-            onSelectClefChange={onSelectClefChange}
-            selectedClefChangeId={selectedClefChange?.clefChangeId ?? null}
-            selectedMeasure={selectedMeasure}
-          />
-        </div>
+          );
+        })}
       </div>
       {measureContextMenu ? (
         <div
