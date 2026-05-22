@@ -22,6 +22,30 @@ const MIN_PAGINATED_MEASURES = 32;
 const PAGE_SYSTEM_TOP_PADDING = 48;
 const PAGE_SYSTEM_BOTTOM_PADDING = 112;
 
+export function getInitialScorePageIndexes(pageCount: number) {
+  return pageCount <= 0 ? new Set<number>() : new Set([0]);
+}
+
+export function getNearbyScorePageIndexes(
+  pageIndex: number,
+  pageCount: number,
+) {
+  if (pageCount <= 0) {
+    return new Set<number>();
+  }
+
+  const safePageIndex = Math.min(pageCount - 1, Math.max(0, pageIndex));
+  const start = Math.max(0, safePageIndex - 1);
+  const end = Math.min(pageCount - 1, safePageIndex + 1);
+  const pageIndexes = new Set<number>();
+
+  for (let index = start; index <= end; index += 1) {
+    pageIndexes.add(index);
+  }
+
+  return pageIndexes;
+}
+
 function getScoreMeasureCount(score: Score) {
   return Math.max(
     0,

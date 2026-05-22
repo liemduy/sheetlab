@@ -11,6 +11,8 @@ import {
 } from '../playback/timeline';
 import { getScoreSvgWidth } from '../sheet/layout';
 import {
+  getInitialScorePageIndexes,
+  getNearbyScorePageIndexes,
   getScorePageForMeasureIndex,
   getScorePageViewports,
 } from '../sheet/pageLayout';
@@ -49,6 +51,7 @@ import {
   getPracticeExpressionCapabilitySummary,
   getPracticeTargetExpressionLabels,
 } from './practiceExpressions';
+import { buildPracticeReviewSummary } from './practiceReview';
 import { useMidiInputs } from './useMidiInputs';
 
 type PracticeMode = 'listen' | 'wait' | 'rhythm';
@@ -83,39 +86,6 @@ function parseMeasureInput(value: string, fallback: number, measureCount: number
   }
 
   return clampNumber(Math.round(parsedValue), 1, measureCount);
-}
-
-function getInitialRenderedPageIndexes(pageCount: number) {
-  return pageCount <= 1 ? new Set([0]) : new Set<number>();
-}
-
-function addPageIndex(currentPageIndexes: Set<number>, pageIndex: number) {
-  if (currentPageIndexes.has(pageIndex)) {
-    return currentPageIndexes;
-  }
-
-  const nextPageIndexes = new Set(currentPageIndexes);
-
-  nextPageIndexes.add(pageIndex);
-  return nextPageIndexes;
-}
-
-function addNearbyPageIndexes(
-  currentPageIndexes: Set<number>,
-  pageIndex: number,
-  pageCount: number,
-) {
-  const nextPageIndexes = new Set(currentPageIndexes);
-  const start = Math.max(0, pageIndex - 1);
-  const end = Math.min(pageCount - 1, pageIndex + 1);
-
-  for (let index = start; index <= end; index += 1) {
-    nextPageIndexes.add(index);
-  }
-
-  return nextPageIndexes.size === currentPageIndexes.size
-    ? currentPageIndexes
-    : nextPageIndexes;
 }
 
 function getCorrectTargetIds(results: ReadonlyMap<string, PracticeResult>) {
@@ -218,31 +188,46 @@ function PracticeSheet({
 }: PracticeSheetProps) {
   const pageViewports = useMemo(() => getScorePageViewports(score), [score]);
   const [renderedPageIndexes, setRenderedPageIndexes] = useState<Set<number>>(
-    () => getInitialRenderedPageIndexes(1),
+    () => getInitialScorePageIndexes(1),
   );
+  const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const scoreSvgWidth = getScoreSvgWidth(score);
   const stageRef = useRef<HTMLElement | null>(null);
+  const lastFollowedPageRef = useRef<number | null>(null);
   const currentPage =
     currentMeasureIndex !== null
       ? getScorePageForMeasureIndex(pageViewports, currentMeasureIndex)
       : null;
 
-  useEffect(() => {
-    setRenderedPageIndexes(getInitialRenderedPageIndexes(pageViewports.length));
-  }, [pageViewports.length, score.id]);
+  function scrollPageIntoView(pageIndex: number, behavior: ScrollBehavior = 'smooth') {
+    const pageElement = stageRef.current?.querySelector<HTMLElement>(
+      `.paper-page[data-page-index="${pageIndex}"]`,
+    );
+
+    pageElement?.scrollIntoView({
+      behavior,
+      block: 'start',
+      inline: 'nearest',
+    });
+  }
+
+  function handlePageNavigation(pageIndex: number) {
+    const safePageIndex = Math.min(
+      pageViewports.length - 1,
+      Math.max(0, pageIndex),
+    );
+
+    setCurrentPageIndex(safePageIndex);
+    setRenderedPageIndexes(
+      getNearbyScorePageIndexes(safePageIndex, pageViewports.length),
+    );
+    window.requestAnimationFrame(() => scrollPageIntoView(safePageIndex));
+  }
 
   useEffect(() => {
-    if (pageViewports.length <= 1) {
-      return;
-    }
-
-    const firstPageDelay = window.setTimeout(() => {
-      setRenderedPageIndexes((currentPageIndexes) =>
-        addPageIndex(currentPageIndexes, 0),
-      );
-    }, 120);
-
-    return () => window.clearTimeout(firstPageDelay);
+    setRenderedPageIndexes(getInitialScorePageIndexes(pageViewports.length));
+    setCurrentPageIndex(0);
+    lastFollowedPageRef.current = null;
   }, [pageViewports.length, score.id]);
 
   useEffect(() => {
@@ -264,31 +249,37 @@ function PracticeSheet({
 
       observer = new IntersectionObserver(
         (entries) => {
-          setRenderedPageIndexes((currentPageIndexes) => {
-            let nextPageIndexes = currentPageIndexes;
+          const visiblePage = entries.reduce<{
+            index: number;
+            ratio: number;
+          } | null>((bestPage, entry) => {
+            if (!entry.isIntersecting) {
+              return bestPage;
+            }
 
-            entries.forEach((entry) => {
-              if (!entry.isIntersecting) {
-                return;
-              }
+            const pageIndex = Number(
+              (entry.target as HTMLElement).dataset.pageIndex,
+            );
 
-              const pageIndex = Number(
-                (entry.target as HTMLElement).dataset.pageIndex,
-              );
+            if (!Number.isFinite(pageIndex)) {
+              return bestPage;
+            }
 
-              if (!Number.isFinite(pageIndex)) {
-                return;
-              }
+            if (!bestPage || entry.intersectionRatio > bestPage.ratio) {
+              return { index: pageIndex, ratio: entry.intersectionRatio };
+            }
 
-              nextPageIndexes = addNearbyPageIndexes(
-                nextPageIndexes,
-                pageIndex,
-                pageViewports.length,
-              );
-            });
+            return bestPage;
+          }, null);
 
-            return nextPageIndexes;
-          });
+          if (!visiblePage) {
+            return;
+          }
+
+          setCurrentPageIndex(visiblePage.index);
+          setRenderedPageIndexes(
+            getNearbyScorePageIndexes(visiblePage.index, pageViewports.length),
+          );
         },
         {
           root: null,
@@ -310,13 +301,15 @@ function PracticeSheet({
       return;
     }
 
-    setRenderedPageIndexes((currentPageIndexes) =>
-      addNearbyPageIndexes(
-        currentPageIndexes,
-        currentPage.index,
-        pageViewports.length,
-      ),
+    setCurrentPageIndex(currentPage.index);
+    setRenderedPageIndexes(
+      getNearbyScorePageIndexes(currentPage.index, pageViewports.length),
     );
+
+    if (lastFollowedPageRef.current !== currentPage.index) {
+      lastFollowedPageRef.current = currentPage.index;
+      window.requestAnimationFrame(() => scrollPageIntoView(currentPage.index));
+    }
   }, [currentPage, pageViewports.length]);
 
   return (
@@ -325,6 +318,29 @@ function PracticeSheet({
         className="paper-stack practice-paper-stack"
         style={{ '--canvas-zoom': 0.94 } as CSSProperties}
       >
+        {pageViewports.length > 1 ? (
+          <div className="sheet-page-controls" aria-label="Practice pages">
+            <button
+              type="button"
+              aria-label="Previous practice page"
+              disabled={currentPageIndex <= 0}
+              onClick={() => handlePageNavigation(currentPageIndex - 1)}
+            >
+              ‹
+            </button>
+            <span>
+              Page {currentPageIndex + 1} / {pageViewports.length}
+            </span>
+            <button
+              type="button"
+              aria-label="Next practice page"
+              disabled={currentPageIndex >= pageViewports.length - 1}
+              onClick={() => handlePageNavigation(currentPageIndex + 1)}
+            >
+              ›
+            </button>
+          </div>
+        ) : null}
         {pageViewports.map((pageViewport) => {
           const isCurrentPage = currentPage?.index === pageViewport.index;
           const shouldRenderPage =
@@ -422,6 +438,7 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
   const [completedAttempts, setCompletedAttempts] = useState(0);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [practiceMessage, setPracticeMessage] = useState('Ready');
+  const [latencyOffsetMs, setLatencyOffsetMs] = useState(0);
   const activeMidiNotesRef = useRef<number[]>([]);
   const currentTargetIndexRef = useRef(currentTargetIndex);
   const elapsedSecondsRef = useRef(elapsedSeconds);
@@ -429,6 +446,7 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
   const guideAnimationFrameRef = useRef<number | null>(null);
   const guideEndTimerRef = useRef<number | null>(null);
   const guideRunIdRef = useRef(0);
+  const hasGuideLeftCountInRef = useRef(false);
   const isLoopingRef = useRef(isLooping);
   const isGuidePlayingRef = useRef(isGuidePlaying);
   const isPracticingRef = useRef(isPracticing);
@@ -436,6 +454,7 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
   const pedalResultsRef = useRef(pedalResults);
   const resultsRef = useRef(results);
   const rhythmStartedAtRef = useRef(0);
+  const latencyOffsetMsRef = useRef(latencyOffsetMs);
   const normalizedMeasureStart = Math.min(measureStart, measureEnd) - 1;
   const normalizedMeasureEnd = Math.max(measureStart, measureEnd) - 1;
   const rawTargets = useMemo(
@@ -498,6 +517,17 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
     [results, targets.length],
   );
   const pedalSummary = useMemo(() => getPedalSummary(pedalResults), [pedalResults]);
+  const reviewSummary = useMemo(
+    () =>
+      buildPracticeReviewSummary({
+        pedalResults,
+        pedalTargets: mode === 'rhythm' ? pedalTargets : [],
+        results,
+        targets,
+        timingToleranceMs: PRACTICE_TIMING_TOLERANCE_MS[timingLevel],
+      }),
+    [mode, pedalResults, pedalTargets, results, targets, timingLevel],
+  );
   const expressionLabels = useMemo(
     () => getPracticeTargetExpressionLabels(score, currentTarget),
     [currentTarget, score],
@@ -529,6 +559,12 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
       : null;
   const practicePlaybackBeat =
     rhythmPlaybackBeat ?? currentTarget?.startBeat ?? null;
+
+  const getCalibratedElapsedSeconds = useCallback(
+    (rawElapsedSeconds: number) =>
+      rawElapsedSeconds - latencyOffsetMsRef.current / 1000,
+    [],
+  );
 
   const clearResults = useCallback(() => {
     const nextResults = new Map<string, PracticeResult>();
@@ -606,6 +642,7 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
       const runId = guideRunIdRef.current + 1;
 
       guideRunIdRef.current = runId;
+      hasGuideLeftCountInRef.current = delaySeconds <= 0;
       elapsedSecondsRef.current = -delaySeconds;
       setElapsedSeconds(-delaySeconds);
       isGuidePlayingRef.current = true;
@@ -724,22 +761,26 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
       }
 
       if (isSustainPedalEvent(event)) {
+        const scoringElapsedSeconds = getCalibratedElapsedSeconds(
+          elapsedSecondsRef.current,
+        );
+
         if (
           modeRef.current === 'rhythm' &&
           isPracticingRef.current &&
-          elapsedSecondsRef.current >= 0
+          scoringElapsedSeconds >= 0
         ) {
           const action = event.value >= 64 ? 'down' : 'up';
           const target = findNearestPedalTarget(pedalTargetsRef.current, {
             action,
-            elapsedSeconds: elapsedSecondsRef.current,
+            elapsedSeconds: scoringElapsedSeconds,
             resolvedTargetIds: new Set(pedalResultsRef.current.keys()),
           });
 
           if (target) {
             const result = evaluatePedalTarget(
               target,
-              elapsedSecondsRef.current,
+              scoringElapsedSeconds,
             );
 
             upsertPedalResult(result);
@@ -790,9 +831,12 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
         return;
       }
 
+      const scoringElapsedSeconds = getCalibratedElapsedSeconds(
+        elapsedSecondsRef.current,
+      );
       const rhythmTarget = getPracticeTargetAtSeconds(
         targetsRef.current,
-        elapsedSecondsRef.current,
+        scoringElapsedSeconds,
       );
 
       if (!rhythmTarget) {
@@ -804,7 +848,7 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
         rhythmTarget,
         activeMidiNotesRef.current,
         {
-          elapsedSeconds: elapsedSecondsRef.current,
+          elapsedSeconds: scoringElapsedSeconds,
           timingToleranceMs: PRACTICE_TIMING_TOLERANCE_MS[timingLevel],
         },
       );
@@ -828,7 +872,13 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
         }
       }
     },
-    [advanceWaitTarget, timingLevel, upsertPedalResult, upsertResult],
+    [
+      advanceWaitTarget,
+      getCalibratedElapsedSeconds,
+      timingLevel,
+      upsertPedalResult,
+      upsertResult,
+    ],
   );
   const {
     activeMidiNotes,
@@ -911,6 +961,10 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
   useEffect(() => {
     modeRef.current = mode;
   }, [mode]);
+
+  useEffect(() => {
+    latencyOffsetMsRef.current = latencyOffsetMs;
+  }, [latencyOffsetMs]);
 
   useEffect(() => {
     pedalTargetsRef.current = pedalTargets;
@@ -996,6 +1050,8 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
         nextElapsedSeconds,
         0.5,
       );
+      const scoringElapsedSeconds =
+        getCalibratedElapsedSeconds(nextElapsedSeconds);
 
       elapsedSecondsRef.current = nextElapsedSeconds;
       setElapsedSeconds(nextElapsedSeconds);
@@ -1008,9 +1064,18 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
         return;
       }
 
+      if (!hasGuideLeftCountInRef.current) {
+        hasGuideLeftCountInRef.current = true;
+        setPracticeMessage(
+          isPracticingRef.current
+            ? getTargetLabel(targetsSnapshot[currentTargetIndexRef.current] ?? null)
+            : 'Reference playing',
+        );
+      }
+
       if (isPracticingRef.current && modeRef.current === 'rhythm') {
-        markMissedTargets(nextElapsedSeconds);
-        markMissedPedalTargets(nextElapsedSeconds);
+        markMissedTargets(scoringElapsedSeconds);
+        markMissedPedalTargets(scoringElapsedSeconds);
       }
 
       if (currentRhythmTarget) {
@@ -1052,6 +1117,7 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
     return () => window.cancelAnimationFrame(animationFrameId);
   }, [
     completePracticeRound,
+    getCalibratedElapsedSeconds,
     isGuidePlaying,
     isPracticing,
     mode,
@@ -1125,11 +1191,23 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
     setMeasureStart((current) => Math.min(current, nextMeasureEnd));
   }
 
+  function handleLatencyOffsetChange(value: string) {
+    const nextOffset = Number(value);
+
+    if (!Number.isFinite(nextOffset)) {
+      setLatencyOffsetMs(0);
+      return;
+    }
+
+    setLatencyOffsetMs(clampNumber(Math.round(nextOffset), -250, 250));
+  }
+
   const midiStatusLabel = getMidiConnectionStatusLabel(status);
   const targetStaffLabel = currentTarget?.staffIds.join(' + ') ?? 'none';
   const activeNotesLabel =
     activeMidiNotes.length > 0 ? formatMidiNoteList(activeMidiNotes) : 'None';
   const selectedInput = inputs.find((input) => input.id === selectedInputId) ?? null;
+  const lastMidiEvent = recentEvents[0] ?? null;
   const progressLabel = `${resultSummary.correct}/${targets.length}`;
   const guideMeasureIndex = activeGuideEvents[0]?.measureIndex ?? null;
   const currentMeasureIndex = currentTarget?.measureIndex ?? guideMeasureIndex;
@@ -1336,6 +1414,19 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
             </select>
           </label>
 
+          <label className="practice-field">
+            MIDI latency
+            <input
+              type="number"
+              data-testid="practice-latency-offset"
+              min={-250}
+              max={250}
+              step={5}
+              value={latencyOffsetMs}
+              onChange={(event) => handleLatencyOffsetChange(event.target.value)}
+            />
+          </label>
+
           <div className="practice-range-grid">
             <label className="practice-field">
               From
@@ -1399,6 +1490,39 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
             )}
           </ol>
 
+          <div
+            className="practice-midi-debug"
+            data-testid="practice-midi-debug"
+            aria-label="MIDI debug"
+          >
+            <div>
+              <span>Device</span>
+              <strong>
+                {selectedInput ? getMidiInputLabel(selectedInput) : 'None'}
+              </strong>
+            </div>
+            <div>
+              <span>Active</span>
+              <strong>{activeNotesLabel}</strong>
+            </div>
+            <div>
+              <span>Pedal</span>
+              <strong>{sustainPedalDown ? 'Down' : 'Up'}</strong>
+            </div>
+            <div>
+              <span>Latency</span>
+              <strong>{latencyOffsetMs}ms</strong>
+            </div>
+            <div>
+              <span>Last</span>
+              <strong>{lastMidiEvent ? getEventLabel(lastMidiEvent) : 'None'}</strong>
+            </div>
+            <div>
+              <span>Raw</span>
+              <strong>{lastMidiEvent?.rawData.join(' ') ?? '-'}</strong>
+            </div>
+          </div>
+
           <dl className="practice-result-list">
             <div>
               <dt>Partial</dt>
@@ -1415,6 +1539,10 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
             <div>
               <dt>Elapsed</dt>
               <dd>{Math.max(0, elapsedSeconds).toFixed(1)}s</dd>
+            </div>
+            <div>
+              <dt>Latency</dt>
+              <dd>{latencyOffsetMs}ms</dd>
             </div>
             <div>
               <dt>Measure</dt>
@@ -1434,32 +1562,42 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
               <div className="practice-review-grid">
                 <div>
                   <span>Notes</span>
-                  <strong>{accuracyPercent}%</strong>
+                  <strong>{reviewSummary.noteAccuracyPercent}%</strong>
                 </div>
                 <div>
-                  <span>Rhythm</span>
+                  <span>Timing</span>
                   <strong>
-                    {resultSummary.wrong + resultSummary.missed === 0
-                      ? 'Clean'
-                      : `${resultSummary.wrong + resultSummary.missed} issues`}
+                    {reviewSummary.timingScorePercent === null
+                      ? 'n/a'
+                      : `${reviewSummary.timingScorePercent}%`}
                   </strong>
                 </div>
                 <div>
                   <span>Pedal</span>
                   <strong>
-                    {pedalTargets.length === 0
-                      ? 'None'
-                      : `${pedalSummary.correct}/${pedalTargets.length}`}
+                    {reviewSummary.pedalScorePercent === null
+                      ? 'n/a'
+                      : `${reviewSummary.pedalScorePercent}%`}
+                  </strong>
+                </div>
+                <div>
+                  <span>Done</span>
+                  <strong>
+                    {reviewSummary.completionPercent}%
                   </strong>
                 </div>
               </div>
               <ol className="practice-review-list">
-                {[...results.values()].slice(-5).map((result) => (
-                  <li key={result.targetId}>{getPracticeResultMessage(result)}</li>
-                ))}
-                {[...pedalResults.values()].slice(-3).map((result) => (
-                  <li key={result.targetId}>{getPedalResultLabel(result)}</li>
-                ))}
+                {reviewSummary.measureSummaries.length > 0 ? (
+                  reviewSummary.measureSummaries.map((review) => (
+                    <li key={review.measureIndex}>
+                      <strong>M{review.measureIndex + 1}</strong>
+                      <span>{review.labels.join(' / ')}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>Clean pass</li>
+                )}
               </ol>
             </section>
           ) : null}

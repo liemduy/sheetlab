@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { deserializeScore, serializeScore } from './factories';
 import {
   annotationDragLabFixture,
-  composerSketchFixture,
   duChoTanTheExcerptFixture,
   duChoTanTheFullFixture,
   extremeClefOttavaChromaticFixture,
@@ -147,7 +146,12 @@ describe('score fixtures', () => {
       (event) => event.id === 'annotation-lab-anchor',
     );
     const pianoStaves = pianoPracticeLoopFixture.parts[0]?.staves;
-    const composerEvents = getAllEvents(composerSketchFixture);
+    const trebleEvents = getAllEvents(trebleStudyFixture);
+
+    expect(trebleStudyFixture.title).toBe('First Treble Study');
+    expect(trebleEvents).toHaveLength(4);
+    expect(getManualAnnotationOffsetCount(trebleStudyFixture)).toBe(0);
+    expect(getAnnotationKinds(trebleStudyFixture)).toEqual(new Set());
 
     expect(annotationDragLabFixture.title).toBe('Annotation Drag Lab');
     expect(annotationEvents).toHaveLength(4);
@@ -171,21 +175,6 @@ describe('score fixtures', () => {
     expect(getManualAnnotationOffsetCount(pianoPracticeLoopFixture)).toBe(0);
     expect(getAnnotationKinds(pianoPracticeLoopFixture)).toEqual(
       new Set(['chordSymbol', 'dynamic', 'fermata', 'lyric', 'pedal']),
-    );
-    expect(composerSketchFixture.timeSignature).toEqual({
-      beats: 3,
-      beatUnit: 4,
-    });
-    expect(getManualAnnotationOffsetCount(composerSketchFixture)).toBe(1);
-    expect(getAnnotationKinds(composerSketchFixture)).toEqual(
-      new Set(['chordSymbol', 'dynamic', 'fermata', 'lyric', 'pedal']),
-    );
-    expect(composerEvents).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ chordSymbol: 'Gmaj9' }),
-        expect.objectContaining({ hairpin: 'crescendo' }),
-        expect.objectContaining({ fermata: true }),
-      ]),
     );
   });
 
@@ -359,9 +348,9 @@ describe('score fixtures', () => {
 
   it('catalogs demo and extreme fixtures with stable metadata', () => {
     expect(scoreFixtureCatalog.map((fixture) => fixture.id)).toEqual([
+      'basic-treble-study',
       'annotation-drag-lab',
       'piano-practice-loop',
-      'composer-sketch',
       'du-cho-tan-the-full',
     ]);
     expect(extremeScoreFixtureCatalog.map((fixture) => fixture.score)).toEqual(

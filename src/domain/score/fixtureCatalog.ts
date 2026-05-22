@@ -1,7 +1,6 @@
 import { countScoreEvents } from './editing';
 import {
   annotationDragLabFixture,
-  composerSketchFixture,
   duChoTanTheFullFixture,
   extremeClefOttavaChromaticFixture,
   extremeTupletRepeatEtudeFixture,
@@ -9,6 +8,7 @@ import {
   pianoPracticeLoopFixture,
   readableSpacingStressFixture,
   stressPianoHardeningFixture,
+  trebleStudyFixture,
 } from './fixtures';
 import type { Score, ScoreEvent } from './types';
 
@@ -177,6 +177,13 @@ function createFixtureMetadata({
 export const scoreFixtureCatalog = [
   createFixtureMetadata({
     category: 'basic',
+    id: 'basic-treble-study',
+    label: 'Basic Treble Study',
+    risk: 'low',
+    score: trebleStudyFixture,
+  }),
+  createFixtureMetadata({
+    category: 'basic',
     id: 'annotation-drag-lab',
     label: 'Annotation Drag Lab',
     risk: 'low',
@@ -188,13 +195,6 @@ export const scoreFixtureCatalog = [
     label: 'Piano Practice Loop',
     risk: 'low',
     score: pianoPracticeLoopFixture,
-  }),
-  createFixtureMetadata({
-    category: 'basic',
-    id: 'composer-sketch',
-    label: 'Composer Sketch',
-    risk: 'low',
-    score: composerSketchFixture,
   }),
   createFixtureMetadata({
     category: 'excerpt',

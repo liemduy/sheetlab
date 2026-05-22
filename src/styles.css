@@ -606,8 +606,7 @@ button {
   display: flex;
   justify-content: center;
   min-width: 0;
-  overflow-x: auto;
-  overflow-y: auto;
+  overflow: visible;
   padding: 1rem 1.25rem 2.5rem;
 }
 
@@ -617,6 +616,49 @@ button {
   justify-items: center;
   min-width: 0;
   width: 100%;
+}
+
+.sheet-page-controls {
+  position: sticky;
+  top: 0.75rem;
+  z-index: 7;
+  display: inline-flex;
+  align-items: center;
+  justify-self: end;
+  gap: 0.45rem;
+  min-height: 2.2rem;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 92%);
+  box-shadow: 0 0.6rem 1.5rem rgb(20 24 35 / 10%);
+  color: var(--ink);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.sheet-page-controls button {
+  display: inline-grid;
+  place-items: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: rgb(25 118 103 / 10%);
+  color: var(--accent-strong);
+  cursor: pointer;
+  font: inherit;
+}
+
+.sheet-page-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.sheet-page-controls span {
+  min-width: 4.8rem;
+  text-align: center;
 }
 
 .paper {
@@ -1930,6 +1972,39 @@ button {
   font-weight: 700;
 }
 
+.practice-midi-debug {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+  border: 1px solid rgb(36 31 26 / 11%);
+  border-radius: 0.55rem;
+  padding: 0.55rem;
+  background: rgb(255 255 255 / 64%);
+}
+
+.practice-midi-debug div {
+  display: grid;
+  min-width: 0;
+  gap: 0.18rem;
+}
+
+.practice-midi-debug span {
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.practice-midi-debug strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .practice-recent-events {
   display: grid;
   gap: 0.35rem;
@@ -1983,7 +2058,7 @@ button {
 
 .practice-review-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.4rem;
 }
 
@@ -2014,17 +2089,33 @@ button {
   display: grid;
   gap: 0.3rem;
   margin: 0;
-  padding-left: 1.1rem;
+  padding: 0;
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 700;
+  list-style: none;
+}
+
+.practice-review-list li {
+  display: grid;
+  gap: 0.2rem;
+  border-top: 1px solid rgb(36 31 26 / 8%);
+  padding-top: 0.4rem;
+}
+
+.practice-review-list strong {
+  color: var(--ink);
+}
+
+.practice-review-list span {
+  line-height: 1.35;
 }
 
 .practice-stage {
   display: flex;
   justify-content: center;
   min-width: 0;
-  overflow: auto;
+  overflow: visible;
   padding: 1rem 1.25rem 2.5rem;
 }
 

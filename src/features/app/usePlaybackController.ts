@@ -25,30 +25,27 @@ export function usePlaybackController({
   const [playbackStartOffsetSeconds, setPlaybackStartOffsetSeconds] =
     useState(0);
   const playbackController = useRef<PlaybackController | null>(null);
-  const playbackEndTimer = useRef<number | null>(null);
   const playbackAnimationFrame = useRef<number | null>(null);
   const playbackRunId = useRef(0);
   const playbackTimeline = useMemo(() => buildPlaybackTimeline(score), [score]);
 
-  function stopPlayback() {
-    playbackRunId.current += 1;
-    playbackController.current?.stop();
-    playbackController.current = null;
-
-    if (playbackEndTimer.current !== null) {
-      window.clearTimeout(playbackEndTimer.current);
-      playbackEndTimer.current = null;
-    }
-
+  function clearPlaybackAnimationFrame() {
     if (playbackAnimationFrame.current !== null) {
       window.cancelAnimationFrame(playbackAnimationFrame.current);
       playbackAnimationFrame.current = null;
     }
+  }
+
+  function stopPlayback(message = 'Playback stopped') {
+    playbackRunId.current += 1;
+    playbackController.current?.stop();
+    playbackController.current = null;
+    clearPlaybackAnimationFrame();
 
     setIsPlaying(false);
     setPlaybackElapsedSeconds(0);
     setPlaybackStartOffsetSeconds(0);
-    setEditorMessage('Playback stopped');
+    setEditorMessage(message);
   }
 
   async function startPlayback(
@@ -94,33 +91,30 @@ export function usePlaybackController({
         : messages.started,
     );
     const updatePlaybackClock = () => {
-      setPlaybackElapsedSeconds(
+      if (playbackRunId.current !== runId) {
+        return;
+      }
+
+      const nextElapsedSeconds =
         controller.getElapsedSeconds?.() ??
-          (performance.now() - controller.startedAtMs) / 1000,
-      );
+        (performance.now() - controller.startedAtMs) / 1000;
+
+      if (nextElapsedSeconds >= remainingDurationSeconds) {
+        playbackController.current?.stop();
+        playbackController.current = null;
+        clearPlaybackAnimationFrame();
+        setIsPlaying(false);
+        setPlaybackElapsedSeconds(0);
+        setPlaybackStartOffsetSeconds(0);
+        setEditorMessage('Playback finished');
+        return;
+      }
+
+      setPlaybackElapsedSeconds(nextElapsedSeconds);
       playbackAnimationFrame.current =
         window.requestAnimationFrame(updatePlaybackClock);
     };
     updatePlaybackClock();
-    playbackEndTimer.current = window.setTimeout(() => {
-      playbackController.current?.stop();
-      playbackController.current = null;
-      playbackEndTimer.current = null;
-      if (playbackAnimationFrame.current !== null) {
-        window.cancelAnimationFrame(playbackAnimationFrame.current);
-        playbackAnimationFrame.current = null;
-      }
-      setIsPlaying(false);
-      setPlaybackElapsedSeconds(0);
-      setPlaybackStartOffsetSeconds(0);
-      setEditorMessage('Playback finished');
-    }, Math.max(
-      0,
-      controller.startedAtMs -
-        performance.now() +
-        remainingDurationSeconds * 1000 +
-        120,
-    ));
   }
 
   async function handlePlaybackToggle() {

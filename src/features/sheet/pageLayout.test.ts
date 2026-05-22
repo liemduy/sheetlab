@@ -4,11 +4,21 @@ import {
   duChoTanTheFullFixture,
 } from '../../domain/score/fixtures';
 import {
+  getInitialScorePageIndexes,
+  getNearbyScorePageIndexes,
   getScorePageForMeasureIndex,
   getScorePageViewports,
 } from './pageLayout';
 
 describe('score page layout', () => {
+  it('chooses an immediate first page and bounded page neighbors', () => {
+    expect([...getInitialScorePageIndexes(0)]).toEqual([]);
+    expect([...getInitialScorePageIndexes(4)]).toEqual([0]);
+    expect([...getNearbyScorePageIndexes(0, 4)]).toEqual([0, 1]);
+    expect([...getNearbyScorePageIndexes(2, 4)]).toEqual([1, 2, 3]);
+    expect([...getNearbyScorePageIndexes(99, 4)]).toEqual([2, 3]);
+  });
+
   it('keeps short scores on one page', () => {
     const pages = getScorePageViewports(composerSketchFixture);
 

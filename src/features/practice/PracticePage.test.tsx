@@ -21,6 +21,8 @@ describe('PracticePage', () => {
     expect(screen.getByTestId('practice-count-in')).toHaveValue('1');
     expect(screen.getByTestId('practice-reference-mute')).toHaveValue('none');
     expect(screen.getByTestId('practice-timing')).toHaveValue('normal');
+    expect(screen.getByTestId('practice-latency-offset')).toHaveValue(0);
+    expect(screen.getByTestId('practice-midi-debug')).toHaveTextContent('None');
 
     fireEvent.click(screen.getByTestId('practice-mode-listen'));
 

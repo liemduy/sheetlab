@@ -11,6 +11,8 @@ import { StaffRenderer } from '../sheet/StaffRenderer';
 import type { MusicPosition } from '../sheet/interaction';
 import { getScoreSvgWidth } from '../sheet/layout';
 import {
+  getInitialScorePageIndexes,
+  getNearbyScorePageIndexes,
   getScorePageForMeasureIndex,
   getScorePageViewports,
 } from '../sheet/pageLayout';
@@ -109,39 +111,6 @@ interface SheetSurfaceProps {
   ) => void;
 }
 
-function getInitialRenderedPageIndexes(pageCount: number) {
-  return pageCount <= 1 ? new Set([0]) : new Set<number>();
-}
-
-function addPageIndex(currentPageIndexes: Set<number>, pageIndex: number) {
-  if (currentPageIndexes.has(pageIndex)) {
-    return currentPageIndexes;
-  }
-
-  const nextPageIndexes = new Set(currentPageIndexes);
-
-  nextPageIndexes.add(pageIndex);
-  return nextPageIndexes;
-}
-
-function addNearbyPageIndexes(
-  currentPageIndexes: Set<number>,
-  pageIndex: number,
-  pageCount: number,
-) {
-  const nextPageIndexes = new Set(currentPageIndexes);
-  const start = Math.max(0, pageIndex - 1);
-  const end = Math.min(pageCount - 1, pageIndex + 1);
-
-  for (let index = start; index <= end; index += 1) {
-    nextPageIndexes.add(index);
-  }
-
-  return nextPageIndexes.size === currentPageIndexes.size
-    ? currentPageIndexes
-    : nextPageIndexes;
-}
-
 export function SheetSurface({
   activeEventId,
   activeEventIds,
@@ -194,8 +163,9 @@ export function SheetSurface({
 }: SheetSurfaceProps) {
   const pageViewports = useMemo(() => getScorePageViewports(score), [score]);
   const [renderedPageIndexes, setRenderedPageIndexes] = useState<Set<number>>(
-    () => getInitialRenderedPageIndexes(1),
+    () => getInitialScorePageIndexes(1),
   );
+  const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const beatsPerMeasure = getMeasureBeats(score.timeSignature);
   const playbackMeasureIndex =
     playbackBeat !== null ? Math.floor(playbackBeat / beatsPerMeasure) : null;
@@ -203,23 +173,35 @@ export function SheetSurface({
   const stageRef = useRef<HTMLElement | null>(null);
   const lastFollowedPlaybackMeasureRef = useRef<number | null>(null);
 
+  function scrollPageIntoView(pageIndex: number, behavior: ScrollBehavior = 'smooth') {
+    const pageElement = stageRef.current?.querySelector<HTMLElement>(
+      `.paper-page[data-page-index="${pageIndex}"]`,
+    );
+
+    pageElement?.scrollIntoView({
+      behavior,
+      block: 'start',
+      inline: 'nearest',
+    });
+  }
+
+  function handlePageNavigation(pageIndex: number) {
+    const safePageIndex = Math.min(
+      pageViewports.length - 1,
+      Math.max(0, pageIndex),
+    );
+
+    setCurrentPageIndex(safePageIndex);
+    setRenderedPageIndexes(
+      getNearbyScorePageIndexes(safePageIndex, pageViewports.length),
+    );
+    window.requestAnimationFrame(() => scrollPageIntoView(safePageIndex));
+  }
+
   useEffect(() => {
-    setRenderedPageIndexes(getInitialRenderedPageIndexes(pageViewports.length));
+    setRenderedPageIndexes(getInitialScorePageIndexes(pageViewports.length));
+    setCurrentPageIndex(0);
   }, [pageViewports.length, score.id]);
-
-  useEffect(() => {
-    if (isPdfExportMode || pageViewports.length <= 1) {
-      return;
-    }
-
-    const firstPageDelay = window.setTimeout(() => {
-      setRenderedPageIndexes((currentPageIndexes) =>
-        addPageIndex(currentPageIndexes, 0),
-      );
-    }, 150);
-
-    return () => window.clearTimeout(firstPageDelay);
-  }, [isPdfExportMode, pageViewports.length, score.id]);
 
   useEffect(() => {
     if (isPdfExportMode || pageViewports.length <= 1) {
@@ -240,31 +222,37 @@ export function SheetSurface({
 
       observer = new IntersectionObserver(
         (entries) => {
-          setRenderedPageIndexes((currentPageIndexes) => {
-            let nextPageIndexes = currentPageIndexes;
+          const visiblePage = entries.reduce<{
+            index: number;
+            ratio: number;
+          } | null>((bestPage, entry) => {
+            if (!entry.isIntersecting) {
+              return bestPage;
+            }
 
-            entries.forEach((entry) => {
-              if (!entry.isIntersecting) {
-                return;
-              }
+            const pageIndex = Number(
+              (entry.target as HTMLElement).dataset.pageIndex,
+            );
 
-              const pageIndex = Number(
-                (entry.target as HTMLElement).dataset.pageIndex,
-              );
+            if (!Number.isFinite(pageIndex)) {
+              return bestPage;
+            }
 
-              if (!Number.isFinite(pageIndex)) {
-                return;
-              }
+            if (!bestPage || entry.intersectionRatio > bestPage.ratio) {
+              return { index: pageIndex, ratio: entry.intersectionRatio };
+            }
 
-              nextPageIndexes = addNearbyPageIndexes(
-                nextPageIndexes,
-                pageIndex,
-                pageViewports.length,
-              );
-            });
+            return bestPage;
+          }, null);
 
-            return nextPageIndexes;
-          });
+          if (!visiblePage) {
+            return;
+          }
+
+          setCurrentPageIndex(visiblePage.index);
+          setRenderedPageIndexes(
+            getNearbyScorePageIndexes(visiblePage.index, pageViewports.length),
+          );
         },
         {
           root: null,
@@ -295,13 +283,10 @@ export function SheetSurface({
       return;
     }
 
-    setRenderedPageIndexes((currentPageIndexes) =>
-      addNearbyPageIndexes(
-        currentPageIndexes,
-        playbackPage.index,
-        pageViewports.length,
-      ),
+    setRenderedPageIndexes(
+      getNearbyScorePageIndexes(playbackPage.index, pageViewports.length),
     );
+    setCurrentPageIndex(playbackPage.index);
   }, [pageViewports, playbackMeasureIndex]);
 
   useEffect(() => {
@@ -318,13 +303,10 @@ export function SheetSurface({
       return;
     }
 
-    setRenderedPageIndexes((currentPageIndexes) =>
-      addNearbyPageIndexes(
-        currentPageIndexes,
-        selectedPage.index,
-        pageViewports.length,
-      ),
+    setRenderedPageIndexes(
+      getNearbyScorePageIndexes(selectedPage.index, pageViewports.length),
     );
+    setCurrentPageIndex(selectedPage.index);
   }, [pageViewports, selectedMeasure]);
 
   useEffect(() => {
@@ -374,6 +356,35 @@ export function SheetSurface({
           } as CSSProperties
         }
       >
+        {pageViewports.length > 1 && !isPdfExportMode ? (
+          <div className="sheet-page-controls" aria-label="Score pages">
+            <button
+              type="button"
+              aria-label="Previous page"
+              disabled={currentPageIndex <= 0}
+              onClick={(event) => {
+                event.stopPropagation();
+                handlePageNavigation(currentPageIndex - 1);
+              }}
+            >
+              ‹
+            </button>
+            <span>
+              Page {currentPageIndex + 1} / {pageViewports.length}
+            </span>
+            <button
+              type="button"
+              aria-label="Next page"
+              disabled={currentPageIndex >= pageViewports.length - 1}
+              onClick={(event) => {
+                event.stopPropagation();
+                handlePageNavigation(currentPageIndex + 1);
+              }}
+            >
+              ›
+            </button>
+          </div>
+        ) : null}
         {pageViewports.map((pageViewport) => {
           const isPlaybackPage =
             playbackMeasureIndex !== null &&
