@@ -2346,6 +2346,51 @@ describe('StaffRenderer', () => {
     });
   });
 
+  it('reserves manually positioned annotations as blockers for automatic rows', async () => {
+    const voiceOneScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'manual-lyric-source',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'half',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+      voiceIndex: 0,
+    });
+    const twoVoiceScore = placeScoreEvent(voiceOneScore, {
+      eventId: 'auto-lyric-source',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'half',
+      entryMode: 'note',
+      pitch: { step: 'G', octave: 4 },
+      voiceIndex: 1,
+    });
+    const manualScore = tryUpdateScoreEvent(twoVoiceScore, 'manual-lyric-source', {
+      annotationOffset: {
+        kind: 'lyric',
+        offset: { x: 0, y: 0 },
+      },
+      lyric: 'hold',
+    }).score;
+    const score = tryUpdateScoreEvent(manualScore, 'auto-lyric-source', {
+      lyric: 'echo',
+    }).score;
+
+    render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('rendered-lyric')).toHaveLength(2);
+    });
+
+    const lyricRows = screen
+      .getAllByTestId('rendered-lyric')
+      .map((node) => node.getAttribute('data-annotation-row'));
+
+    expect(new Set(lyricRows).size).toBeGreaterThan(1);
+  });
+
   it('renders lyric-note map connectors only when the annotation map is enabled', async () => {
     const firstNoteScore = placeScoreEvent(createEmptyScore('treble'), {
       eventId: 'lyric-map-start',

@@ -252,6 +252,7 @@ interface EditorToolbarProps {
   onPlacementModeChange: (placementMode: PlacementMode) => void;
   onPlaybackToggle: () => void | Promise<void>;
   onPracticeOpen: () => void;
+  onPracticePreload?: () => void;
   onRedo: () => void;
   onRepeatJumpChange: (repeatJump: RepeatJumpKind | null) => void;
   onResetScore: () => void;
@@ -304,6 +305,7 @@ export function EditorToolbar({
   onPlacementModeChange,
   onPlaybackToggle,
   onPracticeOpen,
+  onPracticePreload,
   onRedo,
   onRepeatJumpChange,
   onResetScore,
@@ -763,6 +765,8 @@ export function EditorToolbar({
           type="button"
           aria-label="Practice mode"
           className="tool-button"
+          onFocus={onPracticePreload}
+          onMouseEnter={onPracticePreload}
           onClick={onPracticeOpen}
         >
           Practice

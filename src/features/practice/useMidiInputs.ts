@@ -7,9 +7,13 @@ import {
   type SheetLabMIDIAccess,
   type SheetLabMIDIInput,
   getMidiSupportStatus,
-  isSustainPedalEvent,
   parseMidiMessage,
 } from './midiAccess';
+import {
+  applyMidiHeldNoteEvent,
+  createMidiHeldNoteState,
+  getActiveMidiNotesForHeldState,
+} from './midiHeldNotes';
 
 const RECENT_EVENT_LIMIT = 16;
 
@@ -39,6 +43,7 @@ export function useMidiInputs(
   const onMidiEventRef = useRef(onMidiEvent);
   const accessRef = useRef<SheetLabMIDIAccess | null>(null);
   const connectedInputRef = useRef<SheetLabMIDIInput | null>(null);
+  const heldNoteStateRef = useRef(createMidiHeldNoteState());
   const [status, setStatus] = useState<MidiConnectionStatus>(() =>
     getMidiSupportStatus({
       isSecureContext: window.isSecureContext,
@@ -138,19 +143,14 @@ export function useMidiInputs(
         [parsedEvent, ...currentEvents].slice(0, RECENT_EVENT_LIMIT),
       );
 
-      if (parsedEvent.type === 'note-on') {
-        setActiveMidiNotes((currentNotes) =>
-          currentNotes.includes(parsedEvent.midiNote)
-            ? currentNotes
-            : [...currentNotes, parsedEvent.midiNote].sort((a, b) => a - b),
-        );
-      } else if (parsedEvent.type === 'note-off') {
-        setActiveMidiNotes((currentNotes) =>
-          currentNotes.filter((note) => note !== parsedEvent.midiNote),
-        );
-      } else if (isSustainPedalEvent(parsedEvent)) {
-        setSustainPedalDown(parsedEvent.value >= 64);
-      }
+      heldNoteStateRef.current = applyMidiHeldNoteEvent(
+        heldNoteStateRef.current,
+        parsedEvent,
+      );
+      setActiveMidiNotes(
+        getActiveMidiNotesForHeldState(heldNoteStateRef.current),
+      );
+      setSustainPedalDown(heldNoteStateRef.current.sustainPedalDown);
 
       onMidiEventRef.current?.(parsedEvent);
     };

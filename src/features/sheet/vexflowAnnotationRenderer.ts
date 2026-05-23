@@ -500,9 +500,10 @@ export function drawTextAnnotations(
                 staffBounds,
               );
 
-              if (!isManualLayout) {
-                systemAnnotationPlacements.push(placement);
+              if (isManualLayout) {
+                sidePlacements.push(shiftedPlacement);
               }
+              systemAnnotationPlacements.push(shiftedPlacement);
 
               const renderedAnnotationLayout = createRenderedAnnotationLayout({
                 eventId: event.id,

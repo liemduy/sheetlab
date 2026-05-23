@@ -47,6 +47,11 @@ import {
   type PracticeResult,
 } from './noteMatcher';
 import {
+  getMidiChordWindowLabel,
+  mergeBufferedMidiNotes,
+  MIDI_CHORD_SETTLE_MS,
+} from './midiChordBuffer';
+import {
   buildPracticePedalTargets,
   createMissedPedalResult,
   evaluatePedalTarget,
@@ -115,6 +120,22 @@ function getTargetLabel(target: PracticeTarget | null) {
   return `M${target.measureIndex + 1} beat ${target.beat + 1}: ${formatMidiNoteList(
     target.midiNotes,
   )} (${formatPracticeTargetVoiceLabel(target)})`;
+}
+
+function getTargetDeltaLabel(
+  currentTarget: PracticeTarget | null,
+  nextTarget: PracticeTarget | null,
+) {
+  if (!currentTarget || !nextTarget) {
+    return 'End';
+  }
+
+  const deltaSeconds = Math.max(
+    0,
+    nextTarget.startSeconds - currentTarget.startSeconds,
+  );
+
+  return `${deltaSeconds.toFixed(1)}s`;
 }
 
 function getEventLabel(event: ParsedMidiEvent) {
@@ -462,10 +483,14 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
   const isGuidePlayingRef = useRef(isGuidePlaying);
   const isPracticingRef = useRef(isPracticing);
   const modeRef = useRef(mode);
+  const pendingMidiEvaluationTimerRef = useRef<number | null>(null);
+  const pendingMidiNoteOnsRef = useRef<number[]>([]);
+  const pendingRhythmElapsedSecondsRef = useRef<number | null>(null);
   const pedalResultsRef = useRef(pedalResults);
   const resultsRef = useRef(results);
   const rhythmStartedAtRef = useRef(0);
   const latencyOffsetMsRef = useRef(latencyOffsetMs);
+  const timingLevelRef = useRef(timingLevel);
   const normalizedMeasureStart = Math.min(measureStart, measureEnd) - 1;
   const normalizedMeasureEnd = Math.max(measureStart, measureEnd) - 1;
   const rawTargets = useMemo(
@@ -522,6 +547,7 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
   );
   const pedalTargetsRef = useRef(pedalTargets);
   const currentTarget = targets[currentTargetIndex] ?? null;
+  const nextTarget = targets[currentTargetIndex + 1] ?? null;
   const targetById = useMemo(
     () => new Map(targets.map((target) => [target.id, target])),
     [targets],
@@ -580,6 +606,16 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
       rawElapsedSeconds - latencyOffsetMsRef.current / 1000,
     [],
   );
+
+  function clearPendingMidiEvaluation() {
+    if (pendingMidiEvaluationTimerRef.current !== null) {
+      window.clearTimeout(pendingMidiEvaluationTimerRef.current);
+      pendingMidiEvaluationTimerRef.current = null;
+    }
+
+    pendingMidiNoteOnsRef.current = [];
+    pendingRhythmElapsedSecondsRef.current = null;
+  }
 
   const clearResults = useCallback(() => {
     const nextResults = new Map<string, PracticeResult>();
@@ -712,6 +748,7 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
   );
 
   const resetPracticeRound = useCallback((message: string) => {
+    clearPendingMidiEvaluation();
     clearResults();
     clearPedalResults();
     elapsedSecondsRef.current = 0;
@@ -761,6 +798,110 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
       setPracticeMessage(getTargetLabel(targetsRef.current[nextTargetIndex] ?? null));
     },
     [completePracticeRound],
+  );
+
+  const flushBufferedMidiNoteEvaluation = useCallback(() => {
+    const playedNotes = mergeBufferedMidiNotes(
+      activeMidiNotesRef.current,
+      pendingMidiNoteOnsRef.current,
+    );
+    const bufferedRhythmElapsedSeconds =
+      pendingRhythmElapsedSecondsRef.current;
+
+    pendingMidiEvaluationTimerRef.current = null;
+    pendingMidiNoteOnsRef.current = [];
+    pendingRhythmElapsedSecondsRef.current = null;
+
+    if (modeRef.current === 'wait') {
+      const target = targetsRef.current[currentTargetIndexRef.current];
+
+      if (!target) {
+        return;
+      }
+
+      const result = evaluatePracticeTarget(target, playedNotes);
+
+      upsertResult(result);
+
+      if (result.status === 'correct') {
+        advanceWaitTarget(target);
+      } else {
+        setPracticeMessage(getPracticeResultMessage(result));
+      }
+
+      return;
+    }
+
+    if (modeRef.current !== 'rhythm') {
+      return;
+    }
+
+    const scoringElapsedSeconds =
+      bufferedRhythmElapsedSeconds ??
+      getCalibratedElapsedSeconds(elapsedSecondsRef.current);
+    const rhythmTarget = getPracticeTargetAtSeconds(
+      targetsRef.current,
+      scoringElapsedSeconds,
+    );
+
+    if (!rhythmTarget) {
+      setPracticeMessage('Off target chord');
+      return;
+    }
+
+    const result = evaluatePracticeTarget(
+      rhythmTarget,
+      playedNotes,
+      {
+        elapsedSeconds: scoringElapsedSeconds,
+        timingToleranceMs: PRACTICE_TIMING_TOLERANCE_MS[timingLevelRef.current],
+      },
+    );
+
+    upsertResult(result);
+    setPracticeMessage(getPracticeResultMessage(result));
+
+    if (result.status === 'correct') {
+      const targetIndex = targetsRef.current.findIndex(
+        (target) => target.id === rhythmTarget.id,
+      );
+
+      if (targetIndex >= currentTargetIndexRef.current) {
+        const nextTargetIndex = Math.min(
+          targetsRef.current.length - 1,
+          targetIndex + 1,
+        );
+
+        currentTargetIndexRef.current = nextTargetIndex;
+        setCurrentTargetIndex(nextTargetIndex);
+      }
+    }
+  }, [advanceWaitTarget, getCalibratedElapsedSeconds, upsertResult]);
+
+  const scheduleBufferedMidiNoteEvaluation = useCallback(
+    (midiNote: number, scoringElapsedSeconds: number | null) => {
+      pendingMidiNoteOnsRef.current = mergeBufferedMidiNotes(
+        pendingMidiNoteOnsRef.current,
+        [midiNote],
+      );
+
+      if (
+        scoringElapsedSeconds !== null &&
+        pendingRhythmElapsedSecondsRef.current === null
+      ) {
+        pendingRhythmElapsedSecondsRef.current = scoringElapsedSeconds;
+      }
+
+      if (pendingMidiEvaluationTimerRef.current !== null) {
+        window.clearTimeout(pendingMidiEvaluationTimerRef.current);
+      }
+
+      pendingMidiEvaluationTimerRef.current = window.setTimeout(
+        flushBufferedMidiNoteEvaluation,
+        MIDI_CHORD_SETTLE_MS,
+      );
+    },
+    [flushBufferedMidiNoteEvaluation],
   );
 
   const handleMidiEvent = useCallback(
@@ -823,76 +964,21 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
         return;
       }
 
-      if (modeRef.current === 'wait') {
-        const target = targetsRef.current[currentTargetIndexRef.current];
-
-        if (!target) {
-          return;
-        }
-
-        const result = evaluatePracticeTarget(
-          target,
-          activeMidiNotesRef.current,
-        );
-
-        upsertResult(result);
-
-        if (result.status === 'correct') {
-          advanceWaitTarget(target);
-        } else {
-          setPracticeMessage(getPracticeResultMessage(result));
-        }
-
+      if (modeRef.current !== 'wait' && modeRef.current !== 'rhythm') {
         return;
       }
 
-      const scoringElapsedSeconds = getCalibratedElapsedSeconds(
-        elapsedSecondsRef.current,
+      scheduleBufferedMidiNoteEvaluation(
+        event.midiNote,
+        modeRef.current === 'rhythm'
+          ? getCalibratedElapsedSeconds(elapsedSecondsRef.current)
+          : null,
       );
-      const rhythmTarget = getPracticeTargetAtSeconds(
-        targetsRef.current,
-        scoringElapsedSeconds,
-      );
-
-      if (!rhythmTarget) {
-        setPracticeMessage(`Off target: ${formatMidiNote(event.midiNote)}`);
-        return;
-      }
-
-      const result = evaluatePracticeTarget(
-        rhythmTarget,
-        activeMidiNotesRef.current,
-        {
-          elapsedSeconds: scoringElapsedSeconds,
-          timingToleranceMs: PRACTICE_TIMING_TOLERANCE_MS[timingLevel],
-        },
-      );
-
-      upsertResult(result);
-      setPracticeMessage(getPracticeResultMessage(result));
-
-      if (result.status === 'correct') {
-        const targetIndex = targetsRef.current.findIndex(
-          (target) => target.id === rhythmTarget.id,
-        );
-
-        if (targetIndex >= currentTargetIndexRef.current) {
-          const nextTargetIndex = Math.min(
-            targetsRef.current.length - 1,
-            targetIndex + 1,
-          );
-
-          currentTargetIndexRef.current = nextTargetIndex;
-          setCurrentTargetIndex(nextTargetIndex);
-        }
-      }
     },
     [
-      advanceWaitTarget,
       getCalibratedElapsedSeconds,
-      timingLevel,
+      scheduleBufferedMidiNoteEvaluation,
       upsertPedalResult,
-      upsertResult,
     ],
   );
   const {
@@ -982,6 +1068,10 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
   }, [latencyOffsetMs]);
 
   useEffect(() => {
+    timingLevelRef.current = timingLevel;
+  }, [timingLevel]);
+
+  useEffect(() => {
     pedalTargetsRef.current = pedalTargets;
   }, [pedalTargets]);
 
@@ -1006,7 +1096,13 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
     setMeasureEnd((current) => clampNumber(current, 1, measureCount));
   }, [measureCount]);
 
-  useEffect(() => () => stopGuidePlayback(false), [stopGuidePlayback]);
+  useEffect(
+    () => () => {
+      clearPendingMidiEvaluation();
+      stopGuidePlayback(false);
+    },
+    [stopGuidePlayback],
+  );
 
   useEffect(() => {
     if (!isGuidePlaying && !(isPracticing && mode === 'rhythm')) {
@@ -1164,6 +1260,7 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
 
   async function handlePracticeToggle() {
     if (isPracticing) {
+      clearPendingMidiEvaluation();
       stopGuidePlayback(false);
       isPracticingRef.current = false;
       setIsPracticing(false);
@@ -1217,6 +1314,19 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
     setLatencyOffsetMs(clampNumber(Math.round(nextOffset), -250, 250));
   }
 
+  function handleRetryMeasure(measureIndex: number) {
+    const measureNumber = clampNumber(measureIndex + 1, 1, measureCount);
+
+    clearPendingMidiEvaluation();
+    stopGuidePlayback(true);
+    setMeasureStart(measureNumber);
+    setMeasureEnd(measureNumber);
+    setIsPracticing(false);
+    isPracticingRef.current = false;
+    setIsReviewOpen(false);
+    setPracticeMessage(`Retry M${measureNumber}`);
+  }
+
   const midiStatusLabel = getMidiConnectionStatusLabel(status);
   const activeNotesLabel =
     activeMidiNotes.length > 0 ? formatMidiNoteList(activeMidiNotes) : 'None';
@@ -1227,6 +1337,9 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
     targetCount: targets.length,
   });
   const targetStaffLabel = formatPracticeTargetVoiceLabel(currentTarget);
+  const nextTargetLabel = getTargetLabel(nextTarget);
+  const nextTargetDeltaLabel = getTargetDeltaLabel(currentTarget, nextTarget);
+  const midiChordWindowLabel = getMidiChordWindowLabel();
   const lastMidiEvent = recentEvents[0] ?? null;
   const progressLabel = `${resultSummary.correct}/${targets.length}`;
   const guideMeasureIndex = activeGuideEvents[0]?.measureIndex ?? null;
@@ -1491,6 +1604,8 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
           <div className="practice-target-readout">
             <span>{targetStaffLabel}</span>
             <strong>{getTargetLabel(currentTarget)}</strong>
+            <small>Next {nextTargetLabel}</small>
+            <small>Gap {nextTargetDeltaLabel}</small>
             {expressionLabels.length > 0 ? (
               <small>Expression {expressionLabels.join(' / ')}</small>
             ) : null}
@@ -1545,6 +1660,10 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
             <div>
               <span>Latency</span>
               <strong>{latencyOffsetMs}ms</strong>
+            </div>
+            <div>
+              <span>Chord</span>
+              <strong>{midiChordWindowLabel}</strong>
             </div>
             <div>
               <span>Last</span>
@@ -1626,6 +1745,13 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
                     <li key={review.measureIndex}>
                       <strong>M{review.measureIndex + 1}</strong>
                       <span>{review.labels.join(' / ')}</span>
+                      <button
+                        type="button"
+                        className="practice-review-retry"
+                        onClick={() => handleRetryMeasure(review.measureIndex)}
+                      >
+                        Retry
+                      </button>
                     </li>
                   ))
                 ) : (

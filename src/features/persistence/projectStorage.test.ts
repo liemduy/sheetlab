@@ -5,8 +5,15 @@ import {
 } from '../../domain/score/editing';
 import { createEmptyScore } from '../../domain/score/factories';
 import {
+  SHEETLAB_AUTOSAVE_PROJECT_KEY,
+  SHEETLAB_PROJECT_LIBRARY_KEY,
   SHEETLAB_PROJECT_KEY,
+  loadAutosaveFromStorage,
+  loadProjectFromLibrary,
+  loadProjectLibrary,
   loadProjectFromStorage,
+  saveAutosaveToStorage,
+  saveProjectToLibrary,
   saveProjectToStorage,
 } from './projectStorage';
 
@@ -63,6 +70,64 @@ describe('project storage', () => {
     saveProjectToStorage(score, storageLike);
 
     expect(loadProjectFromStorage(storageLike)).toEqual(score);
+  });
+
+  it('maintains a local project library with metadata', () => {
+    const storage = new Map<string, string>();
+    const storageLike = {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        storage.set(key, value);
+      },
+    };
+    const firstScore = createEmptyScore('grand', {
+      id: 'library-first',
+      tempo: 84,
+      title: 'First Library Score',
+    });
+    const secondScore = createEmptyScore('treble', {
+      id: 'library-second',
+      tempo: 112,
+      title: 'Second Library Score',
+    });
+
+    saveProjectToLibrary(
+      firstScore,
+      storageLike,
+      new Date('2026-05-20T10:00:00.000Z'),
+    );
+    saveProjectToLibrary(
+      secondScore,
+      storageLike,
+      new Date('2026-05-21T10:00:00.000Z'),
+    );
+
+    expect(storage.get(SHEETLAB_PROJECT_LIBRARY_KEY)).toContain('library-first');
+    expect(loadProjectLibrary(storageLike).map((project) => project.id)).toEqual([
+      'library-second',
+      'library-first',
+    ]);
+    expect(loadProjectFromLibrary('library-first', storageLike)).toEqual(firstScore);
+  });
+
+  it('stores autosave separately from the manual saved project', () => {
+    const storage = new Map<string, string>();
+    const storageLike = {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        storage.set(key, value);
+      },
+    };
+    const manualScore = createEmptyScore('treble', { id: 'manual-score' });
+    const autosaveScore = createEmptyScore('grand', { id: 'autosave-score' });
+
+    saveProjectToStorage(manualScore, storageLike);
+    saveAutosaveToStorage(autosaveScore, storageLike);
+
+    expect(storage.get(SHEETLAB_PROJECT_KEY)).toContain('manual-score');
+    expect(storage.get(SHEETLAB_AUTOSAVE_PROJECT_KEY)).toContain('autosave-score');
+    expect(loadProjectFromStorage(storageLike)).toEqual(manualScore);
+    expect(loadAutosaveFromStorage(storageLike)).toEqual(autosaveScore);
   });
 
   it('preserves manual annotation offsets through project JSON', () => {

@@ -1858,6 +1858,14 @@ button {
   min-height: 100vh;
 }
 
+.practice-loading {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  color: var(--muted);
+  font: 800 0.9rem ui-sans-serif, "Segoe UI", sans-serif;
+}
+
 .practice-topbar {
   align-items: center;
 }
@@ -2180,6 +2188,24 @@ button {
 
 .practice-review-list span {
   line-height: 1.35;
+}
+
+.practice-review-retry {
+  justify-self: start;
+  min-height: 1.8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  padding: 0.25rem 0.55rem;
+  background: #ffffff;
+  color: var(--ink);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.practice-review-retry:hover,
+.practice-review-retry:focus-visible {
+  border-color: rgb(23 107 84 / 45%);
+  outline: none;
 }
 
 .practice-stage {

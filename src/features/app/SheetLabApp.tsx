@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   MouseEvent as ReactMouseEvent,
 } from 'react';
@@ -74,7 +74,6 @@ import { snapInsertPositionToEventBoundary } from '../sheet/insertPosition';
 import { getInsertTargetEvent } from '../sheet/insertPreview';
 import type { MusicPosition } from '../sheet/interaction';
 import { usePlaybackController } from './usePlaybackController';
-import { PracticePage } from '../practice/PracticePage';
 import { useProjectActions } from './useProjectActions';
 import { SheetSurface } from './SheetSurface';
 import { useCursorPlacement } from './useCursorPlacement';
@@ -97,6 +96,7 @@ import {
   loadInitialScoreForApp,
 } from './appBootstrap';
 import { getAdjacentSelectableScoreEvent } from './scoreEventNavigation';
+import { saveAutosaveToStorage } from '../persistence/projectStorage';
 
 function getExportPreflightMessage(issues: RhythmIssue[]) {
   const issueCount = issues.length;
@@ -138,6 +138,11 @@ const DEMO_SCORE_OPTIONS = scoreFixtureCatalog.map((fixture) => ({
   id: fixture.id,
   label: fixture.label,
 }));
+
+const loadPracticePage = () => import('../practice/PracticePage');
+const PracticePage = lazy(() =>
+  loadPracticePage().then((module) => ({ default: module.PracticePage })),
+);
 
 function SheetLabApp() {
   const [initialScore] = useState(loadInitialScoreForApp);
@@ -228,6 +233,18 @@ function SheetLabApp() {
   const notationViewportRef = useRef<HTMLDivElement | null>(null);
   const { canvasZoom, handleCanvasZoomChange } =
     useCanvasZoom(notationViewportRef);
+
+  useEffect(() => {
+    if (isPdfExportMode()) {
+      return;
+    }
+
+    const autosaveTimer = window.setTimeout(() => {
+      saveAutosaveToStorage(score);
+    }, 800);
+
+    return () => window.clearTimeout(autosaveTimer);
+  }, [score]);
 
   function clearTransientInteraction() {
     clearPointerState();
@@ -1170,13 +1187,21 @@ function SheetLabApp() {
 
   if (appMode === 'practice') {
     return (
-      <PracticePage
-        score={score}
-        onBackToEditor={() => {
-          setAppMode('editor');
-          setEditorMessage('Editor mode');
-        }}
-      />
+      <Suspense
+        fallback={
+          <main className="app-shell practice-shell" data-testid="practice-loading">
+            <div className="practice-loading">Loading practice</div>
+          </main>
+        }
+      >
+        <PracticePage
+          score={score}
+          onBackToEditor={() => {
+            setAppMode('editor');
+            setEditorMessage('Editor mode');
+          }}
+        />
+      </Suspense>
     );
   }
 
@@ -1244,6 +1269,7 @@ function SheetLabApp() {
           onPlacementModeChange={handlePlacementModeChange}
           onPlaybackToggle={handlePlaybackToggle}
           onPracticeOpen={handlePracticeOpen}
+          onPracticePreload={() => void loadPracticePage()}
           onRedo={handleRedo}
           onRepeatJumpChange={handleRepeatJumpChange}
           onResetScore={handleResetScore}
