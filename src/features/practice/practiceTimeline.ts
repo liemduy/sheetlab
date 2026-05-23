@@ -4,6 +4,11 @@ import { buildPlaybackTimeline } from '../playback/timeline';
 
 export type PracticeHandMode = 'both' | 'left' | 'right';
 
+export interface PracticeTargetVoiceRef {
+  staffId: StaffId;
+  voiceIndex: number;
+}
+
 export interface PracticeTarget {
   beat: number;
   durationSeconds: number;
@@ -16,6 +21,7 @@ export interface PracticeTarget {
   staffIds: StaffId[];
   startBeat: number;
   startSeconds: number;
+  voiceRefs: PracticeTargetVoiceRef[];
 }
 
 function getStaffAllowedByHandMode(staffId: StaffId, handMode: PracticeHandMode) {
@@ -24,6 +30,43 @@ function getStaffAllowedByHandMode(staffId: StaffId, handMode: PracticeHandMode)
   }
 
   return handMode === 'right' ? staffId === 'treble' : staffId === 'bass';
+}
+
+function getPracticeTargetVoiceRefs(
+  events: ReturnType<typeof buildPlaybackTimeline>,
+) {
+  const refsByKey = new Map<string, PracticeTargetVoiceRef>();
+
+  events.forEach((event) => {
+    refsByKey.set(`${event.staffId}:${event.voiceIndex}`, {
+      staffId: event.staffId,
+      voiceIndex: event.voiceIndex,
+    });
+  });
+
+  return [...refsByKey.values()].sort(
+    (first, second) =>
+      first.staffId.localeCompare(second.staffId) ||
+      first.voiceIndex - second.voiceIndex,
+  );
+}
+
+export function formatPracticeTargetVoiceLabel(
+  target: Pick<PracticeTarget, 'staffIds' | 'voiceRefs'> | null,
+) {
+  if (!target) {
+    return 'none';
+  }
+
+  if (target.voiceRefs.length === 0) {
+    return target.staffIds.join(' + ') || 'none';
+  }
+
+  return target.voiceRefs
+    .map(({ staffId, voiceIndex }) =>
+      `${staffId === 'treble' ? 'RH' : 'LH'} V${voiceIndex + 1}`,
+    )
+    .join(' + ');
 }
 
 export function buildPracticeTargets(
@@ -74,6 +117,7 @@ export function buildPracticeTargets(
         (a, b) => a - b,
       );
       const startSeconds = firstEvent?.startSeconds ?? 0;
+      const voiceRefs = getPracticeTargetVoiceRefs(group);
 
       return {
         beat: firstEvent?.beat ?? 0,
@@ -94,6 +138,7 @@ export function buildPracticeTargets(
         staffIds: [...new Set(group.map((event) => event.staffId))],
         startBeat: firstEvent?.startBeat ?? 0,
         startSeconds,
+        voiceRefs,
       };
     })
     .filter((target) => target.midiNotes.length > 0);

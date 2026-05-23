@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { createEmptyScore } from '../../domain/score/factories';
 import { placeScoreEvent } from '../../domain/score/editing';
-import { buildPracticeTargets, getPracticeTargetAtSeconds } from './practiceTimeline';
+import { pianoPolyphonyStudyFixture } from '../../domain/score/fixtures';
+import {
+  buildPracticeTargets,
+  formatPracticeTargetVoiceLabel,
+  getPracticeTargetAtSeconds,
+} from './practiceTimeline';
 
 describe('practice timeline', () => {
   it('builds MIDI-note practice targets from score playback timing', () => {
@@ -22,6 +27,7 @@ describe('practice timeline', () => {
       midiNotes: [60],
       staffId: 'treble',
       startSeconds: 0,
+      voiceRefs: [{ staffId: 'treble', voiceIndex: 0 }],
     });
   });
 
@@ -75,7 +81,34 @@ describe('practice timeline', () => {
       eventIds: ['left', 'right'],
       midiNotes: [48, 72],
       staffIds: ['bass', 'treble'],
+      voiceRefs: [
+        { staffId: 'bass', voiceIndex: 0 },
+        { staffId: 'treble', voiceIndex: 0 },
+      ],
     });
+  });
+
+  it('keeps same-staff polyphony voices in one attack target with lane labels', () => {
+    const targets = buildPracticeTargets(pianoPolyphonyStudyFixture);
+    const openingTarget = targets[0];
+
+    expect(openingTarget).toMatchObject({
+      eventIds: [
+        'poly-lh-c-open',
+        'poly-rh-v1-e5',
+        'poly-rh-v2-c5-held',
+      ],
+      measureIndex: 0,
+      midiNotes: [36, 43, 72, 76],
+      voiceRefs: [
+        { staffId: 'bass', voiceIndex: 0 },
+        { staffId: 'treble', voiceIndex: 0 },
+        { staffId: 'treble', voiceIndex: 1 },
+      ],
+    });
+    expect(formatPracticeTargetVoiceLabel(openingTarget)).toBe(
+      'LH V1 + RH V1 + RH V2',
+    );
   });
 
   it('finds a target near an elapsed rhythm time', () => {

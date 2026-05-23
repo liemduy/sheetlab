@@ -20,7 +20,10 @@ import {
   OTTAVA_KINDS,
   OTTAVA_LABEL,
 } from '../../domain/score/ottava';
-import { isPitchedScoreEvent } from '../../domain/score/events';
+import {
+  isGeneratedRestEvent,
+  isPitchedScoreEvent,
+} from '../../domain/score/events';
 import {
   getTimeSignatureId,
   getTimeSignatureLabel,
@@ -90,6 +93,45 @@ function formatScoreEventSummary(
     : selectedEvent.event.pitches.map(formatPitch).join(' ');
 
   return `${durationLabel} chord ${pitchLabel} ${beatLabel}`;
+}
+
+function formatVoiceIndex(voiceIndex: number) {
+  return `V${voiceIndex + 1}`;
+}
+
+function getPolyphonySummary(score: Score) {
+  let multiVoiceMeasureCount = 0;
+  const activeVoiceKeys = new Set<string>();
+
+  score.parts.forEach((part) => {
+    part.staves.forEach((staff) => {
+      staff.measures.forEach((measure) => {
+        const activeVoiceIndexes = measure.voices
+          .map((voice, voiceIndex) => ({
+            hasUserEvents: voice.events.some(
+              (event) => !isGeneratedRestEvent(event),
+            ),
+            voiceIndex,
+          }))
+          .filter((voice) => voice.hasUserEvents)
+          .map((voice) => voice.voiceIndex);
+
+        activeVoiceIndexes.forEach((voiceIndex) =>
+          activeVoiceKeys.add(`${staff.id}:${voiceIndex}`),
+        );
+
+        if (activeVoiceIndexes.length > 1) {
+          multiVoiceMeasureCount += 1;
+        }
+      });
+    });
+  });
+
+  if (activeVoiceKeys.size <= 1 && multiVoiceMeasureCount === 0) {
+    return 'Single voice';
+  }
+
+  return `${activeVoiceKeys.size} lanes / ${multiVoiceMeasureCount} multi-voice M`;
 }
 
 function getComposerAction({
@@ -268,6 +310,12 @@ export function ScoreSettingsPanel({
       : selectedMeasure
         ? `${selectedMeasure.staffId} measure ${selectedMeasure.measureIndex + 1}`
         : 'None';
+  const selectedVoiceSummary = selectedEvent
+    ? `${selectedEvent.staffId} ${formatVoiceIndex(selectedEvent.voiceIndex)}`
+    : selectedMeasure
+      ? selectedMeasure.staffId
+      : 'None';
+  const polyphonySummary = getPolyphonySummary(score);
   const composerAction = getComposerAction({
     eventCount,
     inputCursor,
@@ -643,6 +691,10 @@ export function ScoreSettingsPanel({
           <dd>{VOICE_LABEL[toolState.voiceIndex]}</dd>
         </div>
         <div>
+          <dt>Polyphony</dt>
+          <dd>{polyphonySummary}</dd>
+        </div>
+        <div>
           <dt>Accidental</dt>
           <dd>{ACCIDENTAL_LABEL[toolState.accidental]}</dd>
         </div>
@@ -711,6 +763,10 @@ export function ScoreSettingsPanel({
         <div>
           <dt>Selected</dt>
           <dd>{selectedSummary}</dd>
+        </div>
+        <div>
+          <dt>Sel lane</dt>
+          <dd>{selectedVoiceSummary}</dd>
         </div>
         <div>
           <dt>History</dt>

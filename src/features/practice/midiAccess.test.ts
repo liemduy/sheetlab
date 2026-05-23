@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatMidiNote,
+  getMidiPracticeReadinessLabel,
   getMidiSupportStatus,
   isSustainPedalEvent,
   parseMidiMessage,
@@ -62,5 +63,29 @@ describe('midi access helpers', () => {
         navigatorLike: { requestMIDIAccess: async () => ({ inputs: new Map(), onstatechange: null }) },
       }),
     ).toBe('idle');
+  });
+
+  it('summarizes MIDI practice readiness', () => {
+    expect(
+      getMidiPracticeReadinessLabel({
+        selectedInput: null,
+        status: 'ready',
+        targetCount: 4,
+      }),
+    ).toBe('Choose MIDI input');
+    expect(
+      getMidiPracticeReadinessLabel({
+        selectedInput: { id: 'keyboard', name: 'Digital Piano' },
+        status: 'ready',
+        targetCount: 4,
+      }),
+    ).toBe('Ready to score');
+    expect(
+      getMidiPracticeReadinessLabel({
+        selectedInput: { id: 'keyboard', name: 'Digital Piano' },
+        status: 'ready',
+        targetCount: 0,
+      }),
+    ).toBe('No practice targets');
   });
 });

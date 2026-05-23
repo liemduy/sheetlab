@@ -21,6 +21,7 @@ const target = {
   staffIds: ['treble'],
   startBeat: 0,
   startSeconds: 1,
+  voiceRefs: [{ staffId: 'treble', voiceIndex: 0 }],
 } satisfies PracticeTarget;
 
 describe('note matcher', () => {

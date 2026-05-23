@@ -29,6 +29,7 @@ import { TICKS_PER_QUARTER, getMeasureTicks } from '../../domain/score/ticks';
 export interface PlaybackTimelineEvent {
   id: string;
   staffId: StaffId;
+  voiceIndex: number;
   measureIndex: number;
   beat: number;
   startBeat: number;
@@ -592,7 +593,7 @@ export function buildPlaybackTimeline(score: Score): PlaybackTimelineEvent[] {
             return [];
           }
 
-          return measure.voices.flatMap((voice) =>
+          return measure.voices.flatMap((voice, voiceIndex) =>
             voice.events
               .filter((event) => event.kind !== 'rest')
               .flatMap((event) => {
@@ -644,6 +645,7 @@ export function buildPlaybackTimeline(score: Score): PlaybackTimelineEvent[] {
                       {
                         id: event.id,
                         staffId: staff.id,
+                        voiceIndex,
                         measureIndex: measure.index,
                         beat: event.beat,
                         startBeat,
@@ -668,7 +670,12 @@ export function buildPlaybackTimeline(score: Score): PlaybackTimelineEvent[] {
         }),
       );
     })
-    .sort((a, b) => a.startSeconds - b.startSeconds || a.staffId.localeCompare(b.staffId));
+    .sort(
+      (a, b) =>
+        a.startSeconds - b.startSeconds ||
+        a.staffId.localeCompare(b.staffId) ||
+        a.voiceIndex - b.voiceIndex,
+    );
 }
 
 export function getTimelineDurationSeconds(timeline: PlaybackTimelineEvent[]) {

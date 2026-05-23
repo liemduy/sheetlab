@@ -101,6 +101,30 @@ export function getMidiInputLabel(input: MidiInputDescriptor) {
   return [input.manufacturer, input.name].filter(Boolean).join(' / ') || input.id;
 }
 
+export function getMidiPracticeReadinessLabel({
+  selectedInput,
+  status,
+  targetCount,
+}: {
+  selectedInput: MidiInputDescriptor | null;
+  status: MidiConnectionStatus;
+  targetCount: number;
+}) {
+  if (targetCount <= 0) {
+    return 'No practice targets';
+  }
+
+  if (status === 'ready' && selectedInput) {
+    return 'Ready to score';
+  }
+
+  if (status === 'ready') {
+    return 'Choose MIDI input';
+  }
+
+  return getMidiConnectionStatusLabel(status);
+}
+
 export function getMidiSupportStatus({
   isSecureContext,
   navigatorLike,

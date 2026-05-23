@@ -32,6 +32,8 @@ import type {
   MeasureTarget,
 } from './selectionTypes';
 
+const PAGE_OBSERVER_DELAY_MS = 160;
+
 interface SheetSurfaceProps {
   activeEventId: string | null;
   activeEventIds: readonly string[];
@@ -266,7 +268,7 @@ export function SheetSurface({
       );
 
       pageElements.forEach((pageElement) => observer?.observe(pageElement));
-    }, 1000);
+    }, PAGE_OBSERVER_DELAY_MS);
 
     return () => {
       window.clearTimeout(observerDelay);
@@ -372,7 +374,7 @@ export function SheetSurface({
                 handlePageNavigation(currentPageIndex - 1);
               }}
             >
-              ‹
+              {'<'}
             </button>
             <span>
               Page {currentPageIndex + 1} / {pageViewports.length}
@@ -386,7 +388,7 @@ export function SheetSurface({
                 handlePageNavigation(currentPageIndex + 1);
               }}
             >
-              ›
+              {'>'}
             </button>
           </div>
         ) : null}

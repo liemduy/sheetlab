@@ -25,11 +25,13 @@ import {
   formatMidiNote,
   getMidiConnectionStatusLabel,
   getMidiInputLabel,
+  getMidiPracticeReadinessLabel,
   isSustainPedalEvent,
   type ParsedMidiEvent,
 } from './midiAccess';
 import {
   buildPracticeTargets,
+  formatPracticeTargetVoiceLabel,
   getNextUnfinishedTargetIndex,
   getPracticeTargetAtSeconds,
   type PracticeHandMode,
@@ -68,6 +70,7 @@ const PRACTICE_TIMING_TOLERANCE_MS = {
   strict: 90,
 } satisfies Record<PracticeTimingLevel, number>;
 const RHYTHM_MISS_GRACE_SECONDS = 0.36;
+const PAGE_OBSERVER_DELAY_MS = 160;
 
 function getPracticeMeasureCount(score: Score) {
   return Math.max(
@@ -111,7 +114,7 @@ function getTargetLabel(target: PracticeTarget | null) {
 
   return `M${target.measureIndex + 1} beat ${target.beat + 1}: ${formatMidiNoteList(
     target.midiNotes,
-  )}`;
+  )} (${formatPracticeTargetVoiceLabel(target)})`;
 }
 
 function getEventLabel(event: ParsedMidiEvent) {
@@ -296,7 +299,7 @@ function PracticeSheet({
       );
 
       pageElements.forEach((pageElement) => observer?.observe(pageElement));
-    }, 600);
+    }, PAGE_OBSERVER_DELAY_MS);
 
     return () => {
       window.clearTimeout(observerDelay);
@@ -334,7 +337,7 @@ function PracticeSheet({
               disabled={currentPageIndex <= 0}
               onClick={() => handlePageNavigation(currentPageIndex - 1)}
             >
-              ‹
+              {'<'}
             </button>
             <span>
               Page {currentPageIndex + 1} / {pageViewports.length}
@@ -345,7 +348,7 @@ function PracticeSheet({
               disabled={currentPageIndex >= pageViewports.length - 1}
               onClick={() => handlePageNavigation(currentPageIndex + 1)}
             >
-              ›
+              {'>'}
             </button>
           </div>
         ) : null}
@@ -1215,10 +1218,15 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
   }
 
   const midiStatusLabel = getMidiConnectionStatusLabel(status);
-  const targetStaffLabel = currentTarget?.staffIds.join(' + ') ?? 'none';
   const activeNotesLabel =
     activeMidiNotes.length > 0 ? formatMidiNoteList(activeMidiNotes) : 'None';
   const selectedInput = inputs.find((input) => input.id === selectedInputId) ?? null;
+  const midiReadinessLabel = getMidiPracticeReadinessLabel({
+    selectedInput,
+    status,
+    targetCount: targets.length,
+  });
+  const targetStaffLabel = formatPracticeTargetVoiceLabel(currentTarget);
   const lastMidiEvent = recentEvents[0] ?? null;
   const progressLabel = `${resultSummary.correct}/${targets.length}`;
   const guideMeasureIndex = activeGuideEvents[0]?.measureIndex ?? null;
@@ -1516,6 +1524,10 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
             data-testid="practice-midi-debug"
             aria-label="MIDI debug"
           >
+            <div>
+              <span>Ready</span>
+              <strong>{midiReadinessLabel}</strong>
+            </div>
             <div>
               <span>Device</span>
               <strong>

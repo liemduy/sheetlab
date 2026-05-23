@@ -5,6 +5,7 @@ import {
   extremeScoreFixtures,
   extremeTupletRepeatEtudeFixture,
   extremeVocalPianoFixture,
+  pianoPolyphonyStudyFixture,
   stressPianoHardeningFixture,
 } from '../../domain/score/fixtures';
 import {
@@ -97,9 +98,31 @@ describe('playback timeline', () => {
 
     expect(timeline).toHaveLength(2);
     expect(timeline.map((event) => event.startSeconds)).toEqual([0, 0]);
+    expect(timeline.map((event) => event.voiceIndex)).toEqual([0, 0]);
     expect(timeline.map((event) => event.pitches)).toEqual([
       [{ step: 'C', octave: 3 }],
       [{ step: 'C', octave: 5 }],
+    ]);
+  });
+
+  it('preserves same-staff parallel voices as distinct timeline events', () => {
+    const timeline = buildPlaybackTimeline(pianoPolyphonyStudyFixture);
+    const trebleOpening = timeline.filter(
+      (event) =>
+        event.staffId === 'treble' &&
+        event.measureIndex === 0 &&
+        event.beat === 0,
+    );
+
+    expect(trebleOpening.map((event) => event.id)).toEqual([
+      'poly-rh-v1-e5',
+      'poly-rh-v2-c5-held',
+    ]);
+    expect(trebleOpening.map((event) => event.voiceIndex)).toEqual([0, 1]);
+    expect(getActiveTimelineEvents(timeline, 0).map((event) => event.id)).toEqual([
+      'poly-lh-c-open',
+      'poly-rh-v1-e5',
+      'poly-rh-v2-c5-held',
     ]);
   });
 
