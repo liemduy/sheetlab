@@ -1024,7 +1024,7 @@ describe('score editing', () => {
     expect(getVoiceEvents(result.score, 'treble', 0, 0)).toEqual([]);
   });
 
-  it('replaces a same-start event when the selected duration changes', () => {
+  it('routes a same-start different-duration note into a parallel voice', () => {
     const score = placeScoreEvent(createEmptyScore('treble'), {
       eventId: 'event-original',
       staffId: 'treble',
@@ -1034,7 +1034,7 @@ describe('score editing', () => {
       entryMode: 'note',
       pitch: { step: 'C', octave: 4 },
     });
-    const nextScore = placeScoreEvent(score, {
+    const result = tryPlaceScoreEvent(score, {
       eventId: 'event-replacement',
       staffId: 'treble',
       measureIndex: 0,
@@ -1044,14 +1044,26 @@ describe('score editing', () => {
       pitch: { step: 'D', octave: 4 },
     });
 
-    expect(getVoiceEvents(nextScore)?.[0]).toMatchObject({
+    expect(result).toMatchObject({
+      placed: true,
+      placementKind: 'parallel-voice',
+      voiceIndex: 1,
+    });
+    expect(getVoiceEvents(result.score, 'treble', 0, 0)?.[0]).toMatchObject({
+      id: 'event-original',
+      kind: 'note',
+      beat: 0,
+      duration: 'quarter',
+      pitch: { step: 'C', octave: 4 },
+    });
+    expect(getVoiceEvents(result.score, 'treble', 0, 1)?.[0]).toMatchObject({
       id: 'event-replacement',
       kind: 'note',
       beat: 0,
       duration: 'half',
       pitch: { step: 'D', octave: 4 },
     });
-    expectMeasureEventsFillMeasure(nextScore);
+    expectMeasureEventsFillMeasure(result.score);
   });
 
   it('splits a generated rest when placing a note into an empty slot', () => {
@@ -1090,7 +1102,7 @@ describe('score editing', () => {
     expectMeasureEventsFillMeasure(nextScore);
   });
 
-  it('rejects overlapping events at different beats', () => {
+  it('routes overlapping events at different beats into a parallel voice', () => {
     const score = placeScoreEvent(createEmptyScore('treble'), {
       eventId: 'event-half',
       staffId: 'treble',
@@ -1110,8 +1122,65 @@ describe('score editing', () => {
       pitch: { step: 'E', octave: 4 },
     });
 
-    expect(result.placed).toBe(false);
-    expect(result.reason).toBe('event-overlap');
+    expect(result).toMatchObject({
+      placed: true,
+      placementKind: 'parallel-voice',
+      voiceIndex: 1,
+    });
+    expect(getPitchedEvents(result.score, 'treble', 0, 0)).toMatchObject([
+      {
+        id: 'event-half',
+        beat: 0,
+        duration: 'half',
+      },
+    ]);
+    expect(getPitchedEvents(result.score, 'treble', 0, 1)).toMatchObject([
+      {
+        id: 'event-overlap',
+        beat: 1,
+        duration: 'quarter',
+      },
+    ]);
+    expectMeasureEventsFillMeasure(result.score);
+  });
+
+  it('rejects overlapping placement when both editable voices are occupied', () => {
+    const voiceOneScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'event-v1-half',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'half',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+      voiceIndex: 0,
+    });
+    const voiceTwoScore = placeScoreEvent(voiceOneScore, {
+      eventId: 'event-v2-half',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'half',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+      voiceIndex: 1,
+    });
+    const result = tryPlaceScoreEvent(voiceTwoScore, {
+      eventId: 'event-no-room',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 1,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'G', octave: 4 },
+      voiceIndex: 0,
+    });
+
+    expect(result).toMatchObject({
+      score: voiceTwoScore,
+      placed: false,
+      reason: 'event-overlap',
+    });
   });
 
   it('finds and deletes an event by id', () => {

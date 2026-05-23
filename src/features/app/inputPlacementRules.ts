@@ -66,11 +66,13 @@ function getLastWrittenEventRange(
 }
 
 export function isSequentialPlaceTargetAllowed({
+  allowParallelVoice = false,
   position,
   score,
   targetSlot,
   voiceIndex,
 }: {
+  allowParallelVoice?: boolean;
   position: MusicPosition;
   score: Score;
   targetSlot: RhythmSlot | null;
@@ -81,7 +83,7 @@ export function isSequentialPlaceTargetAllowed({
   }
 
   if (targetSlot?.event && !isGeneratedRestEvent(targetSlot.event)) {
-    return beatsAreEqual(position.beat, targetSlot.beat);
+    return allowParallelVoice || beatsAreEqual(position.beat, targetSlot.beat);
   }
 
   const lastWrittenRange = getLastWrittenEventRange(

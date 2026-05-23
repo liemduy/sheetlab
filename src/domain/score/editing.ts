@@ -90,11 +90,13 @@ export interface PlaceScoreEventRequest {
 export interface PlaceScoreEventResult {
   score: Score;
   placed: boolean;
+  placementKind?: 'chord' | 'event' | 'parallel-voice';
   reason?:
     | 'measure-overflow'
     | 'event-overlap'
     | 'missing-target'
     | 'unsupported-tuplet';
+  voiceIndex?: number;
 }
 
 export interface PlaceTupletGroupRequest extends Omit<
@@ -317,6 +319,17 @@ function eventsShareRhythmSlot(first: ScoreEvent, second: ScoreEvent) {
     getEventDurationTicks(first) === getEventDurationTicks(second) &&
     getTupletSlotKey(first) === getTupletSlotKey(second)
   );
+}
+
+const AUTO_POLYPHONY_VOICE_INDEXES = [0, 1] as const;
+
+function getAutoPolyphonyVoiceIndexes(preferredVoiceIndex: number) {
+  return [
+    preferredVoiceIndex,
+    ...AUTO_POLYPHONY_VOICE_INDEXES.filter(
+      (voiceIndex) => voiceIndex !== preferredVoiceIndex,
+    ),
+  ];
 }
 
 function applyPitchUpdate(
@@ -678,6 +691,8 @@ function writeScoreEvent(
   return {
     score: nextScore,
     placed: true,
+    placementKind: 'event',
+    voiceIndex: targetVoiceIndex,
   };
 }
 
@@ -1086,11 +1101,12 @@ export function tryPlaceScoreEvent(
   request: PlaceScoreEventRequest,
 ): PlaceScoreEventResult {
   const candidateEvent = createScoreEvent(request);
+  const requestedVoiceIndex = normalizeVoiceIndex(request.voiceIndex);
   const { targetVoice } = getTargetVoice(
     score,
     request.staffId,
     request.measureIndex,
-    request.voiceIndex,
+    requestedVoiceIndex,
   );
   const sameSlotPitchedEvent = targetVoice?.events.find(
     (event) =>
@@ -1107,16 +1123,94 @@ export function tryPlaceScoreEvent(
         )
       : candidateEvent;
 
-  return writeScoreEvent(
+  if (sameSlotPitchedEvent) {
+    const result = writeScoreEvent(
+      score,
+      request.staffId,
+      request.measureIndex,
+      nextEvent,
+      {
+        allowSameStartPitchedReplacement: true,
+        voiceIndex: requestedVoiceIndex,
+      },
+    );
+
+    return result.placed
+      ? {
+          ...result,
+          placementKind: 'chord',
+          voiceIndex: requestedVoiceIndex,
+        }
+      : result;
+  }
+
+  const primaryResult = writeScoreEvent(
     score,
     request.staffId,
     request.measureIndex,
-    nextEvent,
+    candidateEvent,
     {
-      allowSameStartPitchedReplacement: true,
-      voiceIndex: request.voiceIndex,
+      allowSameStartPitchedReplacement: candidateEvent.kind === 'rest',
+      voiceIndex: requestedVoiceIndex,
     },
   );
+
+  if (
+    primaryResult.placed ||
+    primaryResult.reason !== 'event-overlap' ||
+    !isPitchedScoreEvent(candidateEvent)
+  ) {
+    return primaryResult;
+  }
+
+  for (const voiceIndex of getAutoPolyphonyVoiceIndexes(requestedVoiceIndex)) {
+    if (voiceIndex === requestedVoiceIndex) {
+      continue;
+    }
+
+    const alternateTarget = getTargetVoice(
+      score,
+      request.staffId,
+      request.measureIndex,
+      voiceIndex,
+    );
+    const alternateSameSlotPitchedEvent = alternateTarget.targetVoice?.events.find(
+      (event) =>
+        isPitchedScoreEvent(event) &&
+        eventsOverlapByTick(candidateEvent, event) &&
+        eventsShareRhythmSlot(event, candidateEvent),
+    );
+    const alternateEvent =
+      candidateEvent.kind === 'note' && alternateSameSlotPitchedEvent
+        ? mergePitchedEventWithNote(
+            alternateSameSlotPitchedEvent,
+            candidateEvent,
+            request.eventId,
+          )
+        : candidateEvent;
+    const alternateResult = writeScoreEvent(
+      score,
+      request.staffId,
+      request.measureIndex,
+      alternateEvent,
+      {
+        allowSameStartPitchedReplacement: Boolean(alternateSameSlotPitchedEvent),
+        voiceIndex,
+      },
+    );
+
+    if (alternateResult.placed) {
+      return {
+        ...alternateResult,
+        placementKind: alternateSameSlotPitchedEvent
+          ? 'chord'
+          : 'parallel-voice',
+        voiceIndex,
+      };
+    }
+  }
+
+  return primaryResult;
 }
 
 export function placeScoreEvent(score: Score, request: PlaceScoreEventRequest) {

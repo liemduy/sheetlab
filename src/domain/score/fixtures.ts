@@ -10,6 +10,7 @@ import {
   getTupletSlotEffectiveBeats,
   type SupportedTupletActualNotes,
 } from './tuplets';
+import { materializeMeasureEvents } from './measureEvents';
 import type {
   DurationValue,
   Measure,
@@ -85,6 +86,22 @@ function withMeasureVoiceEvents(
       ),
     })),
   };
+}
+
+function withMaterializedMeasureVoiceEvents(
+  score: Score,
+  staffId: StaffId,
+  measureIndex: number,
+  voiceEvents: ScoreEvent[][],
+): Score {
+  return withMeasureVoiceEvents(
+    score,
+    staffId,
+    measureIndex,
+    voiceEvents.map((events) =>
+      materializeMeasureEvents(events, score, staffId, measureIndex),
+    ),
+  );
 }
 
 function noteEvent(
@@ -430,6 +447,113 @@ export const pianoPracticeLoopFixture = withMeasureEvents(
     ], {
       pedal: 'release',
     }),
+  ],
+);
+
+const pianoPolyphonyStudyBase = setMeasureSectionMarker(
+  setMeasureKeySignature(
+    createEmptyScore('grand', {
+      composer: 'SheetLab',
+      id: 'fixture-piano-polyphony-study',
+      measureCount: 4,
+      tempo: 84,
+      title: 'Piano Polyphony Study',
+    }),
+    0,
+    'C',
+  ),
+  0,
+  'Two voices',
+);
+
+const pianoPolyphonyStudyTrebleM0 = withMaterializedMeasureVoiceEvents(
+  pianoPolyphonyStudyBase,
+  'treble',
+  0,
+  [
+    [
+      noteEvent('poly-rh-v1-e5', 0, 'eighth', { step: 'E', octave: 5 }, {
+        chordSymbol: 'C',
+        lyric: 'top',
+      }),
+      noteEvent('poly-rh-v1-f5', 0.5, 'eighth', { step: 'F', octave: 5 }),
+      noteEvent('poly-rh-v1-g5', 1, 'eighth', { step: 'G', octave: 5 }),
+      noteEvent('poly-rh-v1-e5-return', 1.5, 'eighth', {
+        step: 'E',
+        octave: 5,
+      }),
+      noteEvent('poly-rh-v1-a5', 2, 'quarter', { step: 'A', octave: 5 }, {
+        dynamic: 'mf',
+      }),
+    ],
+    [
+      noteEvent('poly-rh-v2-c5-held', 0, 'quarter', { step: 'C', octave: 5 }),
+      noteEvent('poly-rh-v2-d5-held', 1, 'quarter', { step: 'D', octave: 5 }),
+      chordEvent('poly-rh-v2-inner-chord', 2, 'half', [
+        { step: 'B', octave: 4 },
+        { step: 'D', octave: 5 },
+      ], {
+        dynamic: 'p',
+      }),
+    ],
+  ],
+);
+
+const pianoPolyphonyStudyTreble = withMaterializedMeasureVoiceEvents(
+  pianoPolyphonyStudyTrebleM0,
+  'treble',
+  1,
+  [
+    [
+      chordEvent('poly-rh-v1-chord-open', 0, 'quarter', [
+        { step: 'E', octave: 5 },
+        { step: 'G', octave: 5 },
+      ], {
+        chordSymbol: 'Am',
+      }),
+      noteEvent('poly-rh-v1-b5', 1, 'eighth', { step: 'B', octave: 5 }),
+      noteEvent('poly-rh-v1-c6', 1.5, 'eighth', { step: 'C', octave: 6 }),
+      noteEvent('poly-rh-v1-d6', 2, 'quarter', { step: 'D', octave: 6 }),
+    ],
+    [
+      noteEvent('poly-rh-v2-a4-held', 0, 'half', { step: 'A', octave: 4 }),
+      noteEvent('poly-rh-v2-g4-held', 2, 'half', { step: 'G', octave: 4 }),
+    ],
+  ],
+);
+
+const pianoPolyphonyStudyBassM0 = withMaterializedMeasureVoiceEvents(
+  pianoPolyphonyStudyTreble,
+  'bass',
+  0,
+  [
+    [
+      chordEvent('poly-lh-c-open', 0, 'half', [
+        { step: 'C', octave: 2 },
+        { step: 'G', octave: 2 },
+      ], {
+        pedal: 'start',
+      }),
+      noteEvent('poly-lh-g2-release', 2, 'quarter', { step: 'G', octave: 2 }),
+      noteEvent('poly-lh-c3-close', 3, 'quarter', { step: 'C', octave: 3 }, {
+        pedal: 'release',
+      }),
+    ],
+  ],
+);
+
+export const pianoPolyphonyStudyFixture = withMaterializedMeasureVoiceEvents(
+  pianoPolyphonyStudyBassM0,
+  'bass',
+  1,
+  [
+    [
+      noteEvent('poly-lh-a2-dotted', 0, 'half', { step: 'A', octave: 2 }, {
+        dots: 1,
+        dynamic: 'mp',
+      }),
+      noteEvent('poly-lh-e2-tail', 3, 'quarter', { step: 'E', octave: 2 }),
+    ],
   ],
 );
 

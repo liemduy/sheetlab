@@ -5,11 +5,13 @@ import {
   extremeClefOttavaChromaticFixture,
   extremeTupletRepeatEtudeFixture,
   extremeVocalPianoFixture,
+  pianoPolyphonyStudyFixture,
   pianoPracticeLoopFixture,
   readableSpacingStressFixture,
   stressPianoHardeningFixture,
   trebleStudyFixture,
 } from './fixtures';
+import { isGeneratedRestEvent } from './events';
 import type { Score, ScoreEvent } from './types';
 
 export type ScoreFixtureCategory = 'basic' | 'excerpt' | 'extreme';
@@ -23,6 +25,7 @@ export type ScoreFixtureCapability =
   | 'lyric-map'
   | 'ottava'
   | 'playback'
+  | 'polyphony'
   | 'repeat-jumps'
   | 'tie-slur'
   | 'tuplets';
@@ -97,6 +100,19 @@ function hasOttava(score: Score) {
   );
 }
 
+function hasPolyphony(score: Score) {
+  return score.parts.some((part) =>
+    part.staves.some((staff) =>
+      staff.measures.some(
+        (measure) =>
+          measure.voices.filter((voice) =>
+            voice.events.some((event) => !isGeneratedRestEvent(event)),
+          ).length > 1,
+      ),
+    ),
+  );
+}
+
 function getFixtureEvents(score: Score): ScoreEvent[] {
   return score.parts.flatMap((part) =>
     part.staves.flatMap((staff) =>
@@ -150,6 +166,10 @@ function inferCapabilities(score: Score): ScoreFixtureCapability[] {
     capabilities.push('ottava');
   }
 
+  if (hasPolyphony(score)) {
+    capabilities.push('polyphony');
+  }
+
   return capabilities;
 }
 
@@ -195,6 +215,13 @@ export const scoreFixtureCatalog = [
     label: 'Piano Practice Loop',
     risk: 'low',
     score: pianoPracticeLoopFixture,
+  }),
+  createFixtureMetadata({
+    category: 'basic',
+    id: 'piano-polyphony-study',
+    label: 'Piano Polyphony Study',
+    risk: 'low',
+    score: pianoPolyphonyStudyFixture,
   }),
   createFixtureMetadata({
     category: 'excerpt',

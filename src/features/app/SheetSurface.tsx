@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { getMeasureBeats } from '../../domain/score/timeSignatures';
 import type { EditorToolState } from '../editor/editorState';
 import type { InputCursor } from '../editor/inputCursor';
+import { buildFingeringHints } from '../fingering/fingeringHints';
 import { StaffRenderer } from '../sheet/StaffRenderer';
 import type { MusicPosition } from '../sheet/interaction';
 import { getScoreSvgWidth } from '../sheet/layout';
@@ -162,6 +163,10 @@ export function SheetSurface({
   onUpdateScoreMetadata,
 }: SheetSurfaceProps) {
   const pageViewports = useMemo(() => getScorePageViewports(score), [score]);
+  const fingeringHints = useMemo(
+    () => (toolState.showFingeringHints ? buildFingeringHints(score) : []),
+    [score, toolState.showFingeringHints],
+  );
   const [renderedPageIndexes, setRenderedPageIndexes] = useState<Set<number>>(
     () => getInitialScorePageIndexes(1),
   );
@@ -419,7 +424,6 @@ export function SheetSurface({
                     onFocus={onClearInteraction}
                   />
                   <div className="score-meta-row">
-                    <span>Moderato {'\u2669'} = {toolState.tempo}</span>
                     <input
                       aria-label="Composer"
                       className="score-composer-input"
@@ -454,6 +458,7 @@ export function SheetSurface({
                     isInputArmed={toolState.isInputArmed}
                     clefChange={toolState.clefChange}
                     invalidMeasureKeys={activeInvalidMeasureKeys}
+                    fingeringHints={fingeringHints}
                     pageViewport={pageViewport}
                     playbackBeat={isPlaybackPage ? playbackBeat : null}
                     placementMode={toolState.placementMode}
@@ -462,6 +467,7 @@ export function SheetSurface({
                     selectedPitchIndex={selectedPitchIndex}
                     score={score}
                     showLayoutZones={toolState.showLayoutZones}
+                    showFingeringHints={toolState.showFingeringHints}
                     showLyricMap={toolState.showLyricMap}
                     voiceIndex={toolState.voiceIndex}
                     onClearInteraction={onClearInteraction}

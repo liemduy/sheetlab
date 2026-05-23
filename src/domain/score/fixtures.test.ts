@@ -9,6 +9,7 @@ import {
   extremeTupletRepeatEtudeFixture,
   extremeVocalPianoFixture,
   grandStaffStudyFixture,
+  pianoPolyphonyStudyFixture,
   pianoPracticeLoopFixture,
   readableSpacingStressFixture,
   stressPianoHardeningFixture,
@@ -18,6 +19,7 @@ import {
   extremeScoreFixtureCatalog,
   scoreFixtureCatalog,
 } from './fixtureCatalog';
+import { isGeneratedRestEvent } from './events';
 import { getRepeatPlaybackIssues } from './repeatJumps';
 import { getScoreRhythmIssues } from './rhythm';
 import type { ArticulationKind, Score } from './types';
@@ -30,6 +32,10 @@ function getAllEvents(score: Score) {
       ),
     ),
   );
+}
+
+function getUserEvents(score: Score) {
+  return getAllEvents(score).filter((event) => !isGeneratedRestEvent(event));
 }
 
 function getManualAnnotationOffsetCount(score: Score) {
@@ -146,6 +152,10 @@ describe('score fixtures', () => {
       (event) => event.id === 'annotation-lab-anchor',
     );
     const pianoStaves = pianoPracticeLoopFixture.parts[0]?.staves;
+    const polyphonyTrebleM0 =
+      pianoPolyphonyStudyFixture.parts[0]?.staves
+        .find((staff) => staff.id === 'treble')
+        ?.measures[0];
     const trebleEvents = getAllEvents(trebleStudyFixture);
 
     expect(trebleStudyFixture.title).toBe('First Treble Study');
@@ -176,6 +186,16 @@ describe('score fixtures', () => {
     expect(getAnnotationKinds(pianoPracticeLoopFixture)).toEqual(
       new Set(['chordSymbol', 'dynamic', 'fermata', 'lyric', 'pedal']),
     );
+
+    expect(pianoPolyphonyStudyFixture.title).toBe('Piano Polyphony Study');
+    expect(pianoPolyphonyStudyFixture.type).toBe('grand');
+    expect(polyphonyTrebleM0?.voices).toHaveLength(2);
+    expect(
+      polyphonyTrebleM0?.voices.map((voice) =>
+        voice.events.filter((event) => !event.id.startsWith('rest-')).length,
+      ),
+    ).toEqual([5, 3]);
+    expect(getScoreRhythmIssues(pianoPolyphonyStudyFixture)).toEqual([]);
   });
 
   it('provides a full-form Du Cho Tan The demo fixture', () => {
@@ -351,13 +371,14 @@ describe('score fixtures', () => {
       'basic-treble-study',
       'annotation-drag-lab',
       'piano-practice-loop',
+      'piano-polyphony-study',
       'du-cho-tan-the-full',
     ]);
     expect(extremeScoreFixtureCatalog.map((fixture) => fixture.score)).toEqual(
       extremeScoreFixtures,
     );
     scoreFixtureCatalog.forEach((fixture) => {
-      expect(fixture.expectedEventCount).toBe(getAllEvents(fixture.score).length);
+      expect(fixture.expectedEventCount).toBe(getUserEvents(fixture.score).length);
       expect(fixture.capabilities).toContain('playback');
     });
     extremeScoreFixtureCatalog.forEach((fixture) => {
@@ -376,6 +397,11 @@ describe('score fixtures', () => {
         fixture.capabilities.includes('lyric-map'),
       ),
     ).toBe(true);
+    expect(
+      scoreFixtureCatalog
+        .find((fixture) => fixture.id === 'piano-polyphony-study')
+        ?.capabilities,
+    ).toEqual(expect.arrayContaining(['grand-staff', 'polyphony']));
     expect(
       extremeScoreFixtureCatalog.some((fixture) =>
         fixture.capabilities.includes('ottava'),

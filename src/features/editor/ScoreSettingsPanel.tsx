@@ -46,6 +46,21 @@ const CLEF_CHANGE_LABEL = {
   treble: 'Insert treble clef',
 } as const;
 
+const DYNAMIC_MARK_OPTIONS = [
+  'ppp',
+  'pp',
+  'p',
+  'mp',
+  'mf',
+  'f',
+  'ff',
+  'fff',
+  'fp',
+  'sfz',
+  'cresc.',
+  'dim.',
+] as const;
+
 function formatScoreEventSummary(
   selectedEvent: ReturnType<typeof findScoreEvent>,
   selectedPitchIndex: number | null,
@@ -237,6 +252,12 @@ export function ScoreSettingsPanel({
           (measure) => measure.index === selectedSectionMeasureIndex,
         )?.sectionMarker ?? ''
       : '';
+  const selectedDynamic = selectedEvent?.event.dynamic ?? null;
+  const hasCustomDynamic =
+    selectedDynamic !== null &&
+    !DYNAMIC_MARK_OPTIONS.includes(
+      selectedDynamic as (typeof DYNAMIC_MARK_OPTIONS)[number],
+    );
   const eventCount = countScoreEvents(score);
   const selectedSummary = selectedClefChange && selectedClefChangeInfo
     ? `${selectedClefChangeInfo.change.clef} clef M${
@@ -371,23 +392,29 @@ export function ScoreSettingsPanel({
         </label>
         <label>
           Dynamic
-          <input
+          <select
+            aria-label="Dynamic"
             key={`dynamic-${selectedEventId ?? 'none'}-${
               selectedEvent?.event.dynamic ?? ''
             }`}
-            type="text"
-            defaultValue={selectedEvent?.event.dynamic ?? ''}
+            value={selectedDynamic ?? 'none'}
             disabled={!selectedEvent}
-            placeholder="pp, p, mf..."
-            onBlur={(event) =>
-              onDynamicChange(normalizeNullableInput(event.target.value))
+            onChange={(event) =>
+              onDynamicChange(
+                event.target.value === 'none' ? null : event.target.value,
+              )
             }
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.currentTarget.blur();
-              }
-            }}
-          />
+          >
+            <option value="none">None</option>
+            {DYNAMIC_MARK_OPTIONS.map((dynamic) => (
+              <option key={dynamic} value={dynamic}>
+                {dynamic}
+              </option>
+            ))}
+            {hasCustomDynamic ? (
+              <option value={selectedDynamic}>{selectedDynamic} (custom)</option>
+            ) : null}
+          </select>
         </label>
         <label>
           Pedal

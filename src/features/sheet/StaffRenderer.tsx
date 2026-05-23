@@ -10,6 +10,7 @@ import type { DurationValue } from '../../domain/score/types';
 import type { InputCursor } from '../editor/inputCursor';
 import type { EntryMode, PlacementMode } from '../editor/editorState';
 import type { AnnotationTarget } from '../app/selectionTypes';
+import type { FingeringHint } from '../fingering/fingeringHints';
 import type { MusicPosition } from './interaction';
 import type { ScorePageViewport } from './pageLayout';
 import { VexFlowStaffRenderer } from './VexFlowStaffRenderer';
@@ -87,6 +88,8 @@ export interface StaffRendererProps {
   pageViewport?: ScorePageViewport;
   clefChange?: Clef | null;
   invalidMeasureKeys?: readonly string[];
+  fingeringHints?: readonly FingeringHint[];
+  showFingeringHints?: boolean;
   showLayoutZones?: boolean;
   showLyricMap?: boolean;
   voiceIndex?: number;

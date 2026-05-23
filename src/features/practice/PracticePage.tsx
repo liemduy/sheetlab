@@ -2,6 +2,10 @@ import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getMeasureBeats } from '../../domain/score/timeSignatures';
 import type { Score } from '../../domain/score/types';
+import {
+  buildFingeringHints,
+  type FingeringHint,
+} from '../fingering/fingeringHints';
 import type { PlaybackController } from '../playback/audioEngine';
 import { playTimelineAudio, warmUpPlaybackAudio } from '../playback/audioEngine';
 import {
@@ -174,17 +178,21 @@ function createPerformanceClockController(delaySeconds = 0): PlaybackController 
 interface PracticeSheetProps {
   activeEventIds: readonly string[];
   currentMeasureIndex: number | null;
+  fingeringHints: readonly FingeringHint[];
   playbackBeat: number | null;
   practiceFeedbackByEventId: Readonly<Record<string, PracticeFeedbackStatus>>;
   score: Score;
+  showFingeringHints: boolean;
 }
 
 function PracticeSheet({
   activeEventIds,
   currentMeasureIndex,
+  fingeringHints,
   playbackBeat,
   practiceFeedbackByEventId,
   score,
+  showFingeringHints,
 }: PracticeSheetProps) {
   const pageViewports = useMemo(() => getScorePageViewports(score), [score]);
   const [renderedPageIndexes, setRenderedPageIndexes] = useState<Set<number>>(
@@ -359,9 +367,6 @@ function PracticeSheet({
                 <div className="paper-heading">
                   <h2>{score.title}</h2>
                   <div className="score-meta-row">
-                    <span>
-                      Moderato {'\u2669'} = {score.tempo}
-                    </span>
                     <span>{score.composer || 'Composer'}</span>
                   </div>
                 </div>
@@ -377,11 +382,13 @@ function PracticeSheet({
                 {shouldRenderPage ? (
                   <StaffRenderer
                     activeEventIds={activeEventIds}
+                    fingeringHints={fingeringHints}
                     isInputArmed={false}
                     pageViewport={pageViewport}
                     playbackBeat={isCurrentPage ? playbackBeat : null}
                     practiceFeedbackByEventId={practiceFeedbackByEventId}
                     score={score}
+                    showFingeringHints={showFingeringHints}
                   />
                 ) : (
                   <div
@@ -420,6 +427,7 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
   const [isLooping, setIsLooping] = useState(false);
   const [isReferenceEnabled, setIsReferenceEnabled] = useState(true);
   const [isMetronomeEnabled, setIsMetronomeEnabled] = useState(true);
+  const [showFingeringHints, setShowFingeringHints] = useState(true);
   const [countInMeasures, setCountInMeasures] = useState(1);
   const [referenceMute, setReferenceMute] =
     useState<PracticeReferenceMute>('none');
@@ -477,6 +485,10 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
   );
   const targetsRef = useRef(targets);
   const playbackTimeline = useMemo(() => buildPlaybackTimeline(score), [score]);
+  const fingeringHints = useMemo(
+    () => (showFingeringHints ? buildFingeringHints(score) : []),
+    [score, showFingeringHints],
+  );
   const beatsPerMeasure = getMeasureBeats(score.timeSignature);
   const countInBeats = countInMeasures * beatsPerMeasure;
   const secondsPerBeat = 60 / score.tempo;
@@ -1353,6 +1365,15 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
             <label className="practice-check-row">
               <input
                 type="checkbox"
+                data-testid="practice-fingering-hints-toggle"
+                checked={showFingeringHints}
+                onChange={(event) => setShowFingeringHints(event.target.checked)}
+              />
+              Fingering hints
+            </label>
+            <label className="practice-check-row">
+              <input
+                type="checkbox"
                 data-testid="practice-reference-enabled"
                 checked={isReferenceEnabled}
                 onChange={(event) => setIsReferenceEnabled(event.target.checked)}
@@ -1606,9 +1627,11 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
         <PracticeSheet
           activeEventIds={activeEventIds}
           currentMeasureIndex={currentMeasureIndex}
+          fingeringHints={fingeringHints}
           playbackBeat={practicePlaybackBeat}
           practiceFeedbackByEventId={practiceFeedbackByEventId}
           score={score}
+          showFingeringHints={showFingeringHints}
         />
       </section>
     </main>

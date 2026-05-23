@@ -101,6 +101,7 @@ describe('App editor state', () => {
     expect(screen.getByLabelText('Key signature tools')).toBeInTheDocument();
     expect(screen.getByLabelText('Time signature tools')).toBeInTheDocument();
     expect(screen.getByLabelText('Repeat and jump tools')).toBeInTheDocument();
+    expect(screen.getByTestId('editor-fingering-hints-toggle')).toBeChecked();
     expect(screen.getByLabelText('Canvas zoom tools')).toBeInTheDocument();
     expect(screen.getByLabelText('Placement tools')).toBeInTheDocument();
     expect(screen.getByLabelText('Transport and history')).toBeInTheDocument();
@@ -122,7 +123,7 @@ describe('App editor state', () => {
     expect(screen.getByLabelText('Score title')).toHaveValue(
       'Untitled Piano Exercise',
     );
-    expect(screen.getAllByText('Moderato ♩ = 96')).toHaveLength(2);
+    expect(screen.getAllByText('Moderato ♩ = 96')).toHaveLength(1);
     expect(screen.getByTestId('rendered-tempo-mark')).toHaveTextContent('96');
     expect(screen.getByLabelText('Composer')).toHaveAttribute(
       'placeholder',
@@ -720,7 +721,7 @@ describe('App editor state', () => {
       target: { value: '120' },
     });
 
-    expect(screen.getAllByText('Moderato ♩ = 120')).toHaveLength(2);
+    expect(screen.getAllByText('Moderato ♩ = 120')).toHaveLength(1);
     expect(screen.getByTestId('rendered-tempo-mark')).toHaveTextContent('120');
     expect(
       within(screen.getByLabelText('Current editor state')).getByText('Sharp'),
@@ -1078,7 +1079,7 @@ describe('App editor state', () => {
     expect(screen.queryByLabelText('Note G4 measure 1 beat 1.5')).not.toBeInTheDocument();
   });
 
-  it('does not expose smaller-duration input slots inside an occupied event', () => {
+  it('places a smaller-duration note inside an occupied event as a parallel voice', () => {
     render(<App />);
     startWriting('Half');
 
@@ -1098,17 +1099,13 @@ describe('App editor state', () => {
       clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
     });
 
-    expect(screen.queryByTestId('ghost-event')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('active-input-cursor')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('rhythm-slot')).not.toBeInTheDocument();
-
     fireEvent.click(overlay, {
       clientX: getBeatX(0, 1, 4),
       clientY: getPitchY({ step: 'G', octave: 4 }, 'treble', 0),
     });
 
     expect(
-      screen.getByText('Cannot place: write at the next open rhythm slot'),
+      screen.getByText('Parallel voice placed in V2'),
     ).toBeInTheDocument();
     expect(screen.getByLabelText('Note E4 measure 1 beat 1')).toHaveAttribute(
       'data-duration',
@@ -1118,7 +1115,14 @@ describe('App editor state', () => {
       'data-duration',
       'half',
     );
-    expect(screen.queryByLabelText('Note G4 measure 1 beat 2')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Note G4 measure 1 beat 2')).toHaveAttribute(
+      'data-voice-index',
+      '1',
+    );
+    expect(screen.getByRole('button', { name: 'Voice 2' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
   });
 
   it('clears the advanced cursor when the pointer moves into the grand-staff dead zone', () => {

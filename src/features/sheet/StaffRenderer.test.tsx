@@ -20,6 +20,7 @@ import {
   annotationDragLabFixture,
   duChoTanTheExcerptFixture,
   extremeClefOttavaChromaticFixture,
+  pianoPolyphonyStudyFixture,
   trebleStudyFixture,
 } from '../../domain/score/fixtures';
 import { extremeScoreFixtureCatalog } from '../../domain/score/fixtureCatalog';
@@ -49,6 +50,7 @@ import {
 import { getBeatX, getPitchY } from './notationGeometry';
 import { getLedgerLineYsForScore } from './notationGlyph';
 import { StaffRenderer } from './StaffRenderer';
+import { buildFingeringHints } from '../fingering/fingeringHints';
 import { DEFAULT_INPUT_SLOT_WIDTH } from './inputSlotLayout';
 import {
   ANNOTATION_METRICS,
@@ -158,6 +160,32 @@ function expectRenderedYsInsideSvg(container: HTMLElement, svgHeight: number) {
 }
 
 describe('StaffRenderer', () => {
+  it('renders fingering hint annotations when enabled', async () => {
+    render(
+      <StaffRenderer
+        score={trebleStudyFixture}
+        showFingeringHints
+        fingeringHints={buildFingeringHints(trebleStudyFixture)}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('rendered-fingering-hint').length).toBeGreaterThan(
+        0,
+      );
+    });
+    expect(screen.getAllByTestId('rendered-fingering-hint')[0]).toHaveAttribute(
+      'data-hand',
+      'right',
+    );
+    expect(
+      screen.getAllByTestId('rendered-fingering-leader').length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByTestId('rendered-fingering-leader')[0]?.tagName.toLowerCase(),
+    ).toBe('line');
+  });
+
   it('renders an empty treble staff system', () => {
     const { container } = render(
       <StaffRenderer score={createEmptyScore('treble', { measureCount: 4 })} />,
@@ -2266,6 +2294,31 @@ describe('StaffRenderer', () => {
         '[data-testid="score-event"][data-event-id="voice-two-note"][data-voice-index="1"]',
       ),
     ).not.toBeNull();
+  });
+
+  it('renders the piano polyphony study with independent voice stems and beams', () => {
+    const { container } = render(
+      <StaffRenderer score={pianoPolyphonyStudyFixture} />,
+    );
+
+    expect(
+      container.querySelector(
+        '.vexflow-output .vf-user-event[data-event-id="poly-rh-v1-e5"][data-voice-index="0"][data-stem-direction="up"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(
+        '.vexflow-output .vf-user-event[data-event-id="poly-rh-v2-c5-held"][data-voice-index="1"][data-stem-direction="down"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      container.querySelectorAll('.vexflow-output .vf-beam').length,
+    ).toBeGreaterThan(0);
+    expect(
+      container.querySelectorAll(
+        '[data-testid="score-event"][data-event-id^="poly-rh-v"]',
+      ).length,
+    ).toBeGreaterThanOrEqual(8);
   });
 
   it('renders chord symbols, lyrics, and section markers from score annotations', async () => {

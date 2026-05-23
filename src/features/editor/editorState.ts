@@ -31,6 +31,7 @@ export interface EditorToolState {
   isInputArmed: boolean;
   tempo: number;
   voiceIndex: EditableVoiceIndex;
+  showFingeringHints: boolean;
   showLayoutZones: boolean;
   showLyricMap: boolean;
   clefChange: Clef | null;
@@ -58,6 +59,7 @@ export const DEFAULT_EDITOR_TOOL_STATE: EditorToolState = {
   isInputArmed: false,
   tempo: 96,
   voiceIndex: 0,
+  showFingeringHints: true,
   showLayoutZones: false,
   showLyricMap: false,
   clefChange: null,

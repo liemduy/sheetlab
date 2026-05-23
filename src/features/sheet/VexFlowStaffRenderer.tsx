@@ -50,6 +50,7 @@ import {
 import { getBeatX } from './notationGeometry';
 import { getMeasureKey } from './measureKey';
 import { drawTextAnnotations } from './vexflowAnnotationRenderer';
+import { drawFingeringHints } from './vexflowFingeringRenderer';
 import { computeRenderedVoiceZones } from './renderedVoiceZones';
 import {
   getInsertPreviewItems,
@@ -308,7 +309,13 @@ function drawVexFlowMeasureEvents({
 function drawVexFlowStaves(
   container: HTMLDivElement,
   score: StaffRendererProps['score'],
-  pageViewport?: StaffRendererProps['pageViewport'],
+  {
+    fingeringHints,
+    pageViewport,
+  }: {
+    fingeringHints?: StaffRendererProps['fingeringHints'];
+    pageViewport?: StaffRendererProps['pageViewport'];
+  } = {},
 ) {
   const staves = score.parts[0]?.staves ?? [];
   const height = pageViewport?.height ?? getScoreSvgHeight(score);
@@ -437,6 +444,14 @@ function drawVexFlowStaves(
     container,
     score,
     eventLayouts,
+    visibleMeasureIndexes,
+  );
+  drawFingeringHints(
+    container,
+    score,
+    eventLayouts,
+    annotationLayouts,
+    fingeringHints ?? [],
     visibleMeasureIndexes,
   );
   const voiceZoneLayouts = computeRenderedVoiceZones({
@@ -640,7 +655,12 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
       } = drawVexFlowStaves(
         containerRef.current,
         props.score,
-        props.pageViewport,
+        {
+          fingeringHints: props.showFingeringHints
+            ? props.fingeringHints
+            : [],
+          pageViewport: props.pageViewport,
+        },
       );
       setEventLayouts(nextEventLayouts);
       setAnnotationLayouts(nextAnnotationLayouts);
@@ -656,7 +676,13 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         props.practiceFeedbackByEventId,
       );
     }
-  }, [props.pageViewport, props.score, props.practiceFeedbackByEventId]);
+  }, [
+    props.fingeringHints,
+    props.pageViewport,
+    props.practiceFeedbackByEventId,
+    props.score,
+    props.showFingeringHints,
+  ]);
 
   useEffect(() => {
     if (containerRef.current) {

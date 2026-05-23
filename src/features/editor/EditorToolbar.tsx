@@ -244,6 +244,7 @@ interface EditorToolbarProps {
   onImportAbcFile: (fileList: FileList | null) => void | Promise<void>;
   onImportProjectFile: (fileList: FileList | null) => void | Promise<void>;
   onKeySignatureChange: (keySignature: KeySignature) => void;
+  onFingeringHintsToggle: (show: boolean) => void;
   onLayoutZoneToggle: (show: boolean) => void;
   onLoadProject: () => void;
   onLyricMapToggle: (show: boolean) => void;
@@ -295,6 +296,7 @@ export function EditorToolbar({
   onImportAbcFile,
   onImportProjectFile,
   onKeySignatureChange,
+  onFingeringHintsToggle,
   onLayoutZoneToggle,
   onLoadProject,
   onLyricMapToggle,
@@ -709,6 +711,21 @@ export function EditorToolbar({
       </div>
       <div className="toolbar-group" aria-label="Annotation view tools">
         <span className="toolbar-group-label">Annotations</span>
+        <label
+          className="toolbar-check-row"
+          title="Show piano fingering suggestions"
+        >
+          <input
+            type="checkbox"
+            aria-label="Show fingering hints"
+            data-testid="editor-fingering-hints-toggle"
+            checked={toolState.showFingeringHints}
+            onChange={(event) =>
+              onFingeringHintsToggle(event.target.checked)
+            }
+          />
+          Fingers
+        </label>
         <button
           type="button"
           aria-label="Show lyric map"

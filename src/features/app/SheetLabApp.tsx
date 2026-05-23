@@ -1080,6 +1080,17 @@ function SheetLabApp() {
     },
     {
       group: 'View',
+      id: 'toggle-fingering-hints',
+      label: toolState.showFingeringHints
+        ? 'Hide fingering hints'
+        : 'Show fingering hints',
+      run: () =>
+        updateToolState({
+          showFingeringHints: !toolState.showFingeringHints,
+        }),
+    },
+    {
+      group: 'View',
       id: 'toggle-lyric-map',
       label: toolState.showLyricMap ? 'Hide lyric map' : 'Show lyric map',
       run: () => updateToolState({ showLyricMap: !toolState.showLyricMap }),
@@ -1221,6 +1232,9 @@ function SheetLabApp() {
           onImportAbcFile={handleImportAbcFile}
           onImportProjectFile={handleImportProjectFile}
           onKeySignatureChange={handleKeySignatureChange}
+          onFingeringHintsToggle={(showFingeringHints) =>
+            updateToolState({ showFingeringHints })
+          }
           onLayoutZoneToggle={(showLayoutZones) =>
             updateToolState({ showLayoutZones })
           }

@@ -17,7 +17,11 @@ import {
   getTupletSlotDuration,
   type SupportedTupletActualNotes,
 } from '../../domain/score/tuplets';
-import { DURATION_LABEL, type EditorToolState } from '../editor/editorState';
+import {
+  DURATION_LABEL,
+  type EditableVoiceIndex,
+  type EditorToolState,
+} from '../editor/editorState';
 import { formatInputCursor, type InputCursor } from '../editor/inputCursor';
 import { playPitchPreview } from '../playback/audioEngine';
 import type { MusicPosition } from '../sheet/interaction';
@@ -57,6 +61,30 @@ interface UseCursorPlacementOptions {
 
 function getTupletLabel(actualNotes: SupportedTupletActualNotes) {
   return actualNotes === 3 ? 'Triplet' : `Tuplet ${actualNotes}`;
+}
+
+function isEditableVoiceIndex(voiceIndex: number): voiceIndex is EditableVoiceIndex {
+  return voiceIndex === 0 || voiceIndex === 1;
+}
+
+function getPlacementMessage(
+  placementMode: EditorToolState['placementMode'],
+  placementKind: ReturnType<typeof tryPlaceScoreEvent>['placementKind'],
+  voiceIndex: number,
+) {
+  if (placementMode === 'insert') {
+    return 'Event inserted';
+  }
+
+  if (placementKind === 'parallel-voice') {
+    return `Parallel voice placed in V${voiceIndex + 1}`;
+  }
+
+  if (placementKind === 'chord') {
+    return 'Chord updated';
+  }
+
+  return 'Event placed';
 }
 
 const DEFAULT_KEYBOARD_PITCH_BY_STAFF: Record<StaffId, Pitch> = {
@@ -381,6 +409,7 @@ export function useCursorPlacement({
     if (
       activeToolState.placementMode === 'place' &&
       !isSequentialPlaceTargetAllowed({
+        allowParallelVoice: activeToolState.entryMode === 'note',
         position: context.cursorPosition,
         score,
         targetSlot,
@@ -498,12 +527,23 @@ export function useCursorPlacement({
         : tryPlaceScoreEvent(score, placeRequest);
 
     if (result.placed) {
+      const placedVoiceIndex = result.voiceIndex ?? activeToolState.voiceIndex;
+
       commitScoreChange(
         result.score,
-        activeToolState.placementMode === 'insert'
-          ? 'Event inserted'
-          : 'Event placed',
+        getPlacementMessage(
+          activeToolState.placementMode,
+          result.placementKind,
+          placedVoiceIndex,
+        ),
       );
+      if (
+        result.voiceIndex !== undefined &&
+        result.voiceIndex !== activeToolState.voiceIndex &&
+        isEditableVoiceIndex(result.voiceIndex)
+      ) {
+        updateToolState({ voiceIndex: result.voiceIndex });
+      }
       if (activeToolState.entryMode === 'note') {
         const placedPitch = {
           ...writePosition.pitch,
@@ -529,7 +569,7 @@ export function useCursorPlacement({
             },
             placeRequest.duration,
             placeRequest.dots,
-            activeToolState.voiceIndex,
+            placedVoiceIndex,
           ),
           source: cursorSource,
         },

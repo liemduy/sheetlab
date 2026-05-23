@@ -203,6 +203,33 @@ button {
   font: 700 0.78rem ui-sans-serif, "Segoe UI", sans-serif;
 }
 
+.toolbar-check-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  min-height: 2.25rem;
+  border: 1px solid rgb(36 31 26 / 12%);
+  border-radius: 999px;
+  padding: 0.36rem 0.7rem;
+  background: rgb(255 255 255 / 70%);
+  color: var(--ink);
+  cursor: pointer;
+  font: 800 0.75rem ui-sans-serif, "Segoe UI", sans-serif;
+}
+
+.toolbar-check-row input {
+  width: 0.9rem;
+  height: 0.9rem;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.toolbar-check-row:has(input:checked) {
+  border-color: var(--accent);
+  background: rgb(23 107 84 / 10%);
+  color: var(--accent-strong);
+}
+
 .compact-select {
   min-width: 4.8rem;
 }
@@ -1149,6 +1176,50 @@ button {
   font-style: italic;
   pointer-events: none;
   text-anchor: middle;
+}
+
+.vexflow-output .sheetlab-fingering-hint {
+  pointer-events: none;
+}
+
+.vexflow-output .sheetlab-fingering-leader {
+  stroke: #176b54;
+  stroke-dasharray: 3 3;
+  stroke-linecap: round;
+  stroke-width: 0.9;
+  vector-effect: non-scaling-stroke;
+}
+
+.vexflow-output .sheetlab-fingering-hint circle {
+  fill: #ffffff;
+  stroke: #176b54;
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.vexflow-output .sheetlab-fingering-hint text {
+  fill: #0c4637;
+  font-family: ui-sans-serif, "Segoe UI", sans-serif;
+  font-size: 10px;
+  font-weight: 900;
+  pointer-events: none;
+  text-anchor: middle;
+}
+
+.vexflow-output .sheetlab-fingering-hint-left circle {
+  stroke: #365b8c;
+}
+
+.vexflow-output .sheetlab-fingering-hint-left .sheetlab-fingering-leader {
+  stroke: #365b8c;
+}
+
+.vexflow-output .sheetlab-fingering-hint-left text {
+  fill: #243b63;
+}
+
+.vexflow-output .sheetlab-fingering-hint[data-confidence="low"] {
+  opacity: 0.72;
 }
 
 .vexflow-output .sheetlab-pedal-line {

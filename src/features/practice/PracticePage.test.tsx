@@ -18,6 +18,7 @@ describe('PracticePage', () => {
     expect(screen.getByTestId('practice-mode-wait')).toHaveClass('is-active');
     expect(screen.getByTestId('practice-summary')).toHaveTextContent('M1 beat 1');
     expect(screen.getByTestId('practice-reference')).toBeInTheDocument();
+    expect(screen.getByTestId('practice-fingering-hints-toggle')).toBeChecked();
     expect(screen.getByTestId('practice-count-in')).toHaveValue('1');
     expect(screen.getByTestId('practice-reference-mute')).toHaveValue('none');
     expect(screen.getByTestId('practice-timing')).toHaveValue('normal');
@@ -27,6 +28,8 @@ describe('PracticePage', () => {
     fireEvent.click(screen.getByTestId('practice-mode-listen'));
 
     expect(screen.getByTestId('practice-mode-listen')).toHaveClass('is-active');
+    fireEvent.click(screen.getByTestId('practice-fingering-hints-toggle'));
+    expect(screen.getByTestId('practice-fingering-hints-toggle')).not.toBeChecked();
 
     fireEvent.click(screen.getByRole('button', { name: 'Editor' }));
 
