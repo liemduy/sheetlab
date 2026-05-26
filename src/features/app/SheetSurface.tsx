@@ -34,6 +34,13 @@ import type {
 
 const PAGE_OBSERVER_DELAY_MS = 160;
 
+export interface ReferenceBackground {
+  kind: 'image' | 'pdf';
+  name: string;
+  opacity: number;
+  url: string;
+}
+
 interface SheetSurfaceProps {
   activeEventId: string | null;
   activeEventIds: readonly string[];
@@ -48,6 +55,7 @@ interface SheetSurfaceProps {
   pendingMeasureClear: MeasureTarget | null;
   pendingMeasureDelete: MeasureTarget | null;
   playbackBeat: number | null;
+  referenceBackground: ReferenceBackground | null;
   score: Score;
   selectedAnnotation: AnnotationTarget | null;
   selectedEventId: string | null;
@@ -129,6 +137,7 @@ export function SheetSurface({
   pendingMeasureClear,
   pendingMeasureDelete,
   playbackBeat,
+  referenceBackground,
   score,
   selectedAnnotation,
   selectedEventId,
@@ -448,6 +457,26 @@ export function SheetSurface({
                     : `Notation viewport page ${pageViewport.index + 1}`
                 }
               >
+                {referenceBackground ? (
+                  <div
+                    aria-hidden="true"
+                    className={`reference-background reference-background-${referenceBackground.kind}`}
+                    style={{ opacity: referenceBackground.opacity }}
+                  >
+                    {referenceBackground.kind === 'pdf' ? (
+                      <object
+                        data={referenceBackground.url}
+                        title={referenceBackground.name}
+                        type="application/pdf"
+                      />
+                    ) : (
+                      <img
+                        alt=""
+                        src={referenceBackground.url}
+                      />
+                    )}
+                  </div>
+                ) : null}
                 {shouldRenderPage ? (
                   <StaffRenderer
                     duration={toolState.duration}

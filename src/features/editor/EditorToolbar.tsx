@@ -214,12 +214,21 @@ interface EditorToolbarProps {
   activeKeySignatureSelection: KeySignature | 'custom';
   activeRepeatJump: RepeatJumpKind | null;
   canvasZoom: number;
+  cloudStatusLabel: string;
   futureScoreCount: number;
   importAbcInputRef: RefObject<HTMLInputElement | null>;
+  importExternalScoreInputRef: RefObject<HTMLInputElement | null>;
   importInputRef: RefObject<HTMLInputElement | null>;
+  importReferenceInputRef: RefObject<HTMLInputElement | null>;
   isPlaying: boolean;
   openPalette: ToolbarPalette;
   pastScoreCount: number;
+  projectLibraryOptions: readonly {
+    id: string;
+    measureCount: number;
+    title: string;
+    updatedAt: string;
+  }[];
   scoreTimeSignature: TimeSignature;
   canDeleteSelection: boolean;
   canFlipSelection: boolean;
@@ -242,18 +251,24 @@ interface EditorToolbarProps {
   onExportPdf: () => void;
   onFlipDirection: () => void;
   onImportAbcFile: (fileList: FileList | null) => void | Promise<void>;
+  onImportExternalScoreFile: (fileList: FileList | null) => void | Promise<void>;
   onImportProjectFile: (fileList: FileList | null) => void | Promise<void>;
+  onImportReferenceFile: (fileList: FileList | null) => void | Promise<void>;
   onKeySignatureChange: (keySignature: KeySignature) => void;
   onFingeringHintsToggle: (show: boolean) => void;
   onLayoutZoneToggle: (show: boolean) => void;
   onLoadProject: () => void;
+  onLoadAutosave: () => void;
   onLyricMapToggle: (show: boolean) => void;
   onOpenPaletteChange: (palette: ToolbarPalette) => void;
   onPlacementModeChange: (placementMode: PlacementMode) => void;
   onPlaybackToggle: () => void | Promise<void>;
   onPracticeOpen: () => void;
   onPracticePreload?: () => void;
+  onProjectLibraryLoad: (projectId: string) => void;
   onRedo: () => void;
+  onReferenceClear: () => void;
+  onReferenceOpacityChange: (value: string) => void;
   onRepeatJumpChange: (repeatJump: RepeatJumpKind | null) => void;
   onResetScore: () => void;
   onSaveProject: () => void;
@@ -261,18 +276,24 @@ interface EditorToolbarProps {
   onTupletChange: (actualNotes: SupportedTupletActualNotes | null) => void;
   onUndo: () => void;
   onVoiceIndexChange: (voiceIndex: EditableVoiceIndex) => void;
+  referenceBackgroundName: string | null;
+  referenceOpacity: number;
 }
 
 export function EditorToolbar({
   activeKeySignatureSelection,
   activeRepeatJump,
   canvasZoom,
+  cloudStatusLabel,
   futureScoreCount,
   importAbcInputRef,
+  importExternalScoreInputRef,
   importInputRef,
+  importReferenceInputRef,
   isPlaying,
   openPalette,
   pastScoreCount,
+  projectLibraryOptions,
   scoreTimeSignature,
   canDeleteSelection,
   canFlipSelection,
@@ -295,18 +316,24 @@ export function EditorToolbar({
   onExportPdf,
   onFlipDirection,
   onImportAbcFile,
+  onImportExternalScoreFile,
   onImportProjectFile,
+  onImportReferenceFile,
   onKeySignatureChange,
   onFingeringHintsToggle,
   onLayoutZoneToggle,
   onLoadProject,
+  onLoadAutosave,
   onLyricMapToggle,
   onOpenPaletteChange,
   onPlacementModeChange,
   onPlaybackToggle,
   onPracticeOpen,
   onPracticePreload,
+  onProjectLibraryLoad,
   onRedo,
+  onReferenceClear,
+  onReferenceOpacityChange,
   onRepeatJumpChange,
   onResetScore,
   onSaveProject,
@@ -314,6 +341,8 @@ export function EditorToolbar({
   onTupletChange,
   onUndo,
   onVoiceIndexChange,
+  referenceBackgroundName,
+  referenceOpacity,
 }: EditorToolbarProps) {
   const activeDuration = inputCursor?.tuplet
     ? inputCursor.duration
@@ -842,12 +871,79 @@ export function EditorToolbar({
             </option>
           ))}
         </select>
+        <select
+          aria-label="Load library score"
+          className="toolbar-select compact-select"
+          defaultValue=""
+          disabled={projectLibraryOptions.length === 0}
+          onChange={(event) => {
+            const projectId = event.target.value;
+
+            if (projectId) {
+              onProjectLibraryLoad(projectId);
+              event.currentTarget.value = '';
+            }
+          }}
+        >
+          <option value="">Library</option>
+          {projectLibraryOptions.map((record) => (
+            <option key={record.id} value={record.id}>
+              {record.title} - M{record.measureCount}
+            </option>
+          ))}
+        </select>
         <button type="button" className="tool-button" onClick={onSaveProject}>
           Save
         </button>
         <button type="button" className="tool-button" onClick={onLoadProject}>
           Load
         </button>
+        <button type="button" className="tool-button" onClick={onLoadAutosave}>
+          Autosave
+        </button>
+        <button type="button" className="tool-button" disabled>
+          {cloudStatusLabel}
+        </button>
+        <button
+          type="button"
+          className={`tool-button${referenceBackgroundName ? ' is-active' : ''}`}
+          title={referenceBackgroundName ?? 'Load image or PDF as a reference background'}
+          onClick={() => importReferenceInputRef.current?.click()}
+        >
+          Ref
+        </button>
+        <input
+          ref={importReferenceInputRef}
+          aria-label="Import reference image or PDF"
+          className="file-input"
+          type="file"
+          accept="image/*,application/pdf,.pdf"
+          onChange={(event) => void onImportReferenceFile(event.target.files)}
+        />
+        {referenceBackgroundName ? (
+          <>
+            <input
+              aria-label="Reference opacity"
+              className="reference-opacity-slider"
+              type="range"
+              min={5}
+              max={85}
+              step={5}
+              value={referenceOpacity}
+              onChange={(event) =>
+                onReferenceOpacityChange(event.target.value)
+              }
+            />
+            <button
+              type="button"
+              className="tool-button"
+              title="Clear reference background"
+              onClick={onReferenceClear}
+            >
+              Clear Ref
+            </button>
+          </>
+        ) : null}
         <button
           type="button"
           className="tool-button"
@@ -884,6 +980,21 @@ export function EditorToolbar({
         <button type="button" className="tool-button" onClick={onDownloadAbc}>
           Download ABC
         </button>
+        <button
+          type="button"
+          className="tool-button"
+          onClick={() => importExternalScoreInputRef.current?.click()}
+        >
+          Import XML/MIDI
+        </button>
+        <input
+          ref={importExternalScoreInputRef}
+          aria-label="Import MusicXML or MIDI file"
+          className="file-input"
+          type="file"
+          accept=".musicxml,.xml,.mid,.midi,application/vnd.recordare.musicxml+xml,audio/midi"
+          onChange={(event) => void onImportExternalScoreFile(event.target.files)}
+        />
         <button type="button" className="tool-button" onClick={onExportPdf}>
           Export PDF
         </button>

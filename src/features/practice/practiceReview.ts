@@ -19,8 +19,12 @@ export interface PracticeMeasureReview {
 
 export interface PracticeReviewSummary {
   completionPercent: number;
+  earlyCount: number;
   issueRows: string[];
+  lateCount: number;
   measureSummaries: PracticeMeasureReview[];
+  meanTimingBiasMs: number | null;
+  medianTimingDeltaMs: number | null;
   noteAccuracyPercent: number;
   pedalScorePercent: number | null;
   resolvedTargets: number;
@@ -81,6 +85,23 @@ function isTimingIssue(result: PracticeResult, timingToleranceMs: number) {
   );
 }
 
+function getMedian(values: readonly number[]) {
+  if (values.length === 0) {
+    return null;
+  }
+
+  const sortedValues = [...values].sort((first, second) => first - second);
+  const middleIndex = Math.floor(sortedValues.length / 2);
+
+  if (sortedValues.length % 2 === 1) {
+    return sortedValues[middleIndex];
+  }
+
+  return Math.round(
+    (sortedValues[middleIndex - 1] + sortedValues[middleIndex]) / 2,
+  );
+}
+
 function addMeasureLabel(
   measureReviews: Map<number, PracticeMeasureReview>,
   measureIndex: number,
@@ -103,12 +124,14 @@ export function buildPracticeReviewSummary({
   pedalTargets,
   results,
   targets,
+  getTimingToleranceMs,
   timingToleranceMs,
 }: {
   pedalResults: ReadonlyMap<string, PracticePedalResult>;
   pedalTargets: readonly PracticePedalTarget[];
   results: ReadonlyMap<string, PracticeResult>;
   targets: readonly PracticeTarget[];
+  getTimingToleranceMs?: (target: PracticeTarget) => number;
   timingToleranceMs: number;
 }): PracticeReviewSummary {
   const pedalTargetById = new Map(
@@ -118,6 +141,9 @@ export function buildPracticeReviewSummary({
   let timedResultCount = 0;
   let timingCorrectCount = 0;
   let rhythmIssueCount = 0;
+  let earlyCount = 0;
+  let lateCount = 0;
+  const timingDeltas: number[] = [];
 
   targets.forEach((target) => {
     const result = results.get(target.id);
@@ -133,11 +159,19 @@ export function buildPracticeReviewSummary({
     }
 
     const noteIssue = hasNoteIssue(result);
-    const timingIssue = isTimingIssue(result, timingToleranceMs);
+    const targetTimingToleranceMs =
+      getTimingToleranceMs?.(target) ?? timingToleranceMs;
+    const timingIssue = isTimingIssue(result, targetTimingToleranceMs);
 
     if (result.timingDeltaMs !== undefined) {
+      timingDeltas.push(result.timingDeltaMs);
       timedResultCount += 1;
       timingCorrectCount += timingIssue ? 0 : 1;
+      if (result.timingDeltaMs < -targetTimingToleranceMs) {
+        earlyCount += 1;
+      } else if (result.timingDeltaMs > targetTimingToleranceMs) {
+        lateCount += 1;
+      }
     }
 
     if (timingIssue) {
@@ -189,12 +223,23 @@ export function buildPracticeReviewSummary({
   const measureSummaries = [...measureReviews.values()].sort(
     (first, second) => first.measureIndex - second.measureIndex,
   );
+  const meanTimingBiasMs =
+    timingDeltas.length === 0
+      ? null
+      : Math.round(
+          timingDeltas.reduce((sum, deltaMs) => sum + deltaMs, 0) /
+            timingDeltas.length,
+        );
 
   return {
     completionPercent:
       targets.length === 0 ? 0 : Math.round((results.size / targets.length) * 100),
+    earlyCount,
     issueRows: measureSummaries.flatMap((review) => review.labels),
+    lateCount,
     measureSummaries,
+    meanTimingBiasMs,
+    medianTimingDeltaMs: getMedian(timingDeltas),
     noteAccuracyPercent: getPracticeAccuracyPercent(results, targets.length),
     pedalScorePercent:
       pedalTargets.length === 0

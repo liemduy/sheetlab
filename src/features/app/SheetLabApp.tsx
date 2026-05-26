@@ -75,7 +75,10 @@ import { getInsertTargetEvent } from '../sheet/insertPreview';
 import type { MusicPosition } from '../sheet/interaction';
 import { usePlaybackController } from './usePlaybackController';
 import { useProjectActions } from './useProjectActions';
-import { SheetSurface } from './SheetSurface';
+import {
+  SheetSurface,
+  type ReferenceBackground,
+} from './SheetSurface';
 import { useCursorPlacement } from './useCursorPlacement';
 import { useCanvasZoom } from './useCanvasZoom';
 import { useEditorShortcuts } from './useEditorShortcuts';
@@ -97,6 +100,10 @@ import {
 } from './appBootstrap';
 import { getAdjacentSelectableScoreEvent } from './scoreEventNavigation';
 import { saveAutosaveToStorage } from '../persistence/projectStorage';
+import {
+  DISABLED_CLOUD_SYNC_CONFIG,
+  getCloudSyncStatusLabel,
+} from '../cloud/cloudSync';
 
 function getExportPreflightMessage(issues: RhythmIssue[]) {
   const issueCount = issues.length;
@@ -138,6 +145,9 @@ const DEMO_SCORE_OPTIONS = scoreFixtureCatalog.map((fixture) => ({
   id: fixture.id,
   label: fixture.label,
 }));
+const CLOUD_SYNC_STATUS_LABEL = getCloudSyncStatusLabel(
+  DISABLED_CLOUD_SYNC_CONFIG,
+);
 
 const loadPracticePage = () => import('../practice/PracticePage');
 const PracticePage = lazy(() =>
@@ -231,6 +241,9 @@ function SheetLabApp() {
   const [selectedAnnotation, setSelectedAnnotation] =
     useState<AnnotationTarget | null>(null);
   const notationViewportRef = useRef<HTMLDivElement | null>(null);
+  const referenceInputRef = useRef<HTMLInputElement | null>(null);
+  const [referenceBackground, setReferenceBackground] =
+    useState<ReferenceBackground | null>(null);
   const { canvasZoom, handleCanvasZoomChange } =
     useCanvasZoom(notationViewportRef);
 
@@ -246,6 +259,15 @@ function SheetLabApp() {
     return () => window.clearTimeout(autosaveTimer);
   }, [score]);
 
+  useEffect(
+    () => () => {
+      if (referenceBackground?.url) {
+        URL.revokeObjectURL(referenceBackground.url);
+      }
+    },
+    [referenceBackground?.url],
+  );
+
   function clearTransientInteraction() {
     clearPointerState();
     clearMeasureUiState();
@@ -259,6 +281,55 @@ function SheetLabApp() {
       ...currentScore,
       ...update,
     }));
+  }
+
+  async function handleImportReferenceFile(fileList: FileList | null) {
+    const file = fileList?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    const isPdfFile =
+      file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    const isImageFile = file.type.startsWith('image/');
+
+    if (!isPdfFile && !isImageFile) {
+      setEditorMessage('Reference must be an image or PDF');
+      if (referenceInputRef.current) {
+        referenceInputRef.current.value = '';
+      }
+      return;
+    }
+
+    setReferenceBackground({
+      kind: isPdfFile ? 'pdf' : 'image',
+      name: file.name,
+      opacity: 0.28,
+      url: URL.createObjectURL(file),
+    });
+    setEditorMessage(`Reference loaded: ${file.name}`);
+
+    if (referenceInputRef.current) {
+      referenceInputRef.current.value = '';
+    }
+  }
+
+  function handleReferenceOpacityChange(value: string) {
+    const parsedValue = Number(value);
+
+    if (!Number.isFinite(parsedValue)) {
+      return;
+    }
+
+    setReferenceBackground((current) =>
+      current
+        ? {
+            ...current,
+            opacity: Math.min(0.85, Math.max(0.05, parsedValue / 100)),
+          }
+        : current,
+    );
   }
 
   function updateToolState(update: Partial<EditorToolState>) {
@@ -742,11 +813,16 @@ function SheetLabApp() {
     handleDownloadProject,
     handleExportPdf,
     handleImportAbcFile,
+    handleImportExternalScoreFile,
     handleImportProjectFile,
+    handleLoadAutosave,
     handleLoadProject,
+    handleLoadProjectFromLibrary,
     handleSaveProject,
     importAbcInputRef,
+    importExternalScoreInputRef,
     importInputRef,
+    projectLibrary,
   } = useProjectActions({
     onScoreLoaded: handleLoadedScoreFromFile,
     score,
@@ -1225,12 +1301,16 @@ function SheetLabApp() {
           activeKeySignatureSelection={activeKeySignatureSelection}
           activeRepeatJump={activeRepeatJump}
           canvasZoom={canvasZoom}
+          cloudStatusLabel={CLOUD_SYNC_STATUS_LABEL}
           futureScoreCount={futureScores.length}
           importAbcInputRef={importAbcInputRef}
+          importExternalScoreInputRef={importExternalScoreInputRef}
           importInputRef={importInputRef}
+          importReferenceInputRef={referenceInputRef}
           isPlaying={isPlaying}
           openPalette={openPalette}
           pastScoreCount={pastScores.length}
+          projectLibraryOptions={projectLibrary}
           scoreTimeSignature={score.timeSignature}
           demoScoreOptions={DEMO_SCORE_OPTIONS}
           canDeleteSelection={Boolean(
@@ -1255,7 +1335,9 @@ function SheetLabApp() {
           onExportPdf={handleExportPdfWithPreflight}
           onFlipDirection={handleFlipSelectedDirection}
           onImportAbcFile={handleImportAbcFile}
+          onImportExternalScoreFile={handleImportExternalScoreFile}
           onImportProjectFile={handleImportProjectFile}
+          onImportReferenceFile={handleImportReferenceFile}
           onKeySignatureChange={handleKeySignatureChange}
           onFingeringHintsToggle={(showFingeringHints) =>
             updateToolState({ showFingeringHints })
@@ -1264,6 +1346,8 @@ function SheetLabApp() {
             updateToolState({ showLayoutZones })
           }
           onLoadProject={handleLoadProject}
+          onLoadAutosave={handleLoadAutosave}
+          onProjectLibraryLoad={handleLoadProjectFromLibrary}
           onLyricMapToggle={(showLyricMap) => updateToolState({ showLyricMap })}
           onOpenPaletteChange={setOpenPalette}
           onPlacementModeChange={handlePlacementModeChange}
@@ -1271,6 +1355,8 @@ function SheetLabApp() {
           onPracticeOpen={handlePracticeOpen}
           onPracticePreload={() => void loadPracticePage()}
           onRedo={handleRedo}
+          onReferenceClear={() => setReferenceBackground(null)}
+          onReferenceOpacityChange={handleReferenceOpacityChange}
           onRepeatJumpChange={handleRepeatJumpChange}
           onResetScore={handleResetScore}
           onSaveProject={handleSaveProject}
@@ -1278,6 +1364,8 @@ function SheetLabApp() {
           onTupletChange={handleTupletChange}
           onUndo={handleUndo}
           onVoiceIndexChange={handleVoiceIndexChange}
+          referenceBackgroundName={referenceBackground?.name ?? null}
+          referenceOpacity={Math.round((referenceBackground?.opacity ?? 0.28) * 100)}
         />
       </header>
 
@@ -1389,6 +1477,7 @@ function SheetLabApp() {
           pendingMeasureClear={pendingMeasureClear}
           pendingMeasureDelete={pendingMeasureDelete}
           playbackBeat={playbackBeat}
+          referenceBackground={referenceBackground}
           score={score}
           selectedAnnotation={selectedAnnotation}
           selectedClefChange={selectedClefChange}

@@ -37,6 +37,7 @@ interface EventHitTargetProps {
     originPosition: MusicPosition | null,
     event: MouseEvent<SVGGElement>,
   ) => void;
+  onRangeEventPick?: (eventId: string) => void;
   onSelectEvent?: (eventId: string, pitchIndex?: number | null) => void;
   placementMode: PlacementMode;
   selectedEventId?: string | null;
@@ -120,6 +121,7 @@ export function EventHitTarget({
   onDeleteEvent,
   onDeleteHoverChange,
   onStartDrag,
+  onRangeEventPick,
   onSelectEvent,
   placementMode,
   selectedEventId,
@@ -286,6 +288,27 @@ export function EventHitTarget({
     onDeleteEvent?.(event.id);
   }
 
+  function pickRangeTarget(pointerEvent: MouseEvent<SVGElement>) {
+    if (!pointerEvent.ctrlKey && !pointerEvent.metaKey) {
+      return false;
+    }
+
+    pointerEvent.preventDefault();
+    pointerEvent.stopPropagation();
+    onRangeEventPick?.(event.id);
+    return true;
+  }
+
+  function suppressRangeDrag(pointerEvent: MouseEvent<SVGElement>) {
+    if (!pointerEvent.ctrlKey && !pointerEvent.metaKey) {
+      return false;
+    }
+
+    pointerEvent.preventDefault();
+    pointerEvent.stopPropagation();
+    return true;
+  }
+
   if (isGeneratedRestEvent(event)) {
     return null;
   }
@@ -309,10 +332,18 @@ export function EventHitTarget({
         role="button"
         tabIndex={0}
         onClick={(eventClick) => {
+          if (pickRangeTarget(eventClick)) {
+            return;
+          }
+
           eventClick.stopPropagation();
           onSelectEvent?.(event.id, getClosestPitchIndex(eventClick));
         }}
         onMouseDown={(eventMouseDown) => {
+          if (suppressRangeDrag(eventMouseDown)) {
+            return;
+          }
+
           eventMouseDown.stopPropagation();
           const selectionPitchIndex = getClosestPitchIndex(eventMouseDown);
           const dragPitchIndex = getDragPitchIndex(eventMouseDown);

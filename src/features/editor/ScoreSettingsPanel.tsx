@@ -64,6 +64,25 @@ const DYNAMIC_MARK_OPTIONS = [
   'dim.',
 ] as const;
 
+const DYNAMIC_MARK_GROUPS = [
+  {
+    label: 'Soft',
+    marks: ['ppp', 'pp', 'p'] as const,
+  },
+  {
+    label: 'Medium',
+    marks: ['mp', 'mf'] as const,
+  },
+  {
+    label: 'Loud',
+    marks: ['f', 'ff', 'fff'] as const,
+  },
+  {
+    label: 'Accent / change',
+    marks: ['fp', 'sfz', 'cresc.', 'dim.'] as const,
+  },
+];
+
 function formatScoreEventSummary(
   selectedEvent: ReturnType<typeof findScoreEvent>,
   selectedPitchIndex: number | null,
@@ -454,16 +473,33 @@ export function ScoreSettingsPanel({
             }
           >
             <option value="none">None</option>
-            {DYNAMIC_MARK_OPTIONS.map((dynamic) => (
-              <option key={dynamic} value={dynamic}>
-                {dynamic}
-              </option>
+            {DYNAMIC_MARK_GROUPS.map((group) => (
+              <optgroup key={group.label} label={group.label}>
+                {group.marks.map((dynamic) => (
+                  <option key={dynamic} value={dynamic}>
+                    {dynamic}
+                  </option>
+                ))}
+              </optgroup>
             ))}
             {hasCustomDynamic ? (
               <option value={selectedDynamic}>{selectedDynamic} (custom)</option>
             ) : null}
           </select>
         </label>
+        <div className="annotation-symbol-picker" aria-label="Quick dynamic picker">
+          {DYNAMIC_MARK_GROUPS.flatMap((group) => group.marks).map((dynamic) => (
+            <button
+              key={dynamic}
+              type="button"
+              className={selectedDynamic === dynamic ? 'is-active' : ''}
+              disabled={!selectedEvent}
+              onClick={() => onDynamicChange(dynamic)}
+            >
+              {dynamic}
+            </button>
+          ))}
+        </div>
         <label>
           Pedal
           <select

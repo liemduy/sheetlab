@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { deserializeScore } from '../../domain/score/factories';
 import type { Score } from '../../domain/score/types';
 import {
@@ -7,8 +7,16 @@ import {
   importScoreFromAbc,
 } from '../../domain/score/abcNotation';
 import {
+  importScoreFromMidi,
+  importScoreFromMusicXml,
+} from '../../domain/score/externalScoreImport';
+import {
   createProjectJsonBlob,
+  loadAutosaveFromStorage,
+  loadProjectFromLibrary,
+  loadProjectLibrary,
   loadProjectFromStorage,
+  type SavedProjectRecord,
   saveProjectToStorage,
 } from '../persistence/projectStorage';
 
@@ -53,9 +61,18 @@ export function useProjectActions({
 }: UseProjectActionsOptions) {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const importAbcInputRef = useRef<HTMLInputElement | null>(null);
+  const importExternalScoreInputRef = useRef<HTMLInputElement | null>(null);
+  const [projectLibrary, setProjectLibrary] = useState<SavedProjectRecord[]>(
+    () => loadProjectLibrary(),
+  );
+
+  function refreshProjectLibrary() {
+    setProjectLibrary(loadProjectLibrary());
+  }
 
   function handleSaveProject() {
     saveProjectToStorage(score);
+    refreshProjectLibrary();
     setEditorMessage('Project saved locally');
   }
 
@@ -68,6 +85,29 @@ export function useProjectActions({
     }
 
     onScoreLoaded(storedScore, 'Saved project loaded');
+  }
+
+  function handleLoadProjectFromLibrary(projectId: string) {
+    const storedScore = loadProjectFromLibrary(projectId);
+
+    if (!storedScore) {
+      setEditorMessage('Library project not found');
+      refreshProjectLibrary();
+      return;
+    }
+
+    onScoreLoaded(storedScore, 'Library project loaded');
+  }
+
+  function handleLoadAutosave() {
+    const storedScore = loadAutosaveFromStorage();
+
+    if (!storedScore) {
+      setEditorMessage('No autosave found');
+      return;
+    }
+
+    onScoreLoaded(storedScore, 'Autosave restored');
   }
 
   async function handleImportProjectFile(fileList: FileList | null) {
@@ -83,6 +123,7 @@ export function useProjectActions({
       onScoreLoaded(importedScore, `JSON imported: ${file.name}`, {
         closePalette: true,
       });
+      refreshProjectLibrary();
     } catch {
       setEditorMessage('Invalid JSON project file');
     } finally {
@@ -115,11 +156,48 @@ export function useProjectActions({
           closePalette: true,
         },
       );
+      refreshProjectLibrary();
     } catch {
       setEditorMessage('Invalid ABC notation file');
     } finally {
       if (importAbcInputRef.current) {
         importAbcInputRef.current.value = '';
+      }
+    }
+  }
+
+  async function handleImportExternalScoreFile(fileList: FileList | null) {
+    const file = fileList?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    const lowerName = file.name.toLowerCase();
+
+    try {
+      const result =
+        lowerName.endsWith('.mid') || lowerName.endsWith('.midi')
+          ? importScoreFromMidi(await file.arrayBuffer(), file.name)
+          : importScoreFromMusicXml(await file.text());
+
+      onScoreLoaded(
+        result.score,
+        result.warnings.length > 0
+          ? `Imported ${file.name}: ${result.warnings.length} warning${
+              result.warnings.length === 1 ? '' : 's'
+            }`
+          : `Imported ${file.name}`,
+        {
+          closePalette: true,
+        },
+      );
+      refreshProjectLibrary();
+    } catch {
+      setEditorMessage('Invalid MusicXML or MIDI file');
+    } finally {
+      if (importExternalScoreInputRef.current) {
+        importExternalScoreInputRef.current.value = '';
       }
     }
   }
@@ -171,10 +249,15 @@ export function useProjectActions({
     handleDownloadProject,
     handleExportPdf,
     handleImportAbcFile,
+    handleImportExternalScoreFile,
     handleImportProjectFile,
+    handleLoadAutosave,
     handleLoadProject,
+    handleLoadProjectFromLibrary,
     handleSaveProject,
     importAbcInputRef,
+    importExternalScoreInputRef,
     importInputRef,
+    projectLibrary,
   };
 }

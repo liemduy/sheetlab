@@ -28,6 +28,7 @@ export interface StaffRendererProps {
   onPlaceAtPosition?: (position: MusicPosition) => void;
   onClearInteraction?: () => void;
   onSelectEvent?: (eventId: string, pitchIndex?: number | null) => void;
+  onRangeEventPick?: (eventId: string) => void;
   onDeleteEvent?: (eventId: string, pitchIndex?: number | null) => void;
   onMeasureContextMenu?: (
     staffId: StaffId,
@@ -81,6 +82,7 @@ export interface StaffRendererProps {
   selectedMeasure?: { staffId: StaffId; measureIndex: number } | null;
   activeEventId?: string | null;
   activeEventIds?: readonly string[];
+  rangeEventIds?: readonly string[];
   practiceFeedbackByEventId?: Readonly<Record<string, PracticeFeedbackStatus>>;
   playbackBeat?: number | null;
   placementMode?: PlacementMode;

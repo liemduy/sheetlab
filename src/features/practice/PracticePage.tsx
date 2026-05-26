@@ -33,7 +33,6 @@ import {
   buildPracticeTargets,
   formatPracticeTargetVoiceLabel,
   getNextUnfinishedTargetIndex,
-  getPracticeTargetAtSeconds,
   type PracticeHandMode,
   type PracticeTarget,
 } from './practiceTimeline';
@@ -63,17 +62,21 @@ import {
   getPracticeTargetExpressionLabels,
 } from './practiceExpressions';
 import { buildPracticeReviewSummary } from './practiceReview';
+import {
+  canTransitionPracticeSession,
+  getPracticeSessionStatusLabel,
+  type PracticeSessionStatus,
+} from './practiceSession';
+import {
+  findPracticeTargetInDynamicWindow,
+  getPracticeTimingToleranceMs,
+  PRACTICE_TIMING_TOLERANCE_MS,
+  type PracticeTimingLevel,
+} from './practiceTiming';
 import { useMidiInputs } from './useMidiInputs';
 
 type PracticeMode = 'listen' | 'wait' | 'rhythm';
 type PracticeReferenceMute = 'left' | 'none' | 'right';
-type PracticeTimingLevel = 'beginner' | 'normal' | 'strict';
-
-const PRACTICE_TIMING_TOLERANCE_MS = {
-  beginner: 280,
-  normal: 180,
-  strict: 90,
-} satisfies Record<PracticeTimingLevel, number>;
 const RHYTHM_MISS_GRACE_SECONDS = 0.36;
 const PAGE_OBSERVER_DELAY_MS = 160;
 
@@ -110,6 +113,38 @@ function getCorrectTargetIds(results: ReadonlyMap<string, PracticeResult>) {
   });
 
   return targetIds;
+}
+
+function getTargetByEventId(
+  targets: readonly PracticeTarget[],
+  eventId: string,
+) {
+  return targets.find((target) => target.eventIds.includes(eventId)) ?? null;
+}
+
+function getTargetSliceByEventRange(
+  targets: readonly PracticeTarget[],
+  range: { startEventId: string; endEventId: string } | null,
+) {
+  if (!range) {
+    return targets;
+  }
+
+  const startIndex = targets.findIndex((target) =>
+    target.eventIds.includes(range.startEventId),
+  );
+  const endIndex = targets.findIndex((target) =>
+    target.eventIds.includes(range.endEventId),
+  );
+
+  if (startIndex < 0 || endIndex < 0) {
+    return targets;
+  }
+
+  const fromIndex = Math.min(startIndex, endIndex);
+  const toIndex = Math.max(startIndex, endIndex);
+
+  return targets.slice(fromIndex, toIndex + 1);
 }
 
 function getTargetLabel(target: PracticeTarget | null) {
@@ -188,8 +223,12 @@ function getPedalResultLabel(result: PracticePedalResult) {
   return `${action} ${Math.abs(result.deltaMs ?? 0)}ms ${result.status}`;
 }
 
-function createPerformanceClockController(delaySeconds = 0): PlaybackController {
-  const startedAtMs = performance.now() + delaySeconds * 1000;
+function createPerformanceClockController(
+  delaySeconds = 0,
+  startOffsetSeconds = 0,
+): PlaybackController {
+  const startedAtMs =
+    performance.now() + delaySeconds * 1000 - startOffsetSeconds * 1000;
 
   return {
     audioStarted: false,
@@ -203,8 +242,10 @@ interface PracticeSheetProps {
   activeEventIds: readonly string[];
   currentMeasureIndex: number | null;
   fingeringHints: readonly FingeringHint[];
+  onRangeEventPick?: (eventId: string) => void;
   playbackBeat: number | null;
   practiceFeedbackByEventId: Readonly<Record<string, PracticeFeedbackStatus>>;
+  rangeEventIds: readonly string[];
   score: Score;
   showFingeringHints: boolean;
 }
@@ -213,8 +254,10 @@ function PracticeSheet({
   activeEventIds,
   currentMeasureIndex,
   fingeringHints,
+  onRangeEventPick,
   playbackBeat,
   practiceFeedbackByEventId,
+  rangeEventIds,
   score,
   showFingeringHints,
 }: PracticeSheetProps) {
@@ -408,9 +451,11 @@ function PracticeSheet({
                     activeEventIds={activeEventIds}
                     fingeringHints={fingeringHints}
                     isInputArmed={false}
+                    onRangeEventPick={onRangeEventPick}
                     pageViewport={pageViewport}
                     playbackBeat={isCurrentPage ? playbackBeat : null}
                     practiceFeedbackByEventId={practiceFeedbackByEventId}
+                    rangeEventIds={rangeEventIds}
                     score={score}
                     showFingeringHints={showFingeringHints}
                   />
@@ -457,6 +502,13 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
     useState<PracticeReferenceMute>('none');
   const [timingLevel, setTimingLevel] =
     useState<PracticeTimingLevel>('normal');
+  const [sessionStatus, setSessionStatus] =
+    useState<PracticeSessionStatus>('idle');
+  const [rangeAnchorEventId, setRangeAnchorEventId] = useState<string | null>(null);
+  const [directRange, setDirectRange] = useState<{
+    startEventId: string;
+    endEventId: string;
+  } | null>(null);
   const [isGuidePlaying, setIsGuidePlaying] = useState(false);
   const [isPracticing, setIsPracticing] = useState(false);
   const [currentTargetIndex, setCurrentTargetIndex] = useState(0);
@@ -491,9 +543,14 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
   const rhythmStartedAtRef = useRef(0);
   const latencyOffsetMsRef = useRef(latencyOffsetMs);
   const timingLevelRef = useRef(timingLevel);
+  const sessionStatusRef = useRef(sessionStatus);
   const normalizedMeasureStart = Math.min(measureStart, measureEnd) - 1;
   const normalizedMeasureEnd = Math.max(measureStart, measureEnd) - 1;
-  const rawTargets = useMemo(
+  const rangeSelectableTargets = useMemo(
+    () => buildPracticeTargets(score, { handMode }),
+    [handMode, score],
+  );
+  const measureFilteredRawTargets = useMemo(
     () =>
       buildPracticeTargets(score, {
         handMode,
@@ -501,6 +558,10 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
         measureStart: normalizedMeasureStart,
       }),
     [handMode, normalizedMeasureEnd, normalizedMeasureStart, score],
+  );
+  const rawTargets = useMemo(
+    () => getTargetSliceByEventRange(measureFilteredRawTargets, directRange),
+    [directRange, measureFilteredRawTargets],
   );
   const practiceStartSeconds = rawTargets[0]?.startSeconds ?? 0;
   const targets = useMemo(
@@ -565,6 +626,8 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
         pedalTargets: mode === 'rhythm' ? pedalTargets : [],
         results,
         targets,
+        getTimingToleranceMs: (target) =>
+          getPracticeTimingToleranceMs(timingLevel, target, targets),
         timingToleranceMs: PRACTICE_TIMING_TOLERANCE_MS[timingLevel],
       }),
     [mode, pedalResults, pedalTargets, results, targets, timingLevel],
@@ -606,6 +669,18 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
       rawElapsedSeconds - latencyOffsetMsRef.current / 1000,
     [],
   );
+
+  const updateSessionStatus = useCallback((nextStatus: PracticeSessionStatus) => {
+    setSessionStatus((currentStatus) => {
+      if (!canTransitionPracticeSession(currentStatus, nextStatus)) {
+        sessionStatusRef.current = nextStatus;
+        return nextStatus;
+      }
+
+      sessionStatusRef.current = nextStatus;
+      return nextStatus;
+    });
+  }, []);
 
   function clearPendingMidiEvaluation() {
     if (pendingMidiEvaluationTimerRef.current !== null) {
@@ -672,7 +747,15 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
   }, []);
 
   const startGuidePlayback = useCallback(
-    async ({ forPractice }: { forPractice: boolean }) => {
+    async ({
+      forPractice,
+      skipCountIn = false,
+      startOffsetSeconds = 0,
+    }: {
+      forPractice: boolean;
+      skipCountIn?: boolean;
+      startOffsetSeconds?: number;
+    }) => {
       stopGuidePlayback(false);
 
       const hasAudibleGuide = isReferenceEnabled || isMetronomeEnabled;
@@ -687,15 +770,16 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
         return false;
       }
 
-      const delaySeconds = isMetronomeEnabled
+      const safeStartOffsetSeconds = Math.max(0, startOffsetSeconds);
+      const delaySeconds = isMetronomeEnabled && !skipCountIn
         ? countInBeats * secondsPerBeat
         : 0;
       const runId = guideRunIdRef.current + 1;
 
       guideRunIdRef.current = runId;
       hasGuideLeftCountInRef.current = delaySeconds <= 0;
-      elapsedSecondsRef.current = -delaySeconds;
-      setElapsedSeconds(-delaySeconds);
+      elapsedSecondsRef.current = safeStartOffsetSeconds - delaySeconds;
+      setElapsedSeconds(safeStartOffsetSeconds - delaySeconds);
       isGuidePlayingRef.current = true;
       setIsGuidePlaying(true);
 
@@ -711,9 +795,9 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
                 }
               : undefined,
             staffIds: getReferenceStaffIds(referenceMute),
-            startSeconds: practiceStartSeconds,
+            startSeconds: practiceStartSeconds + safeStartOffsetSeconds,
           })
-        : createPerformanceClockController(delaySeconds);
+        : createPerformanceClockController(delaySeconds, safeStartOffsetSeconds);
 
       if (guideRunIdRef.current !== runId) {
         controller.stop();
@@ -725,7 +809,11 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
         delaySeconds > 0
           ? `Count-in ${countInBeats} beats`
           : forPractice
-            ? getTargetLabel(targetsRef.current[0] ?? null)
+            ? getTargetLabel(
+                targetsRef.current.find(
+                  (target) => target.startSeconds >= safeStartOffsetSeconds,
+                ) ?? targetsRef.current[0] ?? null,
+              )
             : 'Reference playing',
       );
 
@@ -747,18 +835,22 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
     ],
   );
 
-  const resetPracticeRound = useCallback((message: string) => {
-    clearPendingMidiEvaluation();
-    clearResults();
-    clearPedalResults();
-    elapsedSecondsRef.current = 0;
-    currentTargetIndexRef.current = targetsRef.current.length > 0 ? 0 : -1;
-    rhythmStartedAtRef.current = performance.now();
-    setElapsedSeconds(0);
-    setCurrentTargetIndex(targetsRef.current.length > 0 ? 0 : -1);
-    setIsReviewOpen(false);
-    setPracticeMessage(message);
-  }, [clearPedalResults, clearResults]);
+  const resetPracticeRound = useCallback(
+    (message: string, nextStatus: PracticeSessionStatus = 'running') => {
+      clearPendingMidiEvaluation();
+      clearResults();
+      clearPedalResults();
+      elapsedSecondsRef.current = 0;
+      currentTargetIndexRef.current = targetsRef.current.length > 0 ? 0 : -1;
+      rhythmStartedAtRef.current = performance.now();
+      setElapsedSeconds(0);
+      setCurrentTargetIndex(targetsRef.current.length > 0 ? 0 : -1);
+      setIsReviewOpen(false);
+      updateSessionStatus(nextStatus);
+      setPracticeMessage(message);
+    },
+    [clearPedalResults, clearResults, updateSessionStatus],
+  );
 
   const completePracticeRound = useCallback(
     (message: string) => {
@@ -772,10 +864,11 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
       setIsPracticing(false);
       setCompletedAttempts((count) => count + 1);
       setIsReviewOpen(true);
+      updateSessionStatus('review');
       setPracticeMessage(message);
       return false;
     },
-    [resetPracticeRound, stopGuidePlayback],
+    [resetPracticeRound, stopGuidePlayback, updateSessionStatus],
   );
 
   const advanceWaitTarget = useCallback(
@@ -839,9 +932,10 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
     const scoringElapsedSeconds =
       bufferedRhythmElapsedSeconds ??
       getCalibratedElapsedSeconds(elapsedSecondsRef.current);
-    const rhythmTarget = getPracticeTargetAtSeconds(
+    const rhythmTarget = findPracticeTargetInDynamicWindow(
       targetsRef.current,
       scoringElapsedSeconds,
+      timingLevelRef.current,
     );
 
     if (!rhythmTarget) {
@@ -854,7 +948,11 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
       playedNotes,
       {
         elapsedSeconds: scoringElapsedSeconds,
-        timingToleranceMs: PRACTICE_TIMING_TOLERANCE_MS[timingLevelRef.current],
+        timingToleranceMs: getPracticeTimingToleranceMs(
+          timingLevelRef.current,
+          rhythmTarget,
+          targetsRef.current,
+        ),
       },
     );
 
@@ -1034,6 +1132,19 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
       : isGuidePlaying && !isPracticing
         ? activeGuideEventIds
         : activePracticeEventIds;
+  const rangeEventIds = useMemo(
+    () =>
+      directRange
+        ? rawTargets.flatMap((target) => target.eventIds)
+        : rangeAnchorEventId
+          ? [rangeAnchorEventId]
+          : [],
+    [directRange, rangeAnchorEventId, rawTargets],
+  );
+  const visibleActiveEventIds = useMemo(
+    () => [...new Set([...activeEventIds, ...rangeEventIds])],
+    [activeEventIds, rangeEventIds],
+  );
 
   useEffect(() => {
     activeMidiNotesRef.current = activeMidiNotes;
@@ -1072,6 +1183,10 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
   }, [timingLevel]);
 
   useEffect(() => {
+    sessionStatusRef.current = sessionStatus;
+  }, [sessionStatus]);
+
+  useEffect(() => {
     pedalTargetsRef.current = pedalTargets;
   }, [pedalTargets]);
 
@@ -1088,8 +1203,9 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
     setIsPracticing(false);
     stopGuidePlayback(true);
     isPracticingRef.current = false;
+    updateSessionStatus('idle');
     setPracticeMessage(targets.length > 0 ? getTargetLabel(targets[0]) : 'No playable notes');
-  }, [stopGuidePlayback, targets]);
+  }, [stopGuidePlayback, targets, updateSessionStatus]);
 
   useEffect(() => {
     setMeasureStart((current) => clampNumber(current, 1, measureCount));
@@ -1156,13 +1272,13 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
       const nextElapsedSeconds = guideControllerRef.current?.getElapsedSeconds?.()
         ?? (performance.now() - rhythmStartedAtRef.current) / 1000;
       const targetsSnapshot = targetsRef.current;
-      const currentRhythmTarget = getPracticeTargetAtSeconds(
-        targetsSnapshot,
-        nextElapsedSeconds,
-        0.5,
-      );
       const scoringElapsedSeconds =
         getCalibratedElapsedSeconds(nextElapsedSeconds);
+      const currentRhythmTarget = findPracticeTargetInDynamicWindow(
+        targetsSnapshot,
+        scoringElapsedSeconds,
+        timingLevelRef.current,
+      );
 
       elapsedSecondsRef.current = nextElapsedSeconds;
       setElapsedSeconds(nextElapsedSeconds);
@@ -1177,6 +1293,7 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
 
       if (!hasGuideLeftCountInRef.current) {
         hasGuideLeftCountInRef.current = true;
+        updateSessionStatus(isPracticingRef.current ? 'running' : 'idle');
         setPracticeMessage(
           isPracticingRef.current
             ? getTargetLabel(targetsSnapshot[currentTargetIndexRef.current] ?? null)
@@ -1235,6 +1352,7 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
     practiceDurationSeconds,
     startGuidePlayback,
     stopGuidePlayback,
+    updateSessionStatus,
   ]);
 
   function handleModeChange(nextMode: PracticeMode) {
@@ -1244,12 +1362,14 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
     isPracticingRef.current = false;
     setIsGuidePlaying(false);
     isGuidePlayingRef.current = false;
+    updateSessionStatus('idle');
     setPracticeMessage(nextMode === 'listen' ? 'Listening' : getTargetLabel(currentTarget));
   }
 
   async function handleReferenceToggle() {
     if (isGuidePlaying && !isPracticing) {
       stopGuidePlayback(true);
+      updateSessionStatus('idle');
       setPracticeMessage('Reference stopped');
       return;
     }
@@ -1264,6 +1384,7 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
       stopGuidePlayback(false);
       isPracticingRef.current = false;
       setIsPracticing(false);
+      updateSessionStatus('paused');
       setPracticeMessage('Paused');
       return;
     }
@@ -1273,7 +1394,12 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
       return;
     }
 
-    resetPracticeRound(getTargetLabel(targets[0] ?? null));
+    resetPracticeRound(
+      getTargetLabel(targets[0] ?? null),
+      mode === 'rhythm' && isMetronomeEnabled && countInBeats > 0
+        ? 'countin'
+        : 'running',
+    );
     await warmUpPlaybackAudio();
     isPracticingRef.current = true;
     rhythmStartedAtRef.current = performance.now();
@@ -1285,6 +1411,7 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
       if (!started) {
         isPracticingRef.current = false;
         setIsPracticing(false);
+        updateSessionStatus('idle');
       }
     }
   }
@@ -1294,6 +1421,8 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
 
     setMeasureStart(nextMeasureStart);
     setMeasureEnd((current) => Math.max(current, nextMeasureStart));
+    setRangeAnchorEventId(null);
+    setDirectRange(null);
   }
 
   function handleMeasureEndChange(value: string) {
@@ -1301,6 +1430,8 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
 
     setMeasureEnd(nextMeasureEnd);
     setMeasureStart((current) => Math.min(current, nextMeasureEnd));
+    setRangeAnchorEventId(null);
+    setDirectRange(null);
   }
 
   function handleLatencyOffsetChange(value: string) {
@@ -1314,6 +1445,68 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
     setLatencyOffsetMs(clampNumber(Math.round(nextOffset), -250, 250));
   }
 
+  const handleRangeEventPick = useCallback(
+    (eventId: string) => {
+      const pickedTarget = getTargetByEventId(rangeSelectableTargets, eventId);
+
+      if (!pickedTarget) {
+        setPracticeMessage('Range target unavailable');
+        return;
+      }
+
+      if (!rangeAnchorEventId) {
+        setDirectRange(null);
+        setRangeAnchorEventId(eventId);
+        setPracticeMessage(`Range start M${pickedTarget.measureIndex + 1}`);
+        return;
+      }
+
+      const anchorTarget = getTargetByEventId(
+        rangeSelectableTargets,
+        rangeAnchorEventId,
+      );
+
+      if (!anchorTarget) {
+        setRangeAnchorEventId(eventId);
+        setPracticeMessage(`Range start M${pickedTarget.measureIndex + 1}`);
+        return;
+      }
+
+      const measureStartIndex = Math.min(
+        anchorTarget.measureIndex,
+        pickedTarget.measureIndex,
+      );
+      const measureEndIndex = Math.max(
+        anchorTarget.measureIndex,
+        pickedTarget.measureIndex,
+      );
+
+      clearPendingMidiEvaluation();
+      stopGuidePlayback(true);
+      isPracticingRef.current = false;
+      setIsPracticing(false);
+      setMeasureStart(measureStartIndex + 1);
+      setMeasureEnd(measureEndIndex + 1);
+      setIsLooping(true);
+      setDirectRange({
+        startEventId: rangeAnchorEventId,
+        endEventId: eventId,
+      });
+      setRangeAnchorEventId(null);
+      setIsReviewOpen(false);
+      updateSessionStatus('idle');
+      setPracticeMessage(
+        `Range M${measureStartIndex + 1}-M${measureEndIndex + 1} selected`,
+      );
+    },
+    [
+      rangeAnchorEventId,
+      rangeSelectableTargets,
+      stopGuidePlayback,
+      updateSessionStatus,
+    ],
+  );
+
   function handleRetryMeasure(measureIndex: number) {
     const measureNumber = clampNumber(measureIndex + 1, 1, measureCount);
 
@@ -1324,8 +1517,104 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
     setIsPracticing(false);
     isPracticingRef.current = false;
     setIsReviewOpen(false);
+    setRangeAnchorEventId(null);
+    setDirectRange(null);
+    updateSessionStatus('idle');
     setPracticeMessage(`Retry M${measureNumber}`);
   }
+
+  const restartCurrentMeasure = useCallback(() => {
+    const activeTarget =
+      targetsRef.current[currentTargetIndexRef.current] ?? targetsRef.current[0];
+    const measureIndex = activeTarget?.measureIndex ?? normalizedMeasureStart;
+    const firstTargetIndex = targetsRef.current.findIndex(
+      (target) => target.measureIndex === measureIndex,
+    );
+
+    if (firstTargetIndex < 0) {
+      setPracticeMessage('No playable notes in this measure');
+      return;
+    }
+
+    const restartTarget = targetsRef.current[firstTargetIndex];
+    const measureTargetIds = new Set(
+      targetsRef.current
+        .filter((target) => target.measureIndex === measureIndex)
+        .map((target) => target.id),
+    );
+    const measurePedalTargetIds = new Set(
+      pedalTargetsRef.current
+        .filter((target) => target.measureIndex === measureIndex)
+        .map((target) => target.id),
+    );
+    const nextResults = new Map(
+      [...resultsRef.current].filter(([targetId]) => !measureTargetIds.has(targetId)),
+    );
+    const nextPedalResults = new Map(
+      [...pedalResultsRef.current].filter(
+        ([targetId]) => !measurePedalTargetIds.has(targetId),
+      ),
+    );
+
+    clearPendingMidiEvaluation();
+    resultsRef.current = nextResults;
+    pedalResultsRef.current = nextPedalResults;
+    setResults(nextResults);
+    setPedalResults(nextPedalResults);
+    currentTargetIndexRef.current = firstTargetIndex;
+    elapsedSecondsRef.current = restartTarget.startSeconds;
+    rhythmStartedAtRef.current =
+      performance.now() - restartTarget.startSeconds * 1000;
+    setCurrentTargetIndex(firstTargetIndex);
+    setElapsedSeconds(restartTarget.startSeconds);
+    setIsReviewOpen(false);
+
+    if (modeRef.current === 'rhythm' && isPracticingRef.current) {
+      stopGuidePlayback(false);
+      updateSessionStatus('running');
+      void startGuidePlayback({
+        forPractice: true,
+        skipCountIn: true,
+        startOffsetSeconds: restartTarget.startSeconds,
+      });
+    } else if (isPracticingRef.current) {
+      updateSessionStatus('running');
+    } else {
+      updateSessionStatus('idle');
+    }
+
+    setPracticeMessage(`Restart M${measureIndex + 1}`);
+  }, [
+    normalizedMeasureStart,
+    startGuidePlayback,
+    stopGuidePlayback,
+    updateSessionStatus,
+  ]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName.toLowerCase();
+
+      if (
+        event.key.toLowerCase() !== 'r' ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        tagName === 'input' ||
+        tagName === 'select' ||
+        tagName === 'textarea'
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      restartCurrentMeasure();
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [restartCurrentMeasure]);
 
   const midiStatusLabel = getMidiConnectionStatusLabel(status);
   const activeNotesLabel =
@@ -1419,6 +1708,10 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
               <strong>{accuracyPercent}%</strong>
             </div>
             <div>
+              <span>Session</span>
+              <strong>{getPracticeSessionStatusLabel(sessionStatus)}</strong>
+            </div>
+            <div>
               <span>Pedal</span>
               <strong>
                 {pedalSummary.correct}/{pedalTargets.length}
@@ -1472,7 +1765,11 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
                     key={nextHandMode}
                     type="button"
                     className={handMode === nextHandMode ? 'is-active' : ''}
-                    onClick={() => setHandMode(nextHandMode)}
+                    onClick={() => {
+                      setHandMode(nextHandMode);
+                      setRangeAnchorEventId(null);
+                      setDirectRange(null);
+                    }}
                   >
                     {nextHandMode}
                   </button>
@@ -1590,6 +1887,24 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
                 onChange={(event) => handleMeasureEndChange(event.target.value)}
               />
             </label>
+          </div>
+
+          <div className="practice-inline-actions">
+            <button
+              type="button"
+              className="tool-button"
+              data-testid="practice-restart-measure"
+              onClick={restartCurrentMeasure}
+            >
+              Restart M
+            </button>
+            <span>
+              {rangeAnchorEventId
+                ? 'Ctrl/Cmd-click an end note'
+                : directRange
+                  ? 'Direct range active'
+                  : 'Ctrl/Cmd-click notes to set range'}
+            </span>
           </div>
 
           <label className="practice-check-row">
@@ -1738,6 +2053,30 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
                     {reviewSummary.completionPercent}%
                   </strong>
                 </div>
+                <div>
+                  <span>Median</span>
+                  <strong>
+                    {reviewSummary.medianTimingDeltaMs === null
+                      ? 'n/a'
+                      : `${reviewSummary.medianTimingDeltaMs}ms`}
+                  </strong>
+                </div>
+                <div>
+                  <span>Bias</span>
+                  <strong>
+                    {reviewSummary.meanTimingBiasMs === null
+                      ? 'n/a'
+                      : `${reviewSummary.meanTimingBiasMs}ms`}
+                  </strong>
+                </div>
+                <div>
+                  <span>Early</span>
+                  <strong>{reviewSummary.earlyCount}</strong>
+                </div>
+                <div>
+                  <span>Late</span>
+                  <strong>{reviewSummary.lateCount}</strong>
+                </div>
               </div>
               <ol className="practice-review-list">
                 {reviewSummary.measureSummaries.length > 0 ? (
@@ -1763,11 +2102,13 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
         </aside>
 
         <PracticeSheet
-          activeEventIds={activeEventIds}
+          activeEventIds={visibleActiveEventIds}
           currentMeasureIndex={currentMeasureIndex}
           fingeringHints={fingeringHints}
+          onRangeEventPick={handleRangeEventPick}
           playbackBeat={practicePlaybackBeat}
           practiceFeedbackByEventId={practiceFeedbackByEventId}
+          rangeEventIds={rangeEventIds}
           score={score}
           showFingeringHints={showFingeringHints}
         />

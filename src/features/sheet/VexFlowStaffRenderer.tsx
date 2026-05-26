@@ -753,6 +753,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
       <NotationOverlay
         activeEventId={props.activeEventId}
         activeEventIds={props.activeEventIds}
+        rangeEventIds={props.rangeEventIds}
         clefChange={props.clefChange}
         duration={props.duration ?? 'quarter'}
         dots={props.dots ?? 0}
@@ -778,6 +779,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         onPlaceAtPosition={props.onPlaceAtPosition}
         onSelectMeasure={props.onSelectMeasure}
         onSelectEvent={props.onSelectEvent}
+        onRangeEventPick={props.onRangeEventPick}
         onSelectClefChange={props.onSelectClefChange}
         playbackBeat={props.playbackBeat}
         pageViewport={props.pageViewport}

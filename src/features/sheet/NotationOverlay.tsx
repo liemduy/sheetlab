@@ -92,6 +92,7 @@ import type {
 interface NotationOverlayProps {
   activeEventId?: string | null;
   activeEventIds?: readonly string[];
+  rangeEventIds?: readonly string[];
   clefChange?: Clef | null;
   dots: number;
   duration: DurationValue;
@@ -108,6 +109,7 @@ interface NotationOverlayProps {
   onHoverPositionChange?: (position: MusicPosition | null) => void;
   onPlaceAtPosition?: (position: MusicPosition) => void;
   onSelectEvent?: (eventId: string, pitchIndex?: number | null) => void;
+  onRangeEventPick?: (eventId: string) => void;
   onDeleteEvent?: (eventId: string, pitchIndex?: number | null) => void;
   onMeasureContextMenu?: (
     staffId: StaffId,
@@ -177,6 +179,7 @@ const KEY_SIGNATURE_SYMBOL_DISPLAY_TEXT = {
 export function NotationOverlay({
   activeEventId,
   activeEventIds = [],
+  rangeEventIds = [],
   annotationLayouts = [],
   clefChange = null,
   dots,
@@ -201,6 +204,7 @@ export function NotationOverlay({
   onMeasureContextMenu,
   onSelectMeasure,
   onSelectEvent,
+  onRangeEventPick,
   onSelectClefChange,
   pageViewport,
   playbackBeat,
@@ -289,6 +293,7 @@ export function NotationOverlay({
   const invalidMeasureKeySet = new Set(invalidMeasureKeys);
   const activeEventIdSet = new Set([
     ...activeEventIds,
+    ...rangeEventIds,
     ...(activeEventId ? [activeEventId] : []),
   ]);
   const ariaLabel =
@@ -1059,6 +1064,7 @@ export function NotationOverlay({
                       startSvgY: startPoint.y,
                     });
                   }}
+                  onRangeEventPick={onRangeEventPick}
                   onSelectEvent={onSelectEvent}
                   placementMode={placementMode}
                   selectedEventId={selectedEventId}
