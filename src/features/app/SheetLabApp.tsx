@@ -1190,6 +1190,17 @@ function SheetLabApp() {
     },
     {
       group: 'View',
+      id: 'toggle-measure-numbers',
+      label: toolState.showMeasureNumbers
+        ? 'Hide measure numbers'
+        : 'Show measure numbers',
+      run: () =>
+        updateToolState({
+          showMeasureNumbers: !toolState.showMeasureNumbers,
+        }),
+    },
+    {
+      group: 'View',
       id: 'toggle-layout-zones',
       label: toolState.showLayoutZones ? 'Hide layout zones' : 'Show layout zones',
       run: () => updateToolState({ showLayoutZones: !toolState.showLayoutZones }),
@@ -1272,6 +1283,10 @@ function SheetLabApp() {
       >
         <PracticePage
           score={score}
+          showMeasureNumbers={toolState.showMeasureNumbers}
+          onMeasureNumbersToggle={(showMeasureNumbers) =>
+            updateToolState({ showMeasureNumbers })
+          }
           onBackToEditor={() => {
             setAppMode('editor');
             setEditorMessage('Editor mode');
@@ -1349,6 +1364,9 @@ function SheetLabApp() {
           onLoadAutosave={handleLoadAutosave}
           onProjectLibraryLoad={handleLoadProjectFromLibrary}
           onLyricMapToggle={(showLyricMap) => updateToolState({ showLyricMap })}
+          onMeasureNumbersToggle={(showMeasureNumbers) =>
+            updateToolState({ showMeasureNumbers })
+          }
           onOpenPaletteChange={setOpenPalette}
           onPlacementModeChange={handlePlacementModeChange}
           onPlaybackToggle={handlePlaybackToggle}

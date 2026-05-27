@@ -792,6 +792,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         selectedPitchIndex={props.selectedPitchIndex}
         showLayoutZones={props.showLayoutZones ?? false}
         showLyricMap={props.showLyricMap ?? false}
+        showMeasureNumbers={props.showMeasureNumbers ?? false}
         svgHeight={pageHeight}
         svgWidth={width}
         voiceIndex={props.voiceIndex}

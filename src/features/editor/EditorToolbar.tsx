@@ -260,6 +260,7 @@ interface EditorToolbarProps {
   onLoadProject: () => void;
   onLoadAutosave: () => void;
   onLyricMapToggle: (show: boolean) => void;
+  onMeasureNumbersToggle: (show: boolean) => void;
   onOpenPaletteChange: (palette: ToolbarPalette) => void;
   onPlacementModeChange: (placementMode: PlacementMode) => void;
   onPlaybackToggle: () => void | Promise<void>;
@@ -325,6 +326,7 @@ export function EditorToolbar({
   onLoadProject,
   onLoadAutosave,
   onLyricMapToggle,
+  onMeasureNumbersToggle,
   onOpenPaletteChange,
   onPlacementModeChange,
   onPlaybackToggle,
@@ -756,6 +758,21 @@ export function EditorToolbar({
             }
           />
           Fingers
+        </label>
+        <label
+          className="toolbar-check-row"
+          title="Show measure numbers at the start of each system"
+        >
+          <input
+            type="checkbox"
+            aria-label="Show measure numbers"
+            data-testid="editor-measure-numbers-toggle"
+            checked={toolState.showMeasureNumbers}
+            onChange={(event) =>
+              onMeasureNumbersToggle(event.target.checked)
+            }
+          />
+          Bar #
         </label>
         <button
           type="button"

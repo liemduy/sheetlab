@@ -248,6 +248,7 @@ interface PracticeSheetProps {
   rangeEventIds: readonly string[];
   score: Score;
   showFingeringHints: boolean;
+  showMeasureNumbers: boolean;
 }
 
 function PracticeSheet({
@@ -260,6 +261,7 @@ function PracticeSheet({
   rangeEventIds,
   score,
   showFingeringHints,
+  showMeasureNumbers,
 }: PracticeSheetProps) {
   const pageViewports = useMemo(() => getScorePageViewports(score), [score]);
   const [renderedPageIndexes, setRenderedPageIndexes] = useState<Set<number>>(
@@ -458,6 +460,7 @@ function PracticeSheet({
                     rangeEventIds={rangeEventIds}
                     score={score}
                     showFingeringHints={showFingeringHints}
+                    showMeasureNumbers={showMeasureNumbers}
                   />
                 ) : (
                   <div
@@ -484,10 +487,17 @@ function PracticeSheet({
 
 interface PracticePageProps {
   onBackToEditor: () => void;
+  onMeasureNumbersToggle?: (showMeasureNumbers: boolean) => void;
   score: Score;
+  showMeasureNumbers?: boolean;
 }
 
-export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
+export function PracticePage({
+  onBackToEditor,
+  onMeasureNumbersToggle,
+  score,
+  showMeasureNumbers = false,
+}: PracticePageProps) {
   const measureCount = useMemo(() => getPracticeMeasureCount(score), [score]);
   const [mode, setMode] = useState<PracticeMode>('wait');
   const [handMode, setHandMode] = useState<PracticeHandMode>('both');
@@ -1792,6 +1802,17 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
             <label className="practice-check-row">
               <input
                 type="checkbox"
+                data-testid="practice-measure-numbers-toggle"
+                checked={showMeasureNumbers}
+                onChange={(event) =>
+                  onMeasureNumbersToggle?.(event.target.checked)
+                }
+              />
+              Bar numbers
+            </label>
+            <label className="practice-check-row">
+              <input
+                type="checkbox"
                 data-testid="practice-reference-enabled"
                 checked={isReferenceEnabled}
                 onChange={(event) => setIsReferenceEnabled(event.target.checked)}
@@ -2111,6 +2132,7 @@ export function PracticePage({ onBackToEditor, score }: PracticePageProps) {
           rangeEventIds={rangeEventIds}
           score={score}
           showFingeringHints={showFingeringHints}
+          showMeasureNumbers={showMeasureNumbers}
         />
       </section>
     </main>

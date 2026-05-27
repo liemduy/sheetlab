@@ -500,6 +500,7 @@ export function SheetSurface({
                     showLayoutZones={toolState.showLayoutZones}
                     showFingeringHints={toolState.showFingeringHints}
                     showLyricMap={toolState.showLyricMap}
+                    showMeasureNumbers={toolState.showMeasureNumbers}
                     voiceIndex={toolState.voiceIndex}
                     onClearInteraction={onClearInteraction}
                     onAnnotationContextMenu={onAnnotationContextMenu}

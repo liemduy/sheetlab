@@ -94,6 +94,7 @@ export interface StaffRendererProps {
   showFingeringHints?: boolean;
   showLayoutZones?: boolean;
   showLyricMap?: boolean;
+  showMeasureNumbers?: boolean;
   voiceIndex?: number;
 }
 

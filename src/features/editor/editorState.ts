@@ -34,6 +34,7 @@ export interface EditorToolState {
   showFingeringHints: boolean;
   showLayoutZones: boolean;
   showLyricMap: boolean;
+  showMeasureNumbers: boolean;
   clefChange: Clef | null;
   tuplet: TupletToolState | null;
 }
@@ -62,6 +63,7 @@ export const DEFAULT_EDITOR_TOOL_STATE: EditorToolState = {
   showFingeringHints: true,
   showLayoutZones: false,
   showLyricMap: false,
+  showMeasureNumbers: false,
   clefChange: null,
   tuplet: null,
 };

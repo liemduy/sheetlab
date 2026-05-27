@@ -2511,6 +2511,22 @@ describe('StaffRenderer', () => {
     expect(Number(belowZone?.getAttribute('y'))).toBeCloseTo(voiceBottom, 1);
   });
 
+  it('shows measure numbers at the start of each system when enabled', async () => {
+    const score = createEmptyScore('treble', {
+      measureCount: MEASURES_PER_SYSTEM + 1,
+    });
+    const { rerender } = render(<StaffRenderer score={score} />);
+
+    expect(screen.queryByTestId('measure-number')).not.toBeInTheDocument();
+
+    rerender(<StaffRenderer score={score} showMeasureNumbers />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('measure-number').map((node) => node.textContent))
+        .toEqual(['1', String(MEASURES_PER_SYSTEM + 1)]);
+    });
+  });
+
   it('includes clef ink in empty voice zone debugging', () => {
     const score = createEmptyScore('grand');
     const trebleStaffTop = getScoreStaffTop(score, 0, 0);
