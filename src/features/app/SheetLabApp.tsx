@@ -57,6 +57,9 @@ import {
   type ToolbarPalette,
 } from '../editor/EditorToolbar';
 import { ScoreSettingsPanel } from '../editor/ScoreSettingsPanel';
+import { AuthControls } from '../auth/AuthControls';
+import { AuthModal } from '../auth/AuthModal';
+import { useAuthSession } from '../auth/useAuthSession';
 import type { Clef, OttavaKind, Score, StaffId } from '../../domain/score/types';
 import {
   SUPPORTED_TUPLET_ACTUAL_NOTES,
@@ -90,6 +93,7 @@ import { useScoreHistory } from './useScoreHistory';
 import { useUndoRedoControls } from './useUndoRedoControls';
 import { useAnnotationCommands } from './useAnnotationCommands';
 import { useScoreCommands } from './useScoreCommands';
+import { useCloudScores } from '../cloud/useCloudScores';
 import type {
   AnnotationContextMenuState,
   AnnotationTarget,
@@ -282,6 +286,7 @@ function SheetLabApp() {
   });
   const [openPalette, setOpenPalette] = useState<ToolbarPalette>(null);
   const [appMode, setAppMode] = useState<'editor' | 'practice'>('editor');
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [annotationContextMenu, setAnnotationContextMenu] =
     useState<AnnotationContextMenuState | null>(null);
@@ -291,6 +296,7 @@ function SheetLabApp() {
   const referenceInputRef = useRef<HTMLInputElement | null>(null);
   const [referenceBackground, setReferenceBackground] =
     useState<ReferenceBackground | null>(null);
+  const authSession = useAuthSession();
   const { canvasZoom, handleCanvasZoomChange } =
     useCanvasZoom(notationViewportRef);
 
@@ -896,7 +902,7 @@ function SheetLabApp() {
     handleLoadAutosave,
     handleLoadProject,
     handleLoadProjectFromLibrary,
-    handleSaveProject,
+    handleSaveProject: handleSaveProjectLocally,
     importAbcInputRef,
     importExternalScoreInputRef,
     importInputRef,
@@ -905,6 +911,18 @@ function SheetLabApp() {
     onScoreLoaded: handleLoadedScoreFromFile,
     score,
     setEditorMessage,
+  });
+  const {
+    cloudScores,
+    cloudStatusLabel,
+    isLoadingCloudScores,
+    loadScoreFromCloud,
+    refreshCloudScores,
+    saveScoreToCloud,
+  } = useCloudScores({
+    onScoreLoaded: handleLoadedScoreFromFile,
+    setEditorMessage,
+    user: authSession.user,
   });
   const {
     activePlaybackEvent,
@@ -959,6 +977,11 @@ function SheetLabApp() {
     clearTransientInteraction();
     setAppMode('practice');
     setEditorMessage('Practice mode');
+  }
+
+  function handleSaveProject() {
+    handleSaveProjectLocally();
+    void saveScoreToCloud(score);
   }
 
   function handleDemoScoreLoad(fixtureId: string) {
@@ -1371,6 +1394,7 @@ function SheetLabApp() {
         }
       >
         <PracticePage
+          cloudUserId={authSession.user?.id ?? null}
           score={score}
           showMeasureNumbers={toolState.showMeasureNumbers}
           onMeasureNumbersToggle={(showMeasureNumbers) =>
@@ -1401,11 +1425,30 @@ function SheetLabApp() {
           </div>
         </div>
 
+        <AuthControls
+          cloudScores={cloudScores}
+          cloudStatusLabel={
+            authSession.status === 'loading' ? 'Checking cloud' : cloudStatusLabel
+          }
+          isConfigured={authSession.isConfigured}
+          isLoadingCloudScores={isLoadingCloudScores}
+          user={authSession.user}
+          onAuthOpen={() => setIsAuthModalOpen(true)}
+          onCloudScoreLoad={(cloudScoreId) => void loadScoreFromCloud(cloudScoreId)}
+          onCloudScoresRefresh={() => void refreshCloudScores()}
+          onSignOut={() => {
+            void authSession.signOut();
+            setEditorMessage('Signed out');
+          }}
+        />
+
         <EditorToolbar
           activeKeySignatureSelection={activeKeySignatureSelection}
           activeRepeatJump={activeRepeatJump}
           canvasZoom={canvasZoom}
-          cloudStatusLabel={CLOUD_SYNC_STATUS_LABEL}
+          cloudStatusLabel={
+            authSession.user ? cloudStatusLabel : CLOUD_SYNC_STATUS_LABEL
+          }
           futureScoreCount={futureScores.length}
           importAbcInputRef={importAbcInputRef}
           importExternalScoreInputRef={importExternalScoreInputRef}
@@ -1477,6 +1520,9 @@ function SheetLabApp() {
           referenceOpacity={Math.round((referenceBackground?.opacity ?? 0.28) * 100)}
         />
       </header>
+      {isAuthModalOpen ? (
+        <AuthModal onClose={() => setIsAuthModalOpen(false)} />
+      ) : null}
 
       <section className="workspace">
         <ScoreSettingsPanel

@@ -192,6 +192,105 @@ button {
   color: #ffffff;
 }
 
+.auth-controls {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  border: 1px solid rgb(36 31 26 / 10%);
+  border-radius: 999px;
+  padding: 0.25rem;
+  background: rgb(255 255 255 / 58%);
+}
+
+.auth-pill {
+  overflow: hidden;
+  max-width: 9rem;
+  padding-inline: 0.55rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.cloud-score-select {
+  min-height: 2.25rem;
+  max-width: 10rem;
+  border: 1px solid rgb(36 31 26 / 15%);
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  background: rgb(255 255 255 / 84%);
+  color: var(--ink);
+  font: 700 0.78rem ui-sans-serif, "Segoe UI", sans-serif;
+}
+
+.auth-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgb(18 22 24 / 32%);
+}
+
+.auth-modal {
+  display: grid;
+  gap: 1rem;
+  width: min(24rem, 100%);
+  border: 1px solid rgb(36 31 26 / 12%);
+  border-radius: 0.8rem;
+  padding: 1rem;
+  background: #ffffff;
+  box-shadow: var(--shadow);
+}
+
+.auth-modal-header,
+.auth-actions-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.auth-modal h2,
+.auth-message {
+  margin: 0;
+}
+
+.auth-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.auth-form label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.auth-form input {
+  min-height: 2.45rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  color: var(--ink);
+  font-size: 0.95rem;
+  text-transform: none;
+}
+
+.auth-message {
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
 .toolbar-select {
   min-height: 2.25rem;
   max-width: 12rem;
@@ -493,13 +592,19 @@ button {
 }
 
 .left-panel select,
-.left-panel input {
+.left-panel input,
+.left-panel textarea {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 0.45rem;
   padding: 0.65rem 0.7rem;
   background: var(--paper);
   color: var(--ink);
+}
+
+.left-panel textarea {
+  resize: vertical;
+  line-height: 1.35;
 }
 
 .annotation-editor {
@@ -2007,6 +2112,76 @@ button {
 .practice-kpi-grid strong {
   color: var(--ink);
   font-size: 1.1rem;
+}
+
+.practice-top-scores {
+  display: grid;
+  gap: 0.55rem;
+  border: 1px solid rgb(36 31 26 / 11%);
+  border-radius: 0.55rem;
+  padding: 0.65rem;
+  background: rgb(255 255 255 / 70%);
+}
+
+.practice-top-scores-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.practice-top-scores-header span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.practice-top-scores-header strong {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-align: right;
+}
+
+.practice-top-scores ol {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.practice-top-scores li {
+  display: grid;
+  grid-template-columns: 1.4rem 3rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2rem;
+}
+
+.practice-top-scores li > span {
+  display: grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  background: rgb(23 107 84 / 10%);
+  color: var(--accent-strong);
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.practice-top-scores li > strong {
+  color: var(--ink);
+}
+
+.practice-top-scores small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .practice-field {

@@ -73,6 +73,12 @@ import {
   PRACTICE_TIMING_TOLERANCE_MS,
   type PracticeTimingLevel,
 } from './practiceTiming';
+import {
+  getPracticeScorePercent,
+  listTopPracticeScores,
+  savePracticeAttempt,
+  type PracticeTopScore,
+} from '../cloud/practiceScoreRepository';
 import { useMidiInputs } from './useMidiInputs';
 
 type PracticeMode = 'listen' | 'wait' | 'rhythm';
@@ -221,6 +227,19 @@ function getPedalResultLabel(result: PracticePedalResult) {
   }
 
   return `${action} ${Math.abs(result.deltaMs ?? 0)}ms ${result.status}`;
+}
+
+function formatTopScoreDate(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  return date.toLocaleDateString(undefined, {
+    day: '2-digit',
+    month: 'short',
+  });
 }
 
 function createPerformanceClockController(
@@ -486,6 +505,7 @@ function PracticeSheet({
 }
 
 interface PracticePageProps {
+  cloudUserId?: string | null;
   onBackToEditor: () => void;
   onMeasureNumbersToggle?: (showMeasureNumbers: boolean) => void;
   score: Score;
@@ -493,6 +513,7 @@ interface PracticePageProps {
 }
 
 export function PracticePage({
+  cloudUserId = null,
   onBackToEditor,
   onMeasureNumbersToggle,
   score,
@@ -534,6 +555,11 @@ export function PracticePage({
   const [completedAttempts, setCompletedAttempts] = useState(0);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [practiceMessage, setPracticeMessage] = useState('Ready');
+  const [practiceTopScores, setPracticeTopScores] = useState<PracticeTopScore[]>(
+    [],
+  );
+  const [practiceTopScoreStatus, setPracticeTopScoreStatus] =
+    useState('Sign in to save scores');
   const [latencyOffsetMs, setLatencyOffsetMs] = useState(0);
   const activeMidiNotesRef = useRef<number[]>([]);
   const currentTargetIndexRef = useRef(currentTargetIndex);
@@ -557,6 +583,7 @@ export function PracticePage({
   const latencyOffsetMsRef = useRef(latencyOffsetMs);
   const timingLevelRef = useRef(timingLevel);
   const sessionStatusRef = useRef(sessionStatus);
+  const savedPracticeAttemptKeyRef = useRef<string | null>(null);
   const normalizedMeasureStart = Math.min(measureStart, measureEnd) - 1;
   const normalizedMeasureEnd = Math.max(measureStart, measureEnd) - 1;
   const rangeSelectableTargets = useMemo(
@@ -644,6 +671,10 @@ export function PracticePage({
         timingToleranceMs: PRACTICE_TIMING_TOLERANCE_MS[timingLevel],
       }),
     [mode, pedalResults, pedalTargets, results, targets, timingLevel],
+  );
+  const reviewScorePercent = useMemo(
+    () => getPracticeScorePercent(reviewSummary),
+    [reviewSummary],
   );
   const expressionLabels = useMemo(
     () => getPracticeTargetExpressionLabels(score, currentTarget),
@@ -1254,6 +1285,99 @@ export function PracticePage({
   }, [sessionStatus]);
 
   useEffect(() => {
+    if (!cloudUserId) {
+      setPracticeTopScores([]);
+      setPracticeTopScoreStatus('Sign in to save scores');
+      return;
+    }
+
+    let active = true;
+
+    setPracticeTopScoreStatus('Loading top scores...');
+    listTopPracticeScores(score.id, cloudUserId)
+      .then((topScores) => {
+        if (!active) {
+          return;
+        }
+
+        setPracticeTopScores(topScores);
+        setPracticeTopScoreStatus(
+          topScores.length > 0 ? 'Top 5 loaded' : 'No saved attempts yet',
+        );
+      })
+      .catch(() => {
+        if (active) {
+          setPracticeTopScores([]);
+          setPracticeTopScoreStatus('Top scores unavailable');
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [cloudUserId, score.id]);
+
+  useEffect(() => {
+    if (
+      !cloudUserId ||
+      !isReviewOpen ||
+      completedAttempts <= 0 ||
+      reviewSummary.totalTargets === 0
+    ) {
+      return;
+    }
+
+    const attemptKey = [
+      score.id,
+      completedAttempts,
+      mode,
+      handMode,
+      measureStart,
+      measureEnd,
+      reviewScorePercent,
+      reviewSummary.resolvedTargets,
+    ].join(':');
+
+    if (savedPracticeAttemptKeyRef.current === attemptKey) {
+      return;
+    }
+
+    savedPracticeAttemptKeyRef.current = attemptKey;
+    setPracticeTopScoreStatus('Saving score...');
+    savePracticeAttempt({
+      durationSeconds: Math.max(0, elapsedSeconds),
+      handMode,
+      measureEnd: normalizedMeasureEnd + 1,
+      measureStart: normalizedMeasureStart + 1,
+      mode,
+      score,
+      summary: reviewSummary,
+      userId: cloudUserId,
+    })
+      .then((topScores) => {
+        setPracticeTopScores(topScores);
+        setPracticeTopScoreStatus('Score saved');
+      })
+      .catch(() => {
+        setPracticeTopScoreStatus('Score save failed');
+      });
+  }, [
+    cloudUserId,
+    completedAttempts,
+    elapsedSeconds,
+    handMode,
+    isReviewOpen,
+    measureEnd,
+    measureStart,
+    mode,
+    normalizedMeasureEnd,
+    normalizedMeasureStart,
+    reviewScorePercent,
+    reviewSummary,
+    score,
+  ]);
+
+  useEffect(() => {
     pedalTargetsRef.current = pedalTargets;
   }, [pedalTargets]);
 
@@ -1821,6 +1945,34 @@ export function PracticePage({
             </div>
           </div>
 
+          <section className="practice-top-scores" aria-label="Practice top scores">
+            <div className="practice-top-scores-header">
+              <span>Top 5</span>
+              <strong>{practiceTopScoreStatus}</strong>
+            </div>
+            <ol>
+              {practiceTopScores.length > 0 ? (
+                practiceTopScores.map((attempt, index) => (
+                  <li key={attempt.id}>
+                    <span>{index + 1}</span>
+                    <strong>{attempt.scorePercent}%</strong>
+                    <small>
+                      {attempt.mode} {attempt.handMode} M
+                      {attempt.rangeStartMeasure}-{attempt.rangeEndMeasure}{' '}
+                      {formatTopScoreDate(attempt.finishedAt)}
+                    </small>
+                  </li>
+                ))
+              ) : (
+                <li>
+                  <span>-</span>
+                  <strong>--</strong>
+                  <small>{practiceTopScoreStatus}</small>
+                </li>
+              )}
+            </ol>
+          </section>
+
           <label className="practice-field">
             Device
             <select
@@ -2140,6 +2292,10 @@ export function PracticePage({
             <section className="practice-review" aria-label="Practice review">
               <h2>Review</h2>
               <div className="practice-review-grid">
+                <div>
+                  <span>Score</span>
+                  <strong>{reviewScorePercent}%</strong>
+                </div>
                 <div>
                   <span>Notes</span>
                   <strong>{reviewSummary.noteAccuracyPercent}%</strong>

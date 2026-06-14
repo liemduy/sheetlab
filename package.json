@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.108.1",
     "fflate": "^0.8.3",
     "pdfkit": "^0.18.0",
     "react": "latest",
