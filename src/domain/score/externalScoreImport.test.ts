@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   analyzeMidiFile,
+  analyzeMusicXml,
   importScoreFromMidi,
   importScoreFromMusicXml,
 } from './externalScoreImport';
@@ -81,6 +82,70 @@ describe('externalScoreImport', () => {
 
     expect(result.score.title).toBe('XML Tune');
     expect(countScoreEvents(result.score)).toBeGreaterThanOrEqual(2);
+  });
+
+  it('imports MusicXML piano staves, backup cursor, lyrics, pedal, and dynamics', () => {
+    const xml = `
+      <score-partwise version="3.1">
+        <work><work-title>Piano XML</work-title></work>
+        <identification><creator type="composer">Tester</creator></identification>
+        <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+        <part id="P1">
+          <measure number="1">
+            <attributes>
+              <divisions>1</divisions>
+              <key><fifths>0</fifths></key>
+              <time><beats>4</beats><beat-type>4</beat-type></time>
+              <staves>2</staves>
+            </attributes>
+            <direction>
+              <direction-type><dynamics><mf/></dynamics></direction-type>
+              <staff>1</staff>
+            </direction>
+            <note>
+              <pitch><step>C</step><octave>5</octave></pitch>
+              <duration>1</duration>
+              <voice>1</voice>
+              <type>quarter</type>
+              <staff>1</staff>
+              <lyric><syllabic>single</syllabic><text>Xin</text></lyric>
+            </note>
+            <backup><duration>1</duration></backup>
+            <direction>
+              <direction-type><pedal type="start"/></direction-type>
+              <staff>2</staff>
+            </direction>
+            <note>
+              <pitch><step>C</step><octave>3</octave></pitch>
+              <duration>1</duration>
+              <voice>5</voice>
+              <type>quarter</type>
+              <staff>2</staff>
+            </note>
+            <direction>
+              <direction-type><pedal type="stop"/></direction-type>
+              <staff>2</staff>
+            </direction>
+          </measure>
+        </part>
+      </score-partwise>
+    `;
+    const analysis = analyzeMusicXml(xml, 'piano.musicxml');
+    const result = importScoreFromMusicXml(xml);
+    const trebleEvents = getStaffEvents(result, 'treble');
+    const bassEvents = getStaffEvents(result, 'bass');
+
+    expect(analysis.measureCount).toBe(1);
+    expect(analysis.staffCount).toBe(2);
+    expect(analysis.backupCount).toBe(1);
+    expect(result.score.type).toBe('grand');
+    expect(result.score.title).toBe('Piano XML');
+    expect(result.score.composer).toBe('Tester');
+    expect(trebleEvents.some((event) => event.kind !== 'rest')).toBe(true);
+    expect(bassEvents.some((event) => event.kind !== 'rest')).toBe(true);
+    expect(trebleEvents.some((event) => event.lyric === 'Xin')).toBe(true);
+    expect(trebleEvents.some((event) => event.dynamic === 'mf')).toBe(true);
+    expect(bassEvents.some((event) => event.pedal)).toBe(true);
   });
 
   it('imports a minimal MIDI note track', () => {

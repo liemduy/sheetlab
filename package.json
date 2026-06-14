@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "fflate": "^0.8.3",
     "pdfkit": "^0.18.0",
     "react": "latest",
     "react-dom": "latest",

@@ -8,6 +8,8 @@ import {
 } from '../../domain/score/abcNotation';
 import {
   analyzeMidiFile,
+  analyzeMusicXml,
+  extractMusicXmlFromMxl,
   importScoreFromMidi,
   importScoreFromMusicXml,
 } from '../../domain/score/externalScoreImport';
@@ -179,31 +181,44 @@ export function useProjectActions({
     try {
       const isMidiFile =
         lowerName.endsWith('.mid') || lowerName.endsWith('.midi');
+      const isMxlFile = lowerName.endsWith('.mxl');
       const midiBuffer = isMidiFile ? await file.arrayBuffer() : null;
       const midiAnalysis = midiBuffer
         ? analyzeMidiFile(midiBuffer, file.name)
         : null;
+      const musicXmlText = isMxlFile
+        ? await extractMusicXmlFromMxl(await file.arrayBuffer())
+        : isMidiFile
+          ? null
+          : await file.text();
+      const musicXmlAnalysis = musicXmlText
+        ? analyzeMusicXml(musicXmlText, file.name)
+        : null;
       const result = midiBuffer
         ? importScoreFromMidi(midiBuffer, file.name)
-        : importScoreFromMusicXml(await file.text());
+        : importScoreFromMusicXml(musicXmlText ?? '');
       const midiSummary = midiAnalysis
         ? `: ${midiAnalysis.noteCount} notes, ${midiAnalysis.measureEstimate} bars, ${midiAnalysis.pedalEventCount} pedal events, ${midiAnalysis.splitMode} split`
         : '';
+      const musicXmlSummary = musicXmlAnalysis
+        ? `: ${musicXmlAnalysis.measureCount} bars, ${musicXmlAnalysis.noteCount} notes, ${musicXmlAnalysis.staffCount} staves, ${musicXmlAnalysis.lyricCount} lyrics, ${musicXmlAnalysis.pedalCount} pedal marks`
+        : '';
+      const importSummary = midiSummary || musicXmlSummary;
 
       onScoreLoaded(
         result.score,
         result.warnings.length > 0
-          ? `Imported ${file.name}${midiSummary}: ${result.warnings.length} warning${
+          ? `Imported ${file.name}${importSummary}: ${result.warnings.length} warning${
               result.warnings.length === 1 ? '' : 's'
             }`
-          : `Imported ${file.name}${midiSummary}`,
+          : `Imported ${file.name}${importSummary}`,
         {
           closePalette: true,
         },
       );
       refreshProjectLibrary();
     } catch {
-      setEditorMessage('Invalid MusicXML or MIDI file');
+      setEditorMessage('Invalid MusicXML, MXL, or MIDI file');
     } finally {
       if (importExternalScoreInputRef.current) {
         importExternalScoreInputRef.current.value = '';

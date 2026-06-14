@@ -2,9 +2,16 @@ import {
   importScoreFromAbc,
   type AbcImportResult,
 } from './abcNotation';
+import { unzipSync } from 'fflate';
+import { createEmptyScore } from './factories';
+import { setMeasureKeySignature } from './editing';
 import type {
+  Accidental,
+  DurationValue,
   KeySignature,
+  NoteStep,
   PedalMark,
+  Pitch,
   Score,
   ScoreEvent,
   StaffId,
@@ -97,6 +104,34 @@ interface MidiStaffLineResult {
   line: string;
   overlappedNoteCount: number;
   trimmedNoteCount: number;
+}
+
+interface MusicXmlDuration {
+  dots: number;
+  duration: DurationValue;
+}
+
+interface MusicXmlDirectionMark {
+  beat: number;
+  dynamic?: string;
+  pedal?: PedalMark;
+  staffId: StaffId;
+}
+
+export interface MusicXmlImportAnalysis {
+  backupCount: number;
+  directionCount: number;
+  dynamicCount: number;
+  fileName: string;
+  lyricCount: number;
+  measureCount: number;
+  noteCount: number;
+  partCount: number;
+  pedalCount: number;
+  restCount: number;
+  staffCount: number;
+  staffNoteCounts: Partial<Record<StaffId, number>>;
+  voiceCount: number;
 }
 
 export interface MidiImportTrackAnalysis {
@@ -245,6 +280,320 @@ function getMusicXmlTempo(document: Document) {
   return Number.isFinite(tempo) && tempo > 0 ? Math.round(tempo) : 96;
 }
 
+const MUSIC_XML_DURATION_BY_UNITS = new Map<number, MusicXmlDuration>([
+  [32, { duration: 'whole', dots: 0 }],
+  [24, { duration: 'half', dots: 1 }],
+  [16, { duration: 'half', dots: 0 }],
+  [12, { duration: 'quarter', dots: 1 }],
+  [8, { duration: 'quarter', dots: 0 }],
+  [6, { duration: 'eighth', dots: 1 }],
+  [4, { duration: 'eighth', dots: 0 }],
+  [3, { duration: 'sixteenth', dots: 1 }],
+  [2, { duration: 'sixteenth', dots: 0 }],
+  [1, { duration: 'thirtySecond', dots: 0 }],
+]);
+
+function getDirectChild(parent: Element, localName: string) {
+  return [...parent.children].find((child) => child.localName === localName) ??
+    null;
+}
+
+function getDirectChildText(parent: Element, localName: string) {
+  return getDirectChild(parent, localName)?.textContent?.trim() ?? '';
+}
+
+function parseMusicXmlDocument(xml: string) {
+  if (typeof DOMParser === 'undefined') {
+    throw new Error('MusicXML import requires DOMParser support');
+  }
+
+  const document = new DOMParser().parseFromString(xml, 'application/xml');
+
+  if (document.querySelector('parsererror')) {
+    throw new Error('Invalid MusicXML document');
+  }
+
+  return document;
+}
+
+function getMusicXmlDurationUnits(
+  parent: Element,
+  divisions: number,
+  warnings: string[],
+) {
+  const durationValue = Number(getTextContent(parent, 'duration'));
+
+  if (!Number.isFinite(durationValue) || durationValue <= 0) {
+    warnings.push('Skipped a MusicXML duration with invalid value');
+    return 0;
+  }
+
+  return getClosestAbcUnits(durationValue / Math.max(1, divisions));
+}
+
+function getMusicXmlDuration(
+  units: number,
+  warnings: string[],
+): MusicXmlDuration {
+  const supportedUnits = getClosestSupportedUnitsAtMost(
+    Math.max(1, units),
+    32,
+  );
+  const duration = MUSIC_XML_DURATION_BY_UNITS.get(supportedUnits);
+
+  if (!duration) {
+    warnings.push(`Unsupported MusicXML duration units "${units}", using 1/32`);
+    return { duration: 'thirtySecond', dots: 0 };
+  }
+
+  return duration;
+}
+
+function parseMusicXmlStaffId(element: Element, fallback: StaffId): StaffId {
+  const staff = getDirectChildText(element, 'staff') || getTextContent(element, 'staff');
+
+  if (staff === '1') {
+    return 'treble';
+  }
+
+  return staff === '2' ? 'bass' : fallback;
+}
+
+function parseMusicXmlPitch(note: Element): Pitch | null {
+  const pitch = note.querySelector('pitch');
+
+  if (!pitch) {
+    return null;
+  }
+
+  const step = getTextContent(pitch, 'step') as NoteStep;
+  const octave = Number(getTextContent(pitch, 'octave') || 4);
+  const alter = Number(getTextContent(pitch, 'alter') || 0);
+  const accidental: Accidental | undefined =
+    alter > 0 ? 'sharp' : alter < 0 ? 'flat' : undefined;
+
+  if (!['A', 'B', 'C', 'D', 'E', 'F', 'G'].includes(step)) {
+    return null;
+  }
+
+  return {
+    accidental,
+    octave: Number.isFinite(octave) ? octave : 4,
+    step,
+  };
+}
+
+function getMusicXmlLyric(note: Element) {
+  return getTextContent(note, 'lyric text') || undefined;
+}
+
+function getMusicXmlPartStaffCount(part: Element | null) {
+  if (!part) {
+    return 1;
+  }
+
+  const declaredStaves = Number(getTextContent(part, 'attributes staves'));
+
+  if (Number.isFinite(declaredStaves) && declaredStaves > 1) {
+    return declaredStaves;
+  }
+
+  return part.querySelector('staff')?.textContent?.trim() === '2' ||
+    Boolean([...part.querySelectorAll('staff')].find((staff) => staff.textContent?.trim() === '2'))
+    ? 2
+    : 1;
+}
+
+function getMusicXmlScoreTitle(document: Document) {
+  return (
+    getTextContent(document, 'work-title') ||
+    getTextContent(document, 'movement-title') ||
+    'Imported MusicXML Score'
+  );
+}
+
+function getMusicXmlComposer(document: Document) {
+  return document.querySelector('creator[type="composer"]')?.textContent?.trim() ??
+    getTextContent(document, 'creator');
+}
+
+function createMusicXmlEvent({
+  beat,
+  duration,
+  eventCounter,
+  isRest,
+  lyric,
+  pitch,
+}: {
+  beat: number;
+  duration: MusicXmlDuration;
+  eventCounter: number;
+  isRest: boolean;
+  lyric?: string;
+  pitch: Pitch | null;
+}): ScoreEvent {
+  const base = {
+    beat,
+    dots: duration.dots || undefined,
+    duration: duration.duration,
+    id: `xml-${eventCounter}`,
+    lyric,
+  };
+
+  if (isRest || !pitch) {
+    return {
+      ...base,
+      kind: 'rest',
+    };
+  }
+
+  return {
+    ...base,
+    kind: 'note',
+    pitch,
+  };
+}
+
+function appendPitchToMusicXmlEvent(event: ScoreEvent, pitch: Pitch) {
+  if (event.kind === 'chord') {
+    return {
+      ...event,
+      pitches: [...event.pitches, pitch],
+    };
+  }
+
+  if (event.kind === 'note') {
+    const { pitch: previousPitch, ...base } = event;
+
+    return {
+      ...base,
+      kind: 'chord',
+      pitches: [previousPitch, pitch],
+    } satisfies ScoreEvent;
+  }
+
+  return event;
+}
+
+function getDirectionBeat(direction: Element, cursorUnits: number, divisions: number) {
+  const offset = Number(getTextContent(direction, 'offset'));
+  const offsetUnits = Number.isFinite(offset)
+    ? getClosestAbcUnits(offset / Math.max(1, divisions))
+    : 0;
+
+  return Math.max(0, cursorUnits + offsetUnits) / ABC_UNITS_PER_QUARTER;
+}
+
+function parseMusicXmlDirection(
+  direction: Element,
+  cursorUnits: number,
+  divisions: number,
+  fallbackStaffId: StaffId,
+) {
+  const dynamicElement = direction.querySelector('dynamics')?.firstElementChild;
+  const pedalElement = direction.querySelector('pedal');
+  const staffId = parseMusicXmlStaffId(direction, fallbackStaffId);
+  const pedalType = pedalElement?.getAttribute('type') ?? '';
+  const pedal: PedalMark | undefined =
+    pedalType === 'start'
+      ? 'start'
+      : pedalType === 'stop'
+        ? 'release'
+        : pedalType === 'change'
+          ? 'start-release'
+          : undefined;
+
+  if (!dynamicElement && !pedal) {
+    return null;
+  }
+
+  return {
+    beat: getDirectionBeat(direction, cursorUnits, divisions),
+    dynamic: dynamicElement?.localName,
+    pedal,
+    staffId,
+  } satisfies MusicXmlDirectionMark;
+}
+
+function findDirectionTargetEvent(
+  events: ScoreEvent[],
+  beat: number,
+) {
+  return events
+    .filter((event) => event.kind !== 'rest')
+    .sort((first, second) => {
+      const firstIsAfter = first.beat >= beat ? 0 : 1;
+      const secondIsAfter = second.beat >= beat ? 0 : 1;
+
+      return firstIsAfter - secondIsAfter ||
+        Math.abs(first.beat - beat) - Math.abs(second.beat - beat);
+    })[0] ?? null;
+}
+
+function applyMusicXmlDirectionMarks(
+  eventsByMeasure: Map<string, ScoreEvent[]>,
+  measureIndex: number,
+  marks: readonly MusicXmlDirectionMark[],
+) {
+  marks.forEach((mark) => {
+    const key = `${mark.staffId}:${measureIndex}`;
+    const events = eventsByMeasure.get(key) ?? [];
+    const target = findDirectionTargetEvent(events, mark.beat);
+
+    if (!target) {
+      return;
+    }
+
+    if (mark.dynamic) {
+      target.dynamic = mark.dynamic;
+    }
+
+    if (mark.pedal) {
+      target.pedal = mergePedalMark(target.pedal, mark.pedal);
+    }
+  });
+}
+
+export function analyzeMusicXml(
+  xml: string,
+  fileName = 'Imported MusicXML Score',
+): MusicXmlImportAnalysis {
+  const document = parseMusicXmlDocument(xml);
+  const partElements = [...document.querySelectorAll('part')];
+  const firstPart = partElements[0] ?? null;
+  const staffCount = Math.max(
+    getMusicXmlPartStaffCount(firstPart),
+    partElements.length > 1 ? 2 : 1,
+  );
+  const staffNoteCounts: Partial<Record<StaffId, number>> = {};
+
+  [...document.querySelectorAll('note')].forEach((note) => {
+    if (!note.querySelector('pitch')) {
+      return;
+    }
+
+    const staffId = parseMusicXmlStaffId(note, staffCount > 1 ? 'treble' : 'treble');
+    staffNoteCounts[staffId] = (staffNoteCounts[staffId] ?? 0) + 1;
+  });
+
+  return {
+    backupCount: document.querySelectorAll('backup').length,
+    directionCount: document.querySelectorAll('direction').length,
+    dynamicCount: document.querySelectorAll('dynamics').length,
+    fileName,
+    lyricCount: document.querySelectorAll('lyric').length,
+    measureCount: firstPart?.querySelectorAll(':scope > measure').length ??
+      document.querySelectorAll('measure').length,
+    noteCount: document.querySelectorAll('note').length,
+    partCount: partElements.length,
+    pedalCount: document.querySelectorAll('pedal').length,
+    restCount: document.querySelectorAll('rest').length,
+    staffCount,
+    staffNoteCounts,
+    voiceCount: document.querySelectorAll('voice').length,
+  };
+}
+
 function pushMusicXmlNoteToken(
   tokens: AbcToken[],
   note: Element,
@@ -295,80 +644,336 @@ function pushMusicXmlNoteToken(
 }
 
 export function importScoreFromMusicXml(xml: string): AbcImportResult {
-  if (typeof DOMParser === 'undefined') {
-    throw new Error('MusicXML import requires DOMParser support');
-  }
-
   const warnings: string[] = [];
-  const document = new DOMParser().parseFromString(xml, 'application/xml');
-
-  if (document.querySelector('parsererror')) {
-    throw new Error('Invalid MusicXML document');
-  }
-
-  const title =
-    getTextContent(document, 'work-title') ||
-    getTextContent(document, 'movement-title') ||
-    'Imported MusicXML Score';
-  const composer =
-    document.querySelector('creator[type="composer"]')?.textContent?.trim() ??
-    getTextContent(document, 'creator');
+  const document = parseMusicXmlDocument(xml);
+  const title = getMusicXmlScoreTitle(document);
+  const composer = getMusicXmlComposer(document);
   const firstMeasure = document.querySelector('part measure');
   const beats = Number(getTextContent(firstMeasure ?? document, 'time beats') || 4);
   const beatType = Number(getTextContent(firstMeasure ?? document, 'time beat-type') || 4);
+  const timeSignature = {
+    beatUnit: Number.isFinite(beatType) ? beatType : 4,
+    beats: Number.isFinite(beats) ? beats : 4,
+  };
   const key = getMusicXmlKey(
     (firstMeasure ?? document).querySelector('key fifths')?.textContent?.trim() ?? null,
   );
   const tempo = getMusicXmlTempo(document);
-  const partElements = [...document.querySelectorAll('part')].slice(0, 2);
-  const voiceLines = partElements.length > 1
-    ? [
-        { id: 'T', part: partElements[0], staffId: 'treble' },
-        { id: 'B', part: partElements[1], staffId: 'bass' },
-      ]
-    : [{ id: 'T', part: partElements[0], staffId: 'treble' }];
-  const bodyLines = voiceLines.map(({ id, part }) => {
-    let divisions = 1;
-    const measureTexts = [...(part?.querySelectorAll('measure') ?? [])].map((measure) => {
-      const nextDivisions = Number(getTextContent(measure, 'attributes divisions'));
-
-      if (Number.isFinite(nextDivisions) && nextDivisions > 0) {
-        divisions = nextDivisions;
-      }
-
-      const tokens: AbcToken[] = [];
-
-      [...measure.querySelectorAll(':scope > note')].forEach((note) =>
-        pushMusicXmlNoteToken(tokens, note, divisions, warnings),
-      );
-
-      return tokens.length > 0 ? tokens.map(encodeAbcToken).join(' ') : 'z32';
-    });
-
-    return `[V:${id}] ${measureTexts.join(' | ')} |`;
+  const partElements = [...document.querySelectorAll('part')];
+  const firstPart = partElements[0] ?? null;
+  const firstPartStaffCount = getMusicXmlPartStaffCount(firstPart);
+  const scoreType = firstPartStaffCount > 1 || partElements.length > 1
+    ? 'grand'
+    : 'treble';
+  const measureCount = Math.max(
+    4,
+    ...(firstPartStaffCount > 1
+      ? [firstPart?.querySelectorAll(':scope > measure').length ?? 0]
+      : partElements.slice(0, 2).map((part) =>
+          part.querySelectorAll(':scope > measure').length,
+        )),
+  );
+  const baseScore = createEmptyScore(scoreType, {
+    composer,
+    measureCount,
+    tempo,
+    timeSignature,
+    title,
   });
-  const abc = [
-    'X:1',
-    `T:${sanitizeAbcField(title, 'Imported MusicXML Score')}`,
-    composer ? `C:${sanitizeAbcField(composer, '')}` : null,
-    `M:${Number.isFinite(beats) ? beats : 4}/${Number.isFinite(beatType) ? beatType : 4}`,
-    'L:1/32',
-    `Q:1/4=${tempo}`,
-    voiceLines.length > 1 ? '%%score (T B)' : null,
-    voiceLines.length > 1 ? 'V:T clef=treble name="Right hand"' : null,
-    voiceLines.length > 1 ? 'V:B clef=bass name="Left hand"' : null,
-    `K:${key}`,
-    ...bodyLines,
-  ].filter(Boolean).join('\n');
-  const result = importScoreFromAbc(abc);
+  const scoreWithKey = setMeasureKeySignature(baseScore, 0, key);
+  const eventsByMeasure = new Map<string, ScoreEvent[]>();
+  let eventCounter = 1;
+
+  function getMeasureEvents(staffId: StaffId, measureIndex: number) {
+    const key = `${staffId}:${measureIndex}`;
+    const events = eventsByMeasure.get(key) ?? [];
+
+    eventsByMeasure.set(key, events);
+    return events;
+  }
+
+  function parsePart(
+    part: Element | undefined,
+    forcedStaffId: StaffId | null,
+  ) {
+    if (!part) {
+      return;
+    }
+
+    let divisions = 1;
+
+    [...part.querySelectorAll(':scope > measure')].forEach((measure, measureIndex) => {
+      let cursorUnits = 0;
+      const directionMarks: MusicXmlDirectionMark[] = [];
+      const lastEventByStaff = new Map<StaffId, ScoreEvent>();
+
+      [...measure.children].forEach((child) => {
+        if (child.localName === 'attributes') {
+          const nextDivisions = Number(getTextContent(child, 'divisions'));
+
+          if (Number.isFinite(nextDivisions) && nextDivisions > 0) {
+            divisions = nextDivisions;
+          }
+          return;
+        }
+
+        if (child.localName === 'backup') {
+          cursorUnits = Math.max(
+            0,
+            cursorUnits - getMusicXmlDurationUnits(child, divisions, warnings),
+          );
+          return;
+        }
+
+        if (child.localName === 'forward') {
+          cursorUnits += getMusicXmlDurationUnits(child, divisions, warnings);
+          return;
+        }
+
+        if (child.localName === 'direction') {
+          const direction = parseMusicXmlDirection(
+            child,
+            cursorUnits,
+            divisions,
+            forcedStaffId ?? 'bass',
+          );
+
+          if (direction) {
+            directionMarks.push(direction);
+          }
+          return;
+        }
+
+        if (child.localName !== 'note') {
+          return;
+        }
+
+        const durationUnits = getMusicXmlDurationUnits(child, divisions, warnings);
+        const duration = getMusicXmlDuration(durationUnits, warnings);
+        const isChord = Boolean(getDirectChild(child, 'chord'));
+        const isRest = Boolean(getDirectChild(child, 'rest'));
+        const pitch = parseMusicXmlPitch(child);
+        const staffId = forcedStaffId ??
+          parseMusicXmlStaffId(child, scoreType === 'grand' ? 'treble' : 'treble');
+        const events = getMeasureEvents(staffId, measureIndex);
+        const lyric = getMusicXmlLyric(child);
+
+        if (isChord && pitch) {
+          const previousEvent = lastEventByStaff.get(staffId);
+          const previousIndex = previousEvent
+            ? events.findIndex((event) => event.id === previousEvent.id)
+            : -1;
+
+          if (previousEvent && previousIndex >= 0) {
+            const nextEvent = appendPitchToMusicXmlEvent(previousEvent, pitch);
+
+            if (lyric && !nextEvent.lyric) {
+              nextEvent.lyric = lyric;
+            }
+            events[previousIndex] = nextEvent;
+            lastEventByStaff.set(staffId, nextEvent);
+          }
+          return;
+        }
+
+        const event = createMusicXmlEvent({
+          beat: cursorUnits / ABC_UNITS_PER_QUARTER,
+          duration,
+          eventCounter,
+          isRest,
+          lyric,
+          pitch,
+        });
+
+        eventCounter += 1;
+        events.push(event);
+
+        if (event.kind !== 'rest') {
+          lastEventByStaff.set(staffId, event);
+        }
+
+        cursorUnits += durationUnits;
+      });
+
+      applyMusicXmlDirectionMarks(eventsByMeasure, measureIndex, directionMarks);
+    });
+  }
+
+  if (firstPartStaffCount > 1) {
+    parsePart(firstPart ?? undefined, null);
+  } else {
+    parsePart(partElements[0], 'treble');
+    parsePart(partElements[1], 'bass');
+  }
 
   return {
-    score: result.score,
-    warnings: [
-      ...warnings,
-      ...result.warnings,
-    ],
+    score: {
+      ...scoreWithKey,
+      parts: scoreWithKey.parts.map((part) => ({
+        ...part,
+        staves: part.staves.map((staff) => ({
+          ...staff,
+          measures: staff.measures.map((measure) => ({
+            ...measure,
+            voices: measure.voices.map((voice, voiceIndex) =>
+              voiceIndex === 0
+                ? {
+                    ...voice,
+                    events: [
+                      ...(eventsByMeasure.get(`${staff.id}:${measure.index}`) ?? []),
+                    ].sort((first, second) => first.beat - second.beat),
+                  }
+                : voice,
+            ),
+          })),
+        })),
+      })),
+    },
+    warnings,
   };
+}
+
+function readUtf8(view: DataView, offset: number, length: number) {
+  return new TextDecoder().decode(
+    new Uint8Array(view.buffer, view.byteOffset + offset, length),
+  );
+}
+
+async function inflateZipEntry(data: Uint8Array, compressionMethod: number) {
+  if (compressionMethod === 0) {
+    return data;
+  }
+
+  if (compressionMethod !== 8) {
+    throw new Error(`Unsupported MXL compression method ${compressionMethod}`);
+  }
+
+  if (typeof DecompressionStream === 'undefined') {
+    throw new Error('MXL import requires browser decompression support');
+  }
+
+  const entryBuffer = new ArrayBuffer(data.byteLength);
+  new Uint8Array(entryBuffer).set(data);
+  const stream = new Blob([entryBuffer]).stream().pipeThrough(
+    new DecompressionStream('deflate-raw'),
+  );
+  const buffer = await new Response(stream).arrayBuffer();
+
+  return new Uint8Array(buffer);
+}
+
+async function readZipTextEntry(
+  view: DataView,
+  entry: {
+    compressedSize: number;
+    compressionMethod: number;
+    localHeaderOffset: number;
+  },
+) {
+  const localHeaderOffset = entry.localHeaderOffset;
+
+  if (view.getUint32(localHeaderOffset, true) !== 0x04034b50) {
+    throw new Error('Invalid MXL local file header');
+  }
+
+  const localNameLength = view.getUint16(localHeaderOffset + 26, true);
+  const localExtraLength = view.getUint16(localHeaderOffset + 28, true);
+  const dataOffset = localHeaderOffset + 30 + localNameLength + localExtraLength;
+  const compressedData = new Uint8Array(
+    view.buffer,
+    view.byteOffset + dataOffset,
+    entry.compressedSize,
+  );
+  const data = await inflateZipEntry(compressedData, entry.compressionMethod);
+
+  return new TextDecoder().decode(data);
+}
+
+function readMxlCentralDirectory(arrayBuffer: ArrayBuffer) {
+  const view = new DataView(arrayBuffer);
+  let endOfCentralDirectoryOffset = -1;
+
+  for (
+    let offset = Math.max(0, view.byteLength - 22);
+    offset >= Math.max(0, view.byteLength - 65557);
+    offset -= 1
+  ) {
+    if (view.getUint32(offset, true) === 0x06054b50) {
+      endOfCentralDirectoryOffset = offset;
+      break;
+    }
+  }
+
+  if (endOfCentralDirectoryOffset < 0) {
+    throw new Error('Invalid MXL zip directory');
+  }
+
+  const entryCount = view.getUint16(endOfCentralDirectoryOffset + 10, true);
+  let offset = view.getUint32(endOfCentralDirectoryOffset + 16, true);
+  const entries = new Map<
+    string,
+    {
+      compressedSize: number;
+      compressionMethod: number;
+      localHeaderOffset: number;
+    }
+  >();
+
+  for (let index = 0; index < entryCount; index += 1) {
+    if (view.getUint32(offset, true) !== 0x02014b50) {
+      throw new Error('Invalid MXL central directory');
+    }
+
+    const compressionMethod = view.getUint16(offset + 10, true);
+    const compressedSize = view.getUint32(offset + 20, true);
+    const fileNameLength = view.getUint16(offset + 28, true);
+    const extraLength = view.getUint16(offset + 30, true);
+    const commentLength = view.getUint16(offset + 32, true);
+    const localHeaderOffset = view.getUint32(offset + 42, true);
+    const fileName = readUtf8(view, offset + 46, fileNameLength);
+
+    entries.set(fileName, {
+      compressedSize,
+      compressionMethod,
+      localHeaderOffset,
+    });
+    offset += 46 + fileNameLength + extraLength + commentLength;
+  }
+
+  return { entries, view };
+}
+
+export async function extractMusicXmlFromMxl(arrayBuffer: ArrayBuffer) {
+  const entries = unzipSync(new Uint8Array(arrayBuffer));
+  const decoder = new TextDecoder();
+  const containerEntry = entries['META-INF/container.xml'];
+  let rootPath = Object.keys(entries).find((name) =>
+    /\.musicxml$|\.xml$/i.test(name) && !name.endsWith('container.xml'),
+  );
+
+  if (containerEntry) {
+    const containerXml = decoder.decode(containerEntry);
+    const containerDocument = parseMusicXmlDocument(containerXml);
+    const containerRootPath = containerDocument
+      .querySelector('rootfile[full-path]')
+      ?.getAttribute('full-path');
+
+    if (containerRootPath) {
+      rootPath = containerRootPath;
+    }
+  }
+
+  if (!rootPath) {
+    throw new Error('MXL root MusicXML file not found');
+  }
+
+  const rootEntry = entries[rootPath];
+
+  if (!rootEntry) {
+    throw new Error(`MXL root file "${rootPath}" not found`);
+  }
+
+  return decoder.decode(rootEntry);
 }
 
 function readAscii(view: DataView, offset: number, length: number) {

@@ -1006,10 +1006,10 @@ export function EditorToolbar({
         </button>
         <input
           ref={importExternalScoreInputRef}
-          aria-label="Import MusicXML or MIDI file"
+          aria-label="Import MusicXML, MXL, or MIDI file"
           className="file-input"
           type="file"
-          accept=".musicxml,.xml,.mid,.midi,application/vnd.recordare.musicxml+xml,audio/midi"
+          accept=".musicxml,.mxl,.xml,.mid,.midi,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml,audio/midi"
           onChange={(event) => void onImportExternalScoreFile(event.target.files)}
         />
         <button type="button" className="tool-button" onClick={onExportPdf}>
