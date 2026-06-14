@@ -7,6 +7,7 @@ import {
   importScoreFromAbc,
 } from '../../domain/score/abcNotation';
 import {
+  analyzeMidiFile,
   importScoreFromMidi,
   importScoreFromMusicXml,
 } from '../../domain/score/externalScoreImport';
@@ -176,18 +177,26 @@ export function useProjectActions({
     const lowerName = file.name.toLowerCase();
 
     try {
-      const result =
-        lowerName.endsWith('.mid') || lowerName.endsWith('.midi')
-          ? importScoreFromMidi(await file.arrayBuffer(), file.name)
-          : importScoreFromMusicXml(await file.text());
+      const isMidiFile =
+        lowerName.endsWith('.mid') || lowerName.endsWith('.midi');
+      const midiBuffer = isMidiFile ? await file.arrayBuffer() : null;
+      const midiAnalysis = midiBuffer
+        ? analyzeMidiFile(midiBuffer, file.name)
+        : null;
+      const result = midiBuffer
+        ? importScoreFromMidi(midiBuffer, file.name)
+        : importScoreFromMusicXml(await file.text());
+      const midiSummary = midiAnalysis
+        ? `: ${midiAnalysis.noteCount} notes, ${midiAnalysis.measureEstimate} bars, ${midiAnalysis.pedalEventCount} pedal events, ${midiAnalysis.splitMode} split`
+        : '';
 
       onScoreLoaded(
         result.score,
         result.warnings.length > 0
-          ? `Imported ${file.name}: ${result.warnings.length} warning${
+          ? `Imported ${file.name}${midiSummary}: ${result.warnings.length} warning${
               result.warnings.length === 1 ? '' : 's'
             }`
-          : `Imported ${file.name}`,
+          : `Imported ${file.name}${midiSummary}`,
         {
           closePalette: true,
         },

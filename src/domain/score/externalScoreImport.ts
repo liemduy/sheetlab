@@ -2,6 +2,14 @@ import {
   importScoreFromAbc,
   type AbcImportResult,
 } from './abcNotation';
+import type {
+  KeySignature,
+  PedalMark,
+  Score,
+  ScoreEvent,
+  StaffId,
+  TimeSignature,
+} from './types';
 
 const ABC_UNITS_PER_QUARTER = 8;
 const SUPPORTED_ABC_UNITS = [32, 24, 16, 12, 8, 6, 4, 3, 2, 1] as const;
@@ -32,15 +40,88 @@ interface AbcToken {
 }
 
 interface MidiNoteEvent {
+  channel: number;
   durationTicks: number;
   midiNote: number;
   startTicks: number;
   trackIndex: number;
 }
 
+interface MidiControlChangeEvent {
+  channel: number;
+  controller: number;
+  ticks: number;
+  trackIndex: number;
+  value: number;
+}
+
+interface MidiProgramEvent {
+  channel: number;
+  program: number;
+  ticks: number;
+  trackIndex: number;
+}
+
 interface MidiTempoEvent {
   tempo: number;
   ticks: number;
+}
+
+interface MidiTimeSignatureEvent {
+  beatUnit: number;
+  beats: number;
+  ticks: number;
+}
+
+interface MidiKeySignatureEvent {
+  fifths: number;
+  mode: 'major' | 'minor';
+  ticks: number;
+}
+
+interface ParsedMidiFile {
+  controlChanges: MidiControlChangeEvent[];
+  format: number;
+  keySignatures: MidiKeySignatureEvent[];
+  notes: MidiNoteEvent[];
+  ppq: number;
+  programs: MidiProgramEvent[];
+  tempo: number;
+  tempos: MidiTempoEvent[];
+  timeSignature: TimeSignature;
+  timeSignatures: MidiTimeSignatureEvent[];
+  trackCount: number;
+}
+
+interface MidiStaffLineResult {
+  line: string;
+  overlappedNoteCount: number;
+  trimmedNoteCount: number;
+}
+
+export interface MidiImportTrackAnalysis {
+  averageMidiNote: number | null;
+  noteCount: number;
+  pitchRange: [number, number] | null;
+  trackIndex: number;
+}
+
+export interface MidiImportAnalysis {
+  controlChangeCount: number;
+  fileName: string;
+  format: number;
+  keySignature: KeySignature;
+  measureEstimate: number;
+  noteCount: number;
+  pedalEventCount: number;
+  pitchRange: [number, number] | null;
+  splitMode: 'middle-c' | 'track';
+  tempo: number;
+  tempoChangeCount: number;
+  ticksPerQuarter: number;
+  timeSignature: TimeSignature;
+  trackCount: number;
+  tracks: MidiImportTrackAnalysis[];
 }
 
 function sanitizeAbcField(value: string | null | undefined, fallback: string) {
@@ -57,6 +138,34 @@ function getClosestAbcUnits(quarterBeats: number) {
       ? units
       : bestUnits,
   );
+}
+
+function getClosestSupportedUnitsAtMost(units: number, maxUnits: number) {
+  const candidates = SUPPORTED_ABC_UNITS.filter((unit) => unit <= maxUnits);
+
+  if (candidates.length === 0) {
+    return 1;
+  }
+
+  return candidates.reduce((bestUnits, candidate) =>
+    Math.abs(candidate - units) < Math.abs(bestUnits - units)
+      ? candidate
+      : bestUnits,
+  );
+}
+
+function splitUnitsIntoSupportedUnits(units: number) {
+  const result: number[] = [];
+  let remaining = Math.max(0, Math.round(units));
+
+  SUPPORTED_ABC_UNITS.forEach((unit) => {
+    while (remaining >= unit) {
+      result.push(unit);
+      remaining -= unit;
+    }
+  });
+
+  return result;
 }
 
 function getAbcDurationSuffix(units: number) {
@@ -81,6 +190,27 @@ function encodeMidiPitch(midiNote: number) {
     STEP_BY_MIDI_INDEX[pitchIndex],
     octave,
   )}`;
+}
+
+function getMidiKeySignature(keySignatures: readonly MidiKeySignatureEvent[]) {
+  const firstMajorKey = keySignatures.find((key) => key.mode === 'major');
+  const key = String(firstMajorKey?.fifths ?? keySignatures[0]?.fifths ?? 0);
+
+  return KEY_BY_FIFTHS[key as keyof typeof KEY_BY_FIFTHS] ?? 'C';
+}
+
+function getMeasureBeatsFromTimeSignature(timeSignature: TimeSignature) {
+  return timeSignature.beats * (4 / timeSignature.beatUnit);
+}
+
+function getMeasureUnitsFromTimeSignature(timeSignature: TimeSignature) {
+  return Math.max(
+    1,
+    Math.round(
+      getMeasureBeatsFromTimeSignature(timeSignature) *
+        ABC_UNITS_PER_QUARTER,
+    ),
+  );
 }
 
 function encodeAbcToken(token: AbcToken) {
@@ -270,8 +400,12 @@ function parseMidiTrack(
   endOffset: number,
   trackIndex: number,
 ) {
+  const controlChanges: MidiControlChangeEvent[] = [];
+  const keySignatures: MidiKeySignatureEvent[] = [];
   const notes: MidiNoteEvent[] = [];
+  const programs: MidiProgramEvent[] = [];
   const tempos: MidiTempoEvent[] = [];
+  const timeSignatures: MidiTimeSignatureEvent[] = [];
   const activeNotes = new Map<number, { startTicks: number }[]>();
   const state = { offset: startOffset };
   let runningStatus = 0;
@@ -306,6 +440,22 @@ function parseMidiTrack(
         });
       }
 
+      if (metaType === 0x58 && length >= 4) {
+        timeSignatures.push({
+          beatUnit: 2 ** view.getUint8(state.offset + 1),
+          beats: view.getUint8(state.offset),
+          ticks,
+        });
+      }
+
+      if (metaType === 0x59 && length >= 2) {
+        keySignatures.push({
+          fifths: view.getInt8(state.offset),
+          mode: view.getUint8(state.offset + 1) === 1 ? 'minor' : 'major',
+          ticks,
+        });
+      }
+
       state.offset += length;
       continue;
     }
@@ -316,13 +466,29 @@ function parseMidiTrack(
     }
 
     const eventType = status & 0xf0;
+    const channel = status & 0x0f;
     const dataByteCount = eventType === 0xc0 || eventType === 0xd0 ? 1 : 2;
     const firstDataByte = view.getUint8(state.offset);
     const secondDataByte = dataByteCount > 1 ? view.getUint8(state.offset + 1) : 0;
 
     state.offset += dataByteCount;
 
-    if (eventType === 0x90 && secondDataByte > 0) {
+    if (eventType === 0xb0) {
+      controlChanges.push({
+        channel,
+        controller: firstDataByte,
+        ticks,
+        trackIndex,
+        value: secondDataByte,
+      });
+    } else if (eventType === 0xc0) {
+      programs.push({
+        channel,
+        program: firstDataByte,
+        ticks,
+        trackIndex,
+      });
+    } else if (eventType === 0x90 && secondDataByte > 0) {
       const currentNotes = activeNotes.get(firstDataByte) ?? [];
 
       currentNotes.push({ startTicks: ticks });
@@ -337,6 +503,7 @@ function parseMidiTrack(
 
       if (activeNote && ticks > activeNote.startTicks) {
         notes.push({
+          channel,
           durationTicks: ticks - activeNote.startTicks,
           midiNote: firstDataByte,
           startTicks: activeNote.startTicks,
@@ -346,22 +513,34 @@ function parseMidiTrack(
     }
   }
 
-  return { notes, tempos };
+  return {
+    controlChanges,
+    keySignatures,
+    notes,
+    programs,
+    tempos,
+    timeSignatures,
+  };
 }
 
-function parseMidiFile(arrayBuffer: ArrayBuffer) {
+function parseMidiFile(arrayBuffer: ArrayBuffer): ParsedMidiFile {
   const view = new DataView(arrayBuffer);
 
   if (readAscii(view, 0, 4) !== 'MThd') {
     throw new Error('Invalid MIDI header');
   }
 
+  const format = view.getUint16(8);
   const headerLength = view.getUint32(4);
   const trackCount = view.getUint16(10);
   const division = view.getUint16(12);
   const ppq = division & 0x8000 ? 480 : division;
+  const controlChanges: MidiControlChangeEvent[] = [];
+  const keySignatures: MidiKeySignatureEvent[] = [];
   const notes: MidiNoteEvent[] = [];
+  const programs: MidiProgramEvent[] = [];
   const tempos: MidiTempoEvent[] = [];
+  const timeSignatures: MidiTimeSignatureEvent[] = [];
   let offset = 8 + headerLength;
 
   for (let trackIndex = 0; trackIndex < trackCount; trackIndex += 1) {
@@ -377,90 +556,406 @@ function parseMidiFile(arrayBuffer: ArrayBuffer) {
       trackIndex,
     );
 
+    controlChanges.push(...track.controlChanges);
+    keySignatures.push(...track.keySignatures);
     notes.push(...track.notes);
+    programs.push(...track.programs);
     tempos.push(...track.tempos);
+    timeSignatures.push(...track.timeSignatures);
     offset += 8 + trackLength;
   }
 
+  const firstTimeSignature = timeSignatures
+    .sort((first, second) => first.ticks - second.ticks)[0];
+
   return {
+    controlChanges,
+    format,
+    keySignatures,
     notes,
     ppq: ppq || 480,
+    programs,
     tempo: tempos.sort((first, second) => first.ticks - second.ticks)[0]?.tempo ?? 120,
+    tempos,
+    timeSignature: firstTimeSignature
+      ? {
+          beatUnit: firstTimeSignature.beatUnit,
+          beats: firstTimeSignature.beats,
+        }
+      : {
+          beatUnit: 4,
+          beats: 4,
+        },
+    timeSignatures,
+    trackCount,
+  };
+}
+
+function getTrackAnalyses(notes: readonly MidiNoteEvent[]): MidiImportTrackAnalysis[] {
+  const notesByTrack = new Map<number, MidiNoteEvent[]>();
+
+  notes.forEach((note) => {
+    const trackNotes = notesByTrack.get(note.trackIndex) ?? [];
+
+    trackNotes.push(note);
+    notesByTrack.set(note.trackIndex, trackNotes);
+  });
+
+  return [...notesByTrack.entries()]
+    .sort(([firstTrackIndex], [secondTrackIndex]) => firstTrackIndex - secondTrackIndex)
+    .map(([trackIndex, trackNotes]) => {
+      const midiNotes = trackNotes.map((note) => note.midiNote);
+
+      return {
+        averageMidiNote: midiNotes.length > 0
+          ? midiNotes.reduce((sum, midiNote) => sum + midiNote, 0) /
+            midiNotes.length
+          : null,
+        noteCount: trackNotes.length,
+        pitchRange: midiNotes.length > 0
+          ? [
+              Math.min(...midiNotes),
+              Math.max(...midiNotes),
+            ] as [number, number]
+          : null,
+        trackIndex,
+      };
+    });
+}
+
+function getTrackStaffMap(notes: readonly MidiNoteEvent[]) {
+  const trackAnalyses = getTrackAnalyses(notes).filter(
+    (track) => track.noteCount > 0 && track.averageMidiNote !== null,
+  );
+
+  if (trackAnalyses.length !== 2) {
+    return null;
+  }
+
+  const [higherTrack, lowerTrack] = [...trackAnalyses].sort(
+    (first, second) =>
+      (second.averageMidiNote ?? 0) - (first.averageMidiNote ?? 0),
+  );
+
+  return new Map<number, StaffId>([
+    [higherTrack.trackIndex, 'treble'],
+    [lowerTrack.trackIndex, 'bass'],
+  ]);
+}
+
+function getStaffIdForNote(
+  note: MidiNoteEvent,
+  trackStaffByIndex: ReadonlyMap<number, StaffId> | null,
+): StaffId {
+  return trackStaffByIndex?.get(note.trackIndex) ??
+    (note.midiNote >= 60 ? 'treble' : 'bass');
+}
+
+export function analyzeMidiFile(
+  arrayBuffer: ArrayBuffer,
+  fileName = 'Imported MIDI Score',
+): MidiImportAnalysis {
+  const parsedMidi = parseMidiFile(arrayBuffer);
+  const midiNotes = parsedMidi.notes.map((note) => note.midiNote);
+  const lastTick = Math.max(
+    0,
+    ...parsedMidi.notes.map((note) => note.startTicks + note.durationTicks),
+  );
+
+  return {
+    controlChangeCount: parsedMidi.controlChanges.length,
+    fileName,
+    format: parsedMidi.format,
+    keySignature: getMidiKeySignature(parsedMidi.keySignatures),
+    measureEstimate: Math.max(
+      1,
+      Math.ceil(
+        lastTick /
+          parsedMidi.ppq /
+          getMeasureBeatsFromTimeSignature(parsedMidi.timeSignature),
+      ),
+    ),
+    noteCount: parsedMidi.notes.length,
+    pedalEventCount: parsedMidi.controlChanges.filter(
+      (event) => event.controller === 64,
+    ).length,
+    pitchRange: midiNotes.length > 0
+      ? [Math.min(...midiNotes), Math.max(...midiNotes)]
+      : null,
+    splitMode: getTrackStaffMap(parsedMidi.notes) ? 'track' : 'middle-c',
+    tempo: parsedMidi.tempo,
+    tempoChangeCount: parsedMidi.tempos.length,
+    ticksPerQuarter: parsedMidi.ppq,
+    timeSignature: parsedMidi.timeSignature,
+    trackCount: parsedMidi.trackCount,
+    tracks: getTrackAnalyses(parsedMidi.notes),
   };
 }
 
 function buildMidiStaffLine({
   id,
   measureCount,
+  measureUnits,
   notes,
   ppq,
 }: {
   id: string;
   measureCount: number;
+  measureUnits: number;
   notes: readonly MidiNoteEvent[];
   ppq: number;
-}) {
+}): MidiStaffLineResult {
   const measureTokens = Array.from({ length: measureCount }, () => [] as AbcToken[]);
-  const groupedNotes = new Map<string, MidiNoteEvent[]>();
+  const groupedNotes = new Map<number, MidiNoteEvent[]>();
+  let overlappedNoteCount = 0;
+  let trimmedNoteCount = 0;
 
   notes.forEach((note) => {
     const startUnits = Math.round((note.startTicks / ppq) * ABC_UNITS_PER_QUARTER);
-    const durationUnits = getClosestAbcUnits(note.durationTicks / ppq);
-    const key = `${startUnits}:${durationUnits}`;
-    const group = groupedNotes.get(key) ?? [];
+    const group = groupedNotes.get(startUnits) ?? [];
 
     group.push(note);
-    groupedNotes.set(key, group);
+    groupedNotes.set(startUnits, group);
   });
 
-  [...groupedNotes.entries()]
-    .map(([key, group]) => {
-      const [startUnits, durationUnits] = key.split(':').map(Number);
+  const columns = [...groupedNotes.entries()]
+    .map(([startUnits, group]) => ({
+      durationUnits: Math.max(
+        ...group.map((note) => getClosestAbcUnits(note.durationTicks / ppq)),
+      ),
+      group,
+      startUnits,
+    }))
+    .sort((first, second) => first.startUnits - second.startUnits);
 
-      return { durationUnits, group, startUnits };
-    })
-    .sort((first, second) => first.startUnits - second.startUnits)
-    .forEach(({ durationUnits, group, startUnits }) => {
-      const measureIndex = Math.floor(startUnits / 32);
-      const measureStartUnits = measureIndex * 32;
-      const measure = measureTokens[measureIndex];
+  measureTokens.forEach((measure, measureIndex) => {
+    const measureStartUnits = measureIndex * measureUnits;
+    const measureEndUnits = measureStartUnits + measureUnits;
+    const measureColumns = columns.filter(
+      (column) =>
+        column.startUnits >= measureStartUnits &&
+        column.startUnits < measureEndUnits,
+    );
+    let cursorUnits = 0;
 
-      if (!measure) {
+    measureColumns.forEach((column, columnIndex) => {
+      let localStartUnits = column.startUnits - measureStartUnits;
+
+      if (localStartUnits < cursorUnits) {
+        overlappedNoteCount += column.group.length;
+        localStartUnits = cursorUnits;
+      }
+
+      if (localStartUnits >= measureUnits) {
+        trimmedNoteCount += column.group.length;
         return;
       }
 
-      const usedUnits = measure.reduce((sum, token) => sum + token.units, 0);
-      const gapUnits = startUnits - measureStartUnits - usedUnits;
+      splitUnitsIntoSupportedUnits(localStartUnits - cursorUnits).forEach(
+        (units) =>
+          measure.push({
+            isRest: true,
+            pitches: [],
+            units,
+          }),
+      );
 
-      if (gapUnits > 0) {
-        measure.push({
-          isRest: true,
-          pitches: [],
-          units: getClosestAbcUnits(gapUnits / ABC_UNITS_PER_QUARTER),
-        });
+      const nextColumnStartUnits =
+        measureColumns[columnIndex + 1]?.startUnits ?? measureEndUnits;
+      const maxUnits = Math.max(
+        1,
+        Math.min(
+          measureUnits - localStartUnits,
+          nextColumnStartUnits - measureStartUnits - localStartUnits,
+        ),
+      );
+      const units = getClosestSupportedUnitsAtMost(
+        column.durationUnits,
+        maxUnits,
+      );
+
+      if (units < column.durationUnits) {
+        trimmedNoteCount += column.group.length;
       }
 
       measure.push({
         isRest: false,
-        pitches: group
-          .map((note) => encodeMidiPitch(note.midiNote))
-          .sort(),
-        units: durationUnits,
+        pitches: [
+          ...new Set(
+            column.group
+              .map((note) => encodeMidiPitch(note.midiNote))
+              .sort(),
+          ),
+        ],
+        units,
+      });
+      cursorUnits = localStartUnits + units;
+    });
+
+    splitUnitsIntoSupportedUnits(measureUnits - cursorUnits).forEach((units) =>
+      measure.push({
+        isRest: true,
+        pitches: [],
+        units,
+      }),
+    );
+  });
+
+  return {
+    line: `[V:${id}] ${measureTokens
+      .map((tokens) => tokens.map(encodeAbcToken).join(' '))
+      .join(' | ')}`,
+    overlappedNoteCount,
+    trimmedNoteCount,
+  };
+}
+
+function getPedalTransitionMarks(
+  controlChanges: readonly MidiControlChangeEvent[],
+) {
+  const marks: Array<{ mark: PedalMark; ticks: number }> = [];
+  let isPedalDown = false;
+
+  controlChanges
+    .filter((event) => event.controller === 64)
+    .sort((first, second) => first.ticks - second.ticks)
+    .forEach((event) => {
+      const nextIsPedalDown = event.value >= 64;
+
+      if (nextIsPedalDown === isPedalDown) {
+        return;
+      }
+
+      isPedalDown = nextIsPedalDown;
+      marks.push({
+        mark: nextIsPedalDown ? 'start' : 'release',
+        ticks: event.ticks,
       });
     });
 
-  return `[V:${id}] ${measureTokens
-    .map((tokens) =>
-      tokens.length > 0 ? tokens.map(encodeAbcToken).join(' ') : 'z32',
-    )
-    .join(' | ')} |`;
+  return marks;
+}
+
+function mergePedalMark(existing: PedalMark | undefined, next: PedalMark) {
+  if (!existing || existing === next) {
+    return next;
+  }
+
+  return 'start-release';
+}
+
+function findPedalTargetEventId(
+  score: Score,
+  measureIndex: number,
+  beat: number,
+) {
+  const staffOrder: StaffId[] = ['bass', 'treble'];
+
+  for (const staffId of staffOrder) {
+    const staff = score.parts[0]?.staves.find(
+      (candidate) => candidate.id === staffId,
+    );
+    const events = staff?.measures[measureIndex]?.voices
+      .flatMap((voice) => voice.events)
+      .filter((event) => event.kind !== 'rest')
+      .sort((first, second) => {
+        const firstIsAfter = first.beat >= beat ? 0 : 1;
+        const secondIsAfter = second.beat >= beat ? 0 : 1;
+
+        return firstIsAfter - secondIsAfter ||
+          Math.abs(first.beat - beat) - Math.abs(second.beat - beat);
+      }) ?? [];
+
+    if (events[0]) {
+      return events[0].id;
+    }
+  }
+
+  return null;
+}
+
+function applyMidiPedalMarks({
+  controlChanges,
+  measureUnits,
+  ppq,
+  score,
+}: {
+  controlChanges: readonly MidiControlChangeEvent[];
+  measureUnits: number;
+  ppq: number;
+  score: Score;
+}) {
+  const pedalMarksByEventId = new Map<string, PedalMark>();
+
+  getPedalTransitionMarks(controlChanges).forEach((pedal) => {
+    const absoluteUnits = Math.round(
+      (pedal.ticks / ppq) * ABC_UNITS_PER_QUARTER,
+    );
+    const measureIndex = Math.floor(absoluteUnits / measureUnits);
+    const beat = (absoluteUnits - measureIndex * measureUnits) /
+      ABC_UNITS_PER_QUARTER;
+    const eventId = findPedalTargetEventId(score, measureIndex, beat);
+
+    if (!eventId) {
+      return;
+    }
+
+    pedalMarksByEventId.set(
+      eventId,
+      mergePedalMark(pedalMarksByEventId.get(eventId), pedal.mark),
+    );
+  });
+
+  if (pedalMarksByEventId.size === 0) {
+    return {
+      appliedPedalMarkCount: 0,
+      score,
+    };
+  }
+
+  return {
+    appliedPedalMarkCount: pedalMarksByEventId.size,
+    score: {
+      ...score,
+      parts: score.parts.map((part) => ({
+        ...part,
+        staves: part.staves.map((staff) => ({
+          ...staff,
+          measures: staff.measures.map((measure) => ({
+            ...measure,
+            voices: measure.voices.map((voice) => ({
+              ...voice,
+              events: voice.events.map((event) => {
+                const pedal = pedalMarksByEventId.get(event.id);
+
+                return pedal
+                  ? {
+                      ...event,
+                      pedal: mergePedalMark(event.pedal, pedal),
+                    }
+                  : event;
+              }),
+            })),
+          })),
+        })),
+      })),
+    },
+  };
 }
 
 export function importScoreFromMidi(
   arrayBuffer: ArrayBuffer,
   fileName = 'Imported MIDI Score',
 ): AbcImportResult {
-  const { notes, ppq, tempo } = parseMidiFile(arrayBuffer);
+  const parsedMidi = parseMidiFile(arrayBuffer);
+  const {
+    controlChanges,
+    keySignatures,
+    notes,
+    ppq,
+    tempo,
+    timeSignature,
+  } = parsedMidi;
 
   if (notes.length === 0) {
     throw new Error('No MIDI notes found');
@@ -469,39 +964,84 @@ export function importScoreFromMidi(
   const lastTick = Math.max(
     ...notes.map((note) => note.startTicks + note.durationTicks),
   );
-  const measureCount = Math.max(1, Math.ceil(lastTick / ppq / 4));
-  const trebleNotes = notes.filter((note) => note.midiNote >= 60);
-  const bassNotes = notes.filter((note) => note.midiNote < 60);
+  const measureUnits = getMeasureUnitsFromTimeSignature(timeSignature);
+  const measureCount = Math.max(
+    1,
+    Math.ceil(
+      lastTick /
+        ppq /
+        getMeasureBeatsFromTimeSignature(timeSignature),
+    ),
+  );
+  const trackStaffByIndex = getTrackStaffMap(notes);
+  const trebleNotes = notes.filter(
+    (note) => getStaffIdForNote(note, trackStaffByIndex) === 'treble',
+  );
+  const bassNotes = notes.filter(
+    (note) => getStaffIdForNote(note, trackStaffByIndex) === 'bass',
+  );
+  const trebleLine = buildMidiStaffLine({
+    id: 'T',
+    measureCount,
+    measureUnits,
+    notes: trebleNotes,
+    ppq,
+  });
+  const bassLine = buildMidiStaffLine({
+    id: 'B',
+    measureCount,
+    measureUnits,
+    notes: bassNotes,
+    ppq,
+  });
   const abc = [
     'X:1',
     `T:${sanitizeAbcField(fileName.replace(/\.(mid|midi)$/i, ''), 'Imported MIDI Score')}`,
-    'M:4/4',
+    `M:${timeSignature.beats}/${timeSignature.beatUnit}`,
     'L:1/32',
     `Q:1/4=${tempo}`,
     '%%score (T B)',
     'V:T clef=treble name="Right hand"',
     'V:B clef=bass name="Left hand"',
-    'K:C',
-    buildMidiStaffLine({
-      id: 'T',
-      measureCount,
-      notes: trebleNotes,
-      ppq,
-    }),
-    buildMidiStaffLine({
-      id: 'B',
-      measureCount,
-      notes: bassNotes,
-      ppq,
-    }),
+    `K:${getMidiKeySignature(keySignatures)}`,
+    trebleLine.line,
+    bassLine.line,
   ].join('\n');
   const result = importScoreFromAbc(abc);
+  const { appliedPedalMarkCount, score } = applyMidiPedalMarks({
+    controlChanges,
+    measureUnits,
+    ppq,
+    score: result.score,
+  });
+  const overlappedNoteCount =
+    trebleLine.overlappedNoteCount + bassLine.overlappedNoteCount;
+  const trimmedNoteCount =
+    trebleLine.trimmedNoteCount + bassLine.trimmedNoteCount;
 
   return {
-    score: result.score,
+    score,
     warnings: [
-      'MIDI import quantizes to 4/4 and splits hands at middle C',
+      'MIDI import quantizes timing to a 1/32-note notation grid',
+      trackStaffByIndex
+        ? 'MIDI import split hands by detected note tracks'
+        : 'MIDI import split hands at middle C',
+      overlappedNoteCount > 0
+        ? `MIDI import flattened ${overlappedNoteCount} overlapping note${
+            overlappedNoteCount === 1 ? '' : 's'
+          } into a single notation voice`
+        : null,
+      trimmedNoteCount > 0
+        ? `MIDI import shortened ${trimmedNoteCount} sustained note${
+            trimmedNoteCount === 1 ? '' : 's'
+          } to keep measures readable`
+        : null,
+      appliedPedalMarkCount > 0
+        ? `MIDI import mapped ${appliedPedalMarkCount} sustain pedal mark${
+            appliedPedalMarkCount === 1 ? '' : 's'
+          }`
+        : null,
       ...result.warnings,
-    ],
+    ].filter(Boolean) as string[],
   };
 }
