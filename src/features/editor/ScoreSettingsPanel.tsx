@@ -2,7 +2,9 @@ import { countScoreEvents, findScoreEvent } from '../../domain/score/editing';
 import { findClefChange } from '../../domain/score/clefChanges';
 import type {
   ArticulationKind,
+  GraceNoteAttachment,
   HairpinMark,
+  NoteStep,
   OttavaKind,
   PageSize,
   PedalMark,
@@ -83,6 +85,10 @@ const DYNAMIC_MARK_GROUPS = [
   },
 ];
 
+const NOTE_STEPS: NoteStep[] = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+
+type GracePreset = 'none' | 'lower' | 'upper' | 'turn';
+
 function formatScoreEventSummary(
   selectedEvent: ReturnType<typeof findScoreEvent>,
   selectedPitchIndex: number | null,
@@ -116,6 +122,82 @@ function formatScoreEventSummary(
 
 function formatVoiceIndex(voiceIndex: number) {
   return `V${voiceIndex + 1}`;
+}
+
+function getSelectedEventAnchorPitch(
+  selectedEvent: ReturnType<typeof findScoreEvent>,
+  selectedPitchIndex: number | null,
+) {
+  if (!selectedEvent || !isPitchedScoreEvent(selectedEvent.event)) {
+    return null;
+  }
+
+  if (selectedEvent.event.kind === 'note') {
+    return selectedEvent.event.pitch;
+  }
+
+  return (
+    selectedEvent.event.pitches[selectedPitchIndex ?? 0] ??
+    selectedEvent.event.pitches[0] ??
+    null
+  );
+}
+
+function stepPitch(
+  pitch: NonNullable<ReturnType<typeof getSelectedEventAnchorPitch>>,
+  direction: -1 | 1,
+) {
+  const stepIndex = NOTE_STEPS.indexOf(pitch.step);
+  const nextStepIndex =
+    (stepIndex + direction + NOTE_STEPS.length) % NOTE_STEPS.length;
+  const octaveDelta =
+    direction > 0 && pitch.step === 'B'
+      ? 1
+      : direction < 0 && pitch.step === 'C'
+        ? -1
+        : 0;
+
+  return {
+    step: NOTE_STEPS[nextStepIndex],
+    octave: pitch.octave + octaveDelta,
+  };
+}
+
+function createGraceNotesFromPreset(
+  selectedEvent: ReturnType<typeof findScoreEvent>,
+  selectedPitchIndex: number | null,
+  preset: GracePreset,
+): GraceNoteAttachment[] | null {
+  if (preset === 'none') {
+    return null;
+  }
+
+  const anchorPitch = getSelectedEventAnchorPitch(selectedEvent, selectedPitchIndex);
+
+  if (!anchorPitch) {
+    return null;
+  }
+
+  if (preset === 'turn') {
+    return [
+      {
+        duration: 'sixteenth',
+        pitches: [stepPitch(anchorPitch, 1)],
+      },
+      {
+        duration: 'sixteenth',
+        pitches: [stepPitch(anchorPitch, -1)],
+      },
+    ];
+  }
+
+  return [
+    {
+      duration: 'sixteenth',
+      pitches: [stepPitch(anchorPitch, preset === 'upper' ? 1 : -1)],
+      slash: true,
+    },
+  ];
 }
 
 function getPolyphonySummary(score: Score) {
@@ -233,8 +315,10 @@ interface ScoreSettingsPanelProps {
   onDynamicChange: (dynamic: string | null) => void;
   onFermataChange: (fermata: boolean) => void;
   onGlissandoChange: (glissando: boolean) => void;
+  onGraceNotesChange: (graceNotes: GraceNoteAttachment[] | null) => void;
   onHairpinChange: (hairpin: HairpinMark | null) => void;
   onLyricChange: (lyric: string | null) => void;
+  onLyricBulkApply: (lyrics: string[]) => void;
   onOttavaClear: () => void;
   onOttavaToggle: (ottava: OttavaKind) => void;
   onPageSizeChange: (pageSize: PageSize) => void;
@@ -270,8 +354,10 @@ export function ScoreSettingsPanel({
   onDynamicChange,
   onFermataChange,
   onGlissandoChange,
+  onGraceNotesChange,
   onHairpinChange,
   onLyricChange,
+  onLyricBulkApply,
   onOttavaClear,
   onOttavaToggle,
   onPageSizeChange,
@@ -320,6 +406,7 @@ export function ScoreSettingsPanel({
       selectedDynamic as (typeof DYNAMIC_MARK_OPTIONS)[number],
     );
   const eventCount = countScoreEvents(score);
+  const selectedGraceCount = selectedEvent?.event.graceNotes?.length ?? 0;
   const selectedSummary = selectedClefChange && selectedClefChangeInfo
     ? `${selectedClefChangeInfo.change.clef} clef M${
         selectedClefChangeInfo.measureIndex + 1
@@ -350,6 +437,13 @@ export function ScoreSettingsPanel({
     const trimmed = value.trim();
 
     return trimmed.length > 0 ? trimmed : null;
+  }
+
+  function parseBulkLyrics(value: string) {
+    return value
+      .split(/\s+/)
+      .map((lyric) => lyric.trim())
+      .filter(Boolean);
   }
 
   return (
@@ -458,6 +552,28 @@ export function ScoreSettingsPanel({
           />
         </label>
         <label>
+          Lyric line
+          <textarea
+            key={`lyric-bulk-${selectedEventId ?? 'none'}`}
+            disabled={!selectedEvent}
+            placeholder="nhap cac am tiet cach nhau bang khoang trang"
+            rows={2}
+            onBlur={(event) => {
+              const lyrics = parseBulkLyrics(event.target.value);
+
+              if (lyrics.length > 0) {
+                onLyricBulkApply(lyrics);
+                event.target.value = '';
+              }
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                event.currentTarget.blur();
+              }
+            }}
+          />
+        </label>
+        <label>
           Dynamic
           <select
             aria-label="Dynamic"
@@ -520,6 +636,35 @@ export function ScoreSettingsPanel({
             <option value="start">Ped.</option>
             <option value="release">*</option>
             <option value="start-release">Ped. *</option>
+          </select>
+        </label>
+        <label>
+          Grace
+          <select
+            key={`grace-${selectedEventId ?? 'none'}-${selectedGraceCount}`}
+            defaultValue={selectedGraceCount > 0 ? 'custom' : 'none'}
+            disabled={!selectedEvent || !canEditArticulations}
+            onChange={(event) => {
+              const preset = event.target.value as GracePreset | 'custom';
+
+              if (preset !== 'custom') {
+                onGraceNotesChange(
+                  createGraceNotesFromPreset(
+                    selectedEvent,
+                    selectedPitchIndex,
+                    preset,
+                  ),
+                );
+              }
+            }}
+          >
+            <option value="none">None</option>
+            <option value="lower">Lower grace</option>
+            <option value="upper">Upper grace</option>
+            <option value="turn">Two-note turn</option>
+            {selectedGraceCount > 0 ? (
+              <option value="custom">Custom ({selectedGraceCount})</option>
+            ) : null}
           </select>
         </label>
         <div

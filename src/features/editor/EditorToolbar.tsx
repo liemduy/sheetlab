@@ -220,6 +220,7 @@ interface EditorToolbarProps {
   importExternalScoreInputRef: RefObject<HTMLInputElement | null>;
   importInputRef: RefObject<HTMLInputElement | null>;
   importReferenceInputRef: RefObject<HTMLInputElement | null>;
+  isPlaybackPaused: boolean;
   isPlaying: boolean;
   openPalette: ToolbarPalette;
   pastScoreCount: number;
@@ -263,6 +264,7 @@ interface EditorToolbarProps {
   onMeasureNumbersToggle: (show: boolean) => void;
   onOpenPaletteChange: (palette: ToolbarPalette) => void;
   onPlacementModeChange: (placementMode: PlacementMode) => void;
+  onPlaybackStop: () => void;
   onPlaybackToggle: () => void | Promise<void>;
   onPracticeOpen: () => void;
   onPracticePreload?: () => void;
@@ -291,6 +293,7 @@ export function EditorToolbar({
   importExternalScoreInputRef,
   importInputRef,
   importReferenceInputRef,
+  isPlaybackPaused,
   isPlaying,
   openPalette,
   pastScoreCount,
@@ -329,6 +332,7 @@ export function EditorToolbar({
   onMeasureNumbersToggle,
   onOpenPaletteChange,
   onPlacementModeChange,
+  onPlaybackStop,
   onPlaybackToggle,
   onPracticeOpen,
   onPracticePreload,
@@ -357,6 +361,12 @@ export function EditorToolbar({
     isSupportedTupletActualNotes(rawActiveTupletActualNotes)
       ? rawActiveTupletActualNotes
       : null;
+  const playbackButtonLabel = isPlaying
+    ? 'Pause'
+    : isPlaybackPaused
+      ? 'Resume'
+      : 'Play';
+  const playbackButtonSymbol = isPlaying ? '\u23f8' : '\u25b6';
 
   return (
     <nav className="toolbar" aria-label="Editor toolbar">
@@ -799,12 +809,23 @@ export function EditorToolbar({
         <span className="toolbar-group-label">Transport</span>
         <button
           type="button"
-          aria-label={isPlaying ? 'Stop' : 'Play'}
-          className={`tool-button${isPlaying ? ' is-active' : ''}`}
+          aria-label={playbackButtonLabel}
+          className={`tool-button${isPlaying || isPlaybackPaused ? ' is-active' : ''}`}
           onClick={() => void onPlaybackToggle()}
         >
           <span className="tool-symbol" aria-hidden="true">
-            {isPlaying ? '\u25a0' : '\u25b6'}
+            {playbackButtonSymbol}
+          </span>
+        </button>
+        <button
+          type="button"
+          aria-label="Stop"
+          className="tool-button"
+          disabled={!isPlaying && !isPlaybackPaused}
+          onClick={() => onPlaybackStop()}
+        >
+          <span className="tool-symbol" aria-hidden="true">
+            {'\u25a0'}
           </span>
         </button>
         <button

@@ -251,6 +251,101 @@ describe('playback timeline', () => {
     });
   });
 
+  it('keeps standard dynamics active until a later dynamic changes playback velocity', () => {
+    const score = ['soft', 'still-soft', 'loud'].reduce(
+      (currentScore, eventId, index) =>
+        placeScoreEvent(currentScore, {
+          eventId,
+          staffId: 'treble',
+          measureIndex: 0,
+          beat: index,
+          duration: 'quarter',
+          entryMode: 'note',
+          pitch: { step: 'C', octave: 4 + index },
+        }),
+      createEmptyScore('treble', { tempo: 60 }),
+    );
+    const softScore = tryUpdateScoreEvent(score, 'soft', {
+      dynamic: 'p',
+    }).score;
+    const markedScore = tryUpdateScoreEvent(softScore, 'loud', {
+      dynamic: 'f',
+    }).score;
+    const timeline = buildPlaybackTimeline(markedScore);
+
+    expect(timeline.map((event) => event.velocity)).toEqual([0.52, 0.52, 0.86]);
+    expect(timeline.map((event) => event.dynamic)).toEqual([
+      'p',
+      undefined,
+      'f',
+    ]);
+  });
+
+  it('nudges the next note velocity for hairpin playback', () => {
+    const score = ['crescendo-source', 'crescendo-target'].reduce(
+      (currentScore, eventId, index) =>
+        placeScoreEvent(currentScore, {
+          eventId,
+          staffId: 'treble',
+          measureIndex: 0,
+          beat: index,
+          duration: 'quarter',
+          entryMode: 'note',
+          pitch: { step: 'C', octave: 4 + index },
+        }),
+      createEmptyScore('treble', { tempo: 60 }),
+    );
+    const markedScore = tryUpdateScoreEvent(score, 'crescendo-source', {
+      hairpin: 'crescendo',
+    }).score;
+    const timeline = buildPlaybackTimeline(markedScore);
+
+    expect(timeline.map((event) => event.velocity)).toEqual([0.82, 0.94]);
+    expect(timeline[0]).toMatchObject({ hairpin: 'crescendo' });
+  });
+
+  it('extends sound duration while sustain pedal is held', () => {
+    const scoreWithStart = placeScoreEvent(
+      createEmptyScore('treble', { tempo: 60 }),
+      {
+        eventId: 'pedal-start-note',
+        staffId: 'treble',
+        measureIndex: 0,
+        beat: 0,
+        duration: 'quarter',
+        entryMode: 'note',
+        pitch: { step: 'C', octave: 4 },
+      },
+    );
+    const score = placeScoreEvent(scoreWithStart, {
+      eventId: 'pedal-release-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 2,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'G', octave: 4 },
+    });
+    const pedaledScore = tryUpdateScoreEvent(score, 'pedal-start-note', {
+      pedal: 'start',
+    }).score;
+    const markedScore = tryUpdateScoreEvent(pedaledScore, 'pedal-release-note', {
+      pedal: 'release',
+    }).score;
+    const timeline = buildPlaybackTimeline(markedScore);
+
+    expect(timeline[0]).toMatchObject({
+      durationSeconds: 1,
+      pedal: 'start',
+      soundDurationSeconds: 2,
+    });
+    expect(timeline[1]).toMatchObject({
+      durationSeconds: 1,
+      pedal: 'release',
+      soundDurationSeconds: 1,
+    });
+  });
+
   it('plays attached grace notes as short pickups without changing main duration', () => {
     const score = placeScoreEvent(createEmptyScore('treble', { tempo: 120 }), {
       eventId: 'grace-main',

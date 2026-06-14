@@ -520,6 +520,8 @@ export function PracticePage({
     endEventId: string;
   } | null>(null);
   const [isGuidePlaying, setIsGuidePlaying] = useState(false);
+  const [isGuidePaused, setIsGuidePaused] = useState(false);
+  const [guidePausedOffsetSeconds, setGuidePausedOffsetSeconds] = useState(0);
   const [isPracticing, setIsPracticing] = useState(false);
   const [currentTargetIndex, setCurrentTargetIndex] = useState(0);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -542,6 +544,7 @@ export function PracticePage({
   const guideRunIdRef = useRef(0);
   const hasGuideLeftCountInRef = useRef(false);
   const isLoopingRef = useRef(isLooping);
+  const isGuidePausedRef = useRef(isGuidePaused);
   const isGuidePlayingRef = useRef(isGuidePlaying);
   const isPracticingRef = useRef(isPracticing);
   const modeRef = useRef(mode);
@@ -664,7 +667,7 @@ export function PracticePage({
     return feedbackByEventId;
   }, [results, targetById]);
   const rhythmPlaybackBeat =
-    (mode === 'rhythm' && isPracticing) || isGuidePlaying
+    (mode === 'rhythm' && isPracticing) || isGuidePlaying || isGuidePaused
       ? getPlaybackScoreBeatAtSeconds(
           playbackTimeline,
           score.tempo,
@@ -749,6 +752,9 @@ export function PracticePage({
 
     isGuidePlayingRef.current = false;
     setIsGuidePlaying(false);
+    isGuidePausedRef.current = false;
+    setIsGuidePaused(false);
+    setGuidePausedOffsetSeconds(0);
 
     if (resetClock) {
       elapsedSecondsRef.current = 0;
@@ -790,6 +796,9 @@ export function PracticePage({
       hasGuideLeftCountInRef.current = delaySeconds <= 0;
       elapsedSecondsRef.current = safeStartOffsetSeconds - delaySeconds;
       setElapsedSeconds(safeStartOffsetSeconds - delaySeconds);
+      isGuidePausedRef.current = false;
+      setIsGuidePaused(false);
+      setGuidePausedOffsetSeconds(0);
       isGuidePlayingRef.current = true;
       setIsGuidePlaying(true);
 
@@ -844,6 +853,44 @@ export function PracticePage({
       stopGuidePlayback,
     ],
   );
+
+  const pauseGuidePlayback = useCallback(() => {
+    if (!isGuidePlayingRef.current || isPracticingRef.current) {
+      return;
+    }
+
+    guideRunIdRef.current += 1;
+    const rawElapsedSeconds =
+      guideControllerRef.current?.getElapsedSeconds?.() ??
+      elapsedSecondsRef.current;
+    const pausedAtSeconds = clampNumber(
+      Math.max(0, rawElapsedSeconds),
+      0,
+      Math.max(0, practiceDurationSeconds),
+    );
+
+    guideControllerRef.current?.stop();
+    guideControllerRef.current = null;
+
+    if (guideAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(guideAnimationFrameRef.current);
+      guideAnimationFrameRef.current = null;
+    }
+
+    if (guideEndTimerRef.current !== null) {
+      window.clearTimeout(guideEndTimerRef.current);
+      guideEndTimerRef.current = null;
+    }
+
+    elapsedSecondsRef.current = pausedAtSeconds;
+    setElapsedSeconds(pausedAtSeconds);
+    setGuidePausedOffsetSeconds(pausedAtSeconds);
+    isGuidePausedRef.current = true;
+    setIsGuidePaused(true);
+    isGuidePlayingRef.current = false;
+    setIsGuidePlaying(false);
+    setPracticeMessage('Reference paused');
+  }, [practiceDurationSeconds]);
 
   const resetPracticeRound = useCallback(
     (message: string, nextStatus: PracticeSessionStatus = 'running') => {
@@ -1114,13 +1161,19 @@ export function PracticePage({
   );
   const activeGuideEvents = useMemo(
     () =>
-      isGuidePlaying && elapsedSeconds >= 0
+      (isGuidePlaying || isGuidePaused) && elapsedSeconds >= 0
         ? getActiveTimelineEvents(
             playbackTimeline,
             practiceStartSeconds + elapsedSeconds,
           )
         : [],
-    [elapsedSeconds, isGuidePlaying, playbackTimeline, practiceStartSeconds],
+    [
+      elapsedSeconds,
+      isGuidePaused,
+      isGuidePlaying,
+      playbackTimeline,
+      practiceStartSeconds,
+    ],
   );
   const activeGuideEventIds = useMemo(
     () => [
@@ -1139,7 +1192,7 @@ export function PracticePage({
   const activeEventIds =
     mode === 'listen'
       ? activeListenEventIds
-      : isGuidePlaying && !isPracticing
+      : (isGuidePlaying || isGuidePaused) && !isPracticing
         ? activeGuideEventIds
         : activePracticeEventIds;
   const rangeEventIds = useMemo(
@@ -1171,6 +1224,10 @@ export function PracticePage({
   useEffect(() => {
     isLoopingRef.current = isLooping;
   }, [isLooping]);
+
+  useEffect(() => {
+    isGuidePausedRef.current = isGuidePaused;
+  }, [isGuidePaused]);
 
   useEffect(() => {
     isGuidePlayingRef.current = isGuidePlaying;
@@ -1372,20 +1429,39 @@ export function PracticePage({
     isPracticingRef.current = false;
     setIsGuidePlaying(false);
     isGuidePlayingRef.current = false;
+    setIsGuidePaused(false);
+    isGuidePausedRef.current = false;
     updateSessionStatus('idle');
     setPracticeMessage(nextMode === 'listen' ? 'Listening' : getTargetLabel(currentTarget));
   }
 
   async function handleReferenceToggle() {
     if (isGuidePlaying && !isPracticing) {
-      stopGuidePlayback(true);
+      pauseGuidePlayback();
       updateSessionStatus('idle');
-      setPracticeMessage('Reference stopped');
+      return;
+    }
+
+    if (isGuidePaused && !isPracticing) {
+      await warmUpPlaybackAudio();
+      void startGuidePlayback({
+        forPractice: false,
+        skipCountIn: true,
+        startOffsetSeconds: guidePausedOffsetSeconds,
+      });
       return;
     }
 
     await warmUpPlaybackAudio();
     void startGuidePlayback({ forPractice: false });
+  }
+
+  function handleReferenceStop() {
+    if (isGuidePlaying || isGuidePaused) {
+      stopGuidePlayback(true);
+      updateSessionStatus('idle');
+      setPracticeMessage('Reference stopped');
+    }
   }
 
   async function handlePracticeToggle() {
@@ -1643,6 +1719,13 @@ export function PracticePage({
   const progressLabel = `${resultSummary.correct}/${targets.length}`;
   const guideMeasureIndex = activeGuideEvents[0]?.measureIndex ?? null;
   const currentMeasureIndex = currentTarget?.measureIndex ?? guideMeasureIndex;
+  const isReferenceTransportActive =
+    (isGuidePlaying || isGuidePaused) && !isPracticing;
+  const referenceButtonLabel = isGuidePlaying
+    ? 'Pause Ref'
+    : isGuidePaused
+      ? 'Resume Ref'
+      : 'Reference';
 
   return (
     <main className="app-shell practice-shell" data-testid="practice-page">
@@ -1679,12 +1762,21 @@ export function PracticePage({
           </button>
           <button
             type="button"
-            className={`tool-button${isGuidePlaying && !isPracticing ? ' is-active' : ''}`}
+            className={`tool-button${isReferenceTransportActive ? ' is-active' : ''}`}
             data-testid="practice-reference"
             disabled={isPracticing}
             onClick={() => void handleReferenceToggle()}
           >
-            {isGuidePlaying && !isPracticing ? 'Stop Ref' : 'Reference'}
+            {referenceButtonLabel}
+          </button>
+          <button
+            type="button"
+            className="tool-button"
+            data-testid="practice-reference-stop"
+            disabled={!isReferenceTransportActive}
+            onClick={handleReferenceStop}
+          >
+            Stop Ref
           </button>
         </div>
       </header>

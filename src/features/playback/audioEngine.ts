@@ -91,6 +91,50 @@ function isAccentBeat(beatIndex: number, beatsPerMeasure: number) {
   return ((beatIndex % beatsPerMeasure) + beatsPerMeasure) % beatsPerMeasure === 0;
 }
 
+function createPianoLikeSynth(Tone: typeof import('tone')) {
+  const compressor = new Tone.Compressor({
+    attack: 0.003,
+    ratio: 3,
+    release: 0.25,
+    threshold: -18,
+  }).toDestination();
+  const reverb = new Tone.Reverb({
+    decay: 1.45,
+    preDelay: 0.015,
+    wet: 0.16,
+  }).connect(compressor);
+  const eq = new Tone.EQ3({
+    high: 1.5,
+    highFrequency: 2800,
+    low: -1.5,
+    lowFrequency: 180,
+    mid: 0,
+  }).connect(reverb);
+  const synth = new Tone.PolySynth(Tone.Synth, {
+    envelope: {
+      attack: 0.004,
+      decay: 0.24,
+      release: 1.1,
+      sustain: 0.12,
+    },
+    oscillator: {
+      type: 'triangle8',
+    },
+    volume: -5,
+  }).connect(eq);
+
+  return {
+    dispose: () => {
+      synth.releaseAll();
+      synth.dispose();
+      eq.dispose();
+      reverb.dispose();
+      compressor.dispose();
+    },
+    synth,
+  };
+}
+
 export async function warmUpPlaybackAudio() {
   if (!getAudioContextConstructor()) {
     return false;
@@ -121,7 +165,7 @@ export async function playTimelineAudio(
 
   const Tone = await getToneModule();
   const audioStarted = await warmUpPlaybackAudio();
-  const synth = new Tone.PolySynth(Tone.Synth).toDestination();
+  const pianoSynth = createPianoLikeSynth(Tone);
   const audioNowSeconds = Tone.now();
   const audioImmediateSeconds = Tone.immediate();
   const toneLookAheadSeconds = Math.max(
@@ -223,7 +267,7 @@ export async function playTimelineAudio(
           continue;
         }
 
-        synth.triggerAttackRelease(
+        pianoSynth.synth.triggerAttackRelease(
           event.pitches.map(pitchToToneNote),
           event.soundDurationSeconds,
           Math.max(Tone.now(), eventStartAudioSeconds),
@@ -319,8 +363,7 @@ export async function playTimelineAudio(
         if (schedulerTimer !== null) {
           globalThis.clearInterval(schedulerTimer);
         }
-        synth.releaseAll();
-        synth.dispose();
+        pianoSynth.dispose();
         metronomeSynth?.dispose();
       },
     };
@@ -332,8 +375,7 @@ export async function playTimelineAudio(
       Tone.immediate() - playbackStartAudioSeconds,
     startedAtMs,
     stop: () => {
-      synth.releaseAll();
-      synth.dispose();
+      pianoSynth.dispose();
     },
   };
 }
@@ -353,15 +395,14 @@ export async function playPitchPreview(
     return;
   }
 
-  const synth = new Tone.PolySynth(Tone.Synth).toDestination();
+  const pianoSynth = createPianoLikeSynth(Tone);
 
-  synth.triggerAttackRelease(
+  pianoSynth.synth.triggerAttackRelease(
     pitches.map(pitchToToneNote),
     durationSeconds,
     Tone.now(),
   );
   globalThis.setTimeout(() => {
-    synth.releaseAll();
-    synth.dispose();
-  }, (durationSeconds + 0.18) * 1000);
+    pianoSynth.dispose();
+  }, (durationSeconds + 1.2) * 1000);
 }

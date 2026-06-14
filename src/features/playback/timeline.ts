@@ -1,5 +1,6 @@
 import type {
   ArticulationKind,
+  HairpinMark,
   Pitch,
   RepeatJumpKind,
   Score,
@@ -43,12 +44,26 @@ export interface PlaybackTimelineEvent {
   pitch?: Pitch;
   pitches: Pitch[];
   articulations?: ArticulationKind[];
+  dynamic?: string;
+  hairpin?: HairpinMark;
+  pedal?: ScoreEvent['pedal'];
   sustainedEventIds?: string[];
 }
 
 const DEFAULT_PLAYBACK_VELOCITY = 0.82;
 const GRACE_NOTE_SOUND_SECONDS = 0.075;
 const GRACE_NOTE_VELOCITY = 0.58;
+const HAIRPIN_VELOCITY_STEP = 0.12;
+const STANDARD_DYNAMIC_VELOCITY: Record<string, number> = {
+  f: 0.86,
+  ff: 0.96,
+  fff: 1,
+  mf: 0.74,
+  mp: 0.62,
+  p: 0.52,
+  pp: 0.42,
+  ppp: 0.34,
+};
 
 interface PlaybackEventContext {
   event: ScoreEvent;
@@ -58,8 +73,27 @@ interface PlaybackEventContext {
   voiceIndex: number;
 }
 
+interface EventPlaybackPerformance {
+  baseVelocity: number;
+  pedalReleaseTick?: number;
+}
+
 export function getSecondsPerBeat(tempo: number) {
   return 60 / tempo;
+}
+
+function clampVelocity(velocity: number) {
+  return Math.min(1, Math.max(0.1, Number(velocity.toFixed(3))));
+}
+
+function getStandardDynamicVelocity(dynamic: string | undefined) {
+  if (!dynamic) {
+    return null;
+  }
+
+  const normalizedDynamic = dynamic.trim().toLowerCase();
+
+  return STANDARD_DYNAMIC_VELOCITY[normalizedDynamic] ?? null;
 }
 
 function getArticulationSoundRatio(articulations: readonly ArticulationKind[]) {
@@ -90,14 +124,17 @@ function getArticulationSoundRatio(articulations: readonly ArticulationKind[]) {
   return 1;
 }
 
-function getArticulationVelocity(articulations: readonly ArticulationKind[]) {
+function getArticulationVelocity(
+  baseVelocity: number,
+  articulations: readonly ArticulationKind[],
+) {
   const multiplier = articulations.includes('marcato')
     ? 1.25
     : articulations.includes('accent')
       ? 1.15
       : 1;
 
-  return Math.min(1, Number((DEFAULT_PLAYBACK_VELOCITY * multiplier).toFixed(3)));
+  return clampVelocity(baseVelocity * multiplier);
 }
 
 function getScoreMeasureCount(score: Score) {
@@ -136,6 +173,18 @@ function getEventContextById(eventContexts: readonly PlaybackEventContext[]) {
   );
 }
 
+function sortContextsByScorePosition(
+  first: PlaybackEventContext,
+  second: PlaybackEventContext,
+) {
+  return (
+    first.measureIndex - second.measureIndex ||
+    first.event.beat - second.event.beat ||
+    first.staffIndex - second.staffIndex ||
+    first.voiceIndex - second.voiceIndex
+  );
+}
+
 function getAbsoluteEventStartTick(
   score: Score,
   context: Pick<PlaybackEventContext, 'event' | 'measureIndex'>,
@@ -155,6 +204,207 @@ function getAbsoluteEventEndTick(
 
 function isPitchedPlaybackEvent(event: ScoreEvent) {
   return event.kind === 'note' || event.kind === 'chord';
+}
+
+function getNextPitchedContext(
+  contexts: readonly PlaybackEventContext[],
+  sourceIndex: number,
+) {
+  const sourceContext = contexts[sourceIndex];
+
+  if (!sourceContext) {
+    return null;
+  }
+
+  for (let index = sourceIndex + 1; index < contexts.length; index += 1) {
+    const candidate = contexts[index];
+
+    if (
+      candidate &&
+      candidate.staffId === sourceContext.staffId &&
+      isPitchedPlaybackEvent(candidate.event)
+    ) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function getPedalIntervalsByStaff(
+  score: Score,
+  eventContexts: readonly PlaybackEventContext[],
+) {
+  const measureTicks = getMeasureTicks(score.timeSignature);
+  const scoreEndTick = getScoreMeasureCount(score) * measureTicks;
+  const contextsByStaffId = new Map<StaffId, PlaybackEventContext[]>();
+
+  eventContexts.forEach((context) => {
+    const contexts = contextsByStaffId.get(context.staffId) ?? [];
+
+    contexts.push(context);
+    contextsByStaffId.set(context.staffId, contexts);
+  });
+
+  const intervalsByStaffId = new Map<
+    StaffId,
+    {
+      endTick: number;
+      startTick: number;
+    }[]
+  >();
+
+  contextsByStaffId.forEach((contexts, staffId) => {
+    const intervals: {
+      endTick: number;
+      startTick: number;
+    }[] = [];
+    let activeStartTick: number | null = null;
+
+    contexts
+      .filter((context) => context.event.pedal)
+      .sort(sortContextsByScorePosition)
+      .forEach((context) => {
+        const eventStartTick = getAbsoluteEventStartTick(score, context);
+        const eventEndTick = getAbsoluteEventEndTick(score, context);
+
+        if (context.event.pedal === 'start') {
+          activeStartTick ??= eventStartTick;
+          return;
+        }
+
+        if (context.event.pedal === 'release') {
+          if (activeStartTick !== null && eventStartTick > activeStartTick) {
+            intervals.push({
+              endTick: eventStartTick,
+              startTick: activeStartTick,
+            });
+          }
+
+          activeStartTick = null;
+          return;
+        }
+
+        if (activeStartTick !== null && eventStartTick > activeStartTick) {
+          intervals.push({
+            endTick: eventStartTick,
+            startTick: activeStartTick,
+          });
+        }
+
+        if (eventEndTick > eventStartTick) {
+          intervals.push({
+            endTick: eventEndTick,
+            startTick: eventStartTick,
+          });
+        }
+
+        activeStartTick = null;
+      });
+
+    if (activeStartTick !== null && scoreEndTick > activeStartTick) {
+      intervals.push({
+        endTick: scoreEndTick,
+        startTick: activeStartTick,
+      });
+    }
+
+    intervalsByStaffId.set(staffId, intervals);
+  });
+
+  return intervalsByStaffId;
+}
+
+function getPedalReleaseTickAtContext(
+  score: Score,
+  context: PlaybackEventContext,
+  intervalsByStaffId: ReadonlyMap<
+    StaffId,
+    readonly {
+      endTick: number;
+      startTick: number;
+    }[]
+  >,
+) {
+  const eventStartTick = getAbsoluteEventStartTick(score, context);
+  const interval = intervalsByStaffId
+    .get(context.staffId)
+    ?.find(
+      (candidate) =>
+        candidate.startTick <= eventStartTick &&
+        eventStartTick < candidate.endTick,
+    );
+
+  return interval?.endTick;
+}
+
+function buildEventPlaybackPerformanceById(
+  score: Score,
+  eventContexts: readonly PlaybackEventContext[],
+) {
+  const performanceByEventId = new Map<string, EventPlaybackPerformance>();
+  const contextsByStaffId = new Map<StaffId, PlaybackEventContext[]>();
+  const pedalIntervalsByStaffId = getPedalIntervalsByStaff(score, eventContexts);
+
+  eventContexts.forEach((context) => {
+    const contexts = contextsByStaffId.get(context.staffId) ?? [];
+
+    contexts.push(context);
+    contextsByStaffId.set(context.staffId, contexts);
+    performanceByEventId.set(context.event.id, {
+      baseVelocity: DEFAULT_PLAYBACK_VELOCITY,
+    });
+  });
+
+  contextsByStaffId.forEach((contexts) => {
+    let activeVelocity = DEFAULT_PLAYBACK_VELOCITY;
+    const sortedContexts = [...contexts].sort(sortContextsByScorePosition);
+
+    sortedContexts.forEach((context) => {
+      const dynamicVelocity = getStandardDynamicVelocity(context.event.dynamic);
+
+      if (dynamicVelocity !== null) {
+        activeVelocity = dynamicVelocity;
+      }
+
+      performanceByEventId.set(context.event.id, {
+        ...performanceByEventId.get(context.event.id),
+        baseVelocity: activeVelocity,
+        pedalReleaseTick: getPedalReleaseTickAtContext(
+          score,
+          context,
+          pedalIntervalsByStaffId,
+        ),
+      });
+    });
+
+    sortedContexts.forEach((context, index) => {
+      if (!context.event.hairpin || !isPitchedPlaybackEvent(context.event)) {
+        return;
+      }
+
+      const targetContext = getNextPitchedContext(sortedContexts, index);
+
+      if (!targetContext || getStandardDynamicVelocity(targetContext.event.dynamic) !== null) {
+        return;
+      }
+
+      const sourceVelocity =
+        performanceByEventId.get(context.event.id)?.baseVelocity ??
+        DEFAULT_PLAYBACK_VELOCITY;
+      const targetPerformance = performanceByEventId.get(targetContext.event.id);
+      const direction = context.event.hairpin === 'crescendo' ? 1 : -1;
+
+      performanceByEventId.set(targetContext.event.id, {
+        ...targetPerformance,
+        baseVelocity: clampVelocity(
+          sourceVelocity + direction * HAIRPIN_VELOCITY_STEP,
+        ),
+      });
+    });
+  });
+
+  return performanceByEventId;
 }
 
 function isValidTimelineTie(
@@ -580,6 +830,10 @@ export function buildPlaybackTimeline(score: Score): PlaybackTimelineEvent[] {
     eventContexts,
     eventContextById,
   );
+  const performanceByEventId = buildEventPlaybackPerformanceById(
+    score,
+    eventContexts,
+  );
   const measuresByStaffId = getMeasuresByStaffId(score);
   const keySignatureMapsByMeasureIndex = getKeySignatureMapsByMeasureIndex(score);
 
@@ -606,6 +860,10 @@ export function buildPlaybackTimeline(score: Score): PlaybackTimelineEvent[] {
                   .map((_, index) => index)
                   .filter((index) => !incomingTiePitchIndexes.has(index));
                 const articulations = event.articulations ?? [];
+                const performance =
+                  performanceByEventId.get(event.id) ?? {
+                    baseVelocity: DEFAULT_PLAYBACK_VELOCITY,
+                  };
                 const startBeat = measure.index * beatsPerMeasure + event.beat;
                 const playbackStartBeat = playbackMeasureStartBeat + event.beat;
                 const keySignatureMap =
@@ -665,13 +923,20 @@ export function buildPlaybackTimeline(score: Score): PlaybackTimelineEvent[] {
                             startSeconds: graceStartSeconds,
                             durationSeconds,
                             soundDurationSeconds: durationSeconds,
-                            velocity: GRACE_NOTE_VELOCITY,
+                            velocity: clampVelocity(
+                              GRACE_NOTE_VELOCITY *
+                                (performance.baseVelocity /
+                                  DEFAULT_PLAYBACK_VELOCITY),
+                            ),
                             kind:
                               gracePitches.length > 1
                                 ? ('chord' as const)
                                 : ('note' as const),
                             pitch: gracePitches[0],
                             pitches: gracePitches,
+                            dynamic: event.dynamic,
+                            hairpin: event.hairpin,
+                            pedal: event.pedal,
                             sustainedEventIds: [event.id],
                           },
                         ];
@@ -686,6 +951,28 @@ export function buildPlaybackTimeline(score: Score): PlaybackTimelineEvent[] {
                 )
                   .flatMap(({ durationBeats, indexes, sustainedEventIds }) => {
                     const durationSeconds = durationBeats * secondsPerBeat;
+                    const eventStartTick = getAbsoluteEventStartTick(score, {
+                      event,
+                      measureIndex: measure.index,
+                    });
+                    const pedaledDurationBeats =
+                      performance.pedalReleaseTick !== undefined
+                        ? Math.max(
+                            durationBeats,
+                            (performance.pedalReleaseTick - eventStartTick) /
+                              TICKS_PER_QUARTER,
+                          )
+                        : durationBeats;
+                    const articulationSoundDurationSeconds =
+                      durationSeconds * getArticulationSoundRatio(articulations);
+                    const pedalSoundDurationSeconds =
+                      performance.pedalReleaseTick !== undefined
+                        ? pedaledDurationBeats * secondsPerBeat
+                        : 0;
+                    const soundDurationSeconds = Math.max(
+                      articulationSoundDurationSeconds,
+                      pedalSoundDurationSeconds,
+                    );
                     const pitches = indexes.flatMap((pitchIndex) => {
                       const pitch = sourcePitches[pitchIndex];
 
@@ -715,14 +1002,19 @@ export function buildPlaybackTimeline(score: Score): PlaybackTimelineEvent[] {
                         durationBeats,
                         startSeconds: playbackStartBeat * secondsPerBeat,
                         durationSeconds,
-                        soundDurationSeconds:
-                          durationSeconds * getArticulationSoundRatio(articulations),
-                        velocity: getArticulationVelocity(articulations),
+                        soundDurationSeconds,
+                        velocity: getArticulationVelocity(
+                          performance.baseVelocity,
+                          articulations,
+                        ),
                         kind: event.kind,
                         pitch: pitches[0],
                         pitches,
                         articulations:
                           articulations.length > 0 ? [...articulations] : undefined,
+                        dynamic: event.dynamic,
+                        hairpin: event.hairpin,
+                        pedal: event.pedal,
                         sustainedEventIds,
                       },
                     ];

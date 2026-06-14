@@ -6,6 +6,7 @@ import {
   findScoreEvent,
   tryUpdateScoreEvent,
 } from '../../domain/score/editing';
+import { isPitchedScoreEvent } from '../../domain/score/events';
 import { getEventAnnotationOffset } from '../../domain/score/annotationOffsets';
 import {
   deleteClefChange,
@@ -139,6 +140,52 @@ function scoreHasStaff(score: Score, staffId: StaffId) {
   return score.parts
     .flatMap((part) => part.staves)
     .some((staff) => staff.id === staffId);
+}
+
+function getLyricBulkTargetEventIds(
+  score: Score,
+  selectedEventId: string | null,
+  lyricCount: number,
+) {
+  if (!selectedEventId || lyricCount <= 0) {
+    return [];
+  }
+
+  const selectedEvent = findScoreEvent(score, selectedEventId);
+
+  if (!selectedEvent) {
+    return [];
+  }
+
+  return score.parts
+    .flatMap((part) =>
+      part.staves.flatMap((staff) =>
+        staff.id === selectedEvent.staffId
+          ? staff.measures.flatMap((measure) => {
+              const voice = measure.voices[selectedEvent.voiceIndex];
+
+              return (voice?.events ?? []).map((event) => ({
+                event,
+                measureIndex: measure.index,
+              }));
+            })
+          : [],
+      ),
+    )
+    .filter(
+      ({ event, measureIndex }) =>
+        isPitchedScoreEvent(event) &&
+        (measureIndex > selectedEvent.measureIndex ||
+          (measureIndex === selectedEvent.measureIndex &&
+            event.beat >= selectedEvent.event.beat)),
+    )
+    .sort(
+      (first, second) =>
+        first.measureIndex - second.measureIndex ||
+        first.event.beat - second.event.beat,
+    )
+    .slice(0, lyricCount)
+    .map(({ event }) => event.id);
 }
 
 const DEMO_SCORE_OPTIONS = scoreFixtureCatalog.map((fixture) => ({
@@ -775,6 +822,37 @@ function SheetLabApp() {
     }
   }
 
+  function handleLyricBulkApply(lyrics: string[]) {
+    const sourceEventId = selectedEventId;
+
+    if (!sourceEventId) {
+      setEditorMessage('Select a note before applying lyric line');
+      return;
+    }
+
+    const targetEventIds = getLyricBulkTargetEventIds(
+      score,
+      sourceEventId,
+      lyrics.length,
+    );
+
+    if (targetEventIds.length === 0) {
+      setEditorMessage('Select a note before applying lyric line');
+      return;
+    }
+
+    const nextScore = targetEventIds.reduce((currentScore, eventId, index) => {
+      const result = tryUpdateScoreEvent(currentScore, eventId, {
+        lyric: lyrics[index] ?? null,
+      });
+
+      return result.updated ? result.score : currentScore;
+    }, score);
+
+    commitScoreChange(nextScore, `Applied ${targetEventIds.length} lyric syllables`);
+    selectEvent(sourceEventId, selectedPitchIndex);
+  }
+
   const { handleRedo, handleUndo } = useUndoRedoControls({
     clearTransientInteraction,
     futureScores,
@@ -832,7 +910,9 @@ function SheetLabApp() {
     activePlaybackEvent,
     activePlaybackEventIds,
     handlePlaybackFromSelectedEvent,
+    handlePlaybackStop,
     handlePlaybackToggle,
+    isPlaybackPaused,
     isPlaying,
     playbackBeat,
   } = usePlaybackController({
@@ -870,8 +950,8 @@ function SheetLabApp() {
   ];
 
   function handlePracticeOpen() {
-    if (isPlaying) {
-      void handlePlaybackToggle();
+    if (isPlaying || isPlaybackPaused) {
+      handlePlaybackStop('Playback stopped');
     }
 
     setOpenPalette(null);
@@ -965,6 +1045,11 @@ function SheetLabApp() {
   }
 
   function handlePlaybackShortcut() {
+    if (isPlaying || isPlaybackPaused) {
+      void handlePlaybackToggle();
+      return;
+    }
+
     if (selectedEventId) {
       void handlePlaybackFromSelectedEvent(selectedEventId);
       return;
@@ -1208,12 +1293,16 @@ function SheetLabApp() {
     {
       group: 'Transport',
       id: 'playback-toggle',
-      label: isPlaying ? 'Stop playback' : 'Play from start',
+      label: isPlaying
+        ? 'Pause playback'
+        : isPlaybackPaused
+          ? 'Resume playback'
+          : 'Play from start',
       run: () => void handlePlaybackToggle(),
       shortcut: 'Space',
     },
     {
-      disabled: isPlaying || !selectedEventId,
+      disabled: isPlaying || isPlaybackPaused || !selectedEventId,
       group: 'Transport',
       id: 'playback-from-selected',
       label: 'Play from selected event',
@@ -1322,6 +1411,7 @@ function SheetLabApp() {
           importExternalScoreInputRef={importExternalScoreInputRef}
           importInputRef={importInputRef}
           importReferenceInputRef={referenceInputRef}
+          isPlaybackPaused={isPlaybackPaused}
           isPlaying={isPlaying}
           openPalette={openPalette}
           pastScoreCount={pastScores.length}
@@ -1369,6 +1459,7 @@ function SheetLabApp() {
           }
           onOpenPaletteChange={setOpenPalette}
           onPlacementModeChange={handlePlacementModeChange}
+          onPlaybackStop={handlePlaybackStop}
           onPlaybackToggle={handlePlaybackToggle}
           onPracticeOpen={handlePracticeOpen}
           onPracticePreload={() => void loadPracticePage()}
@@ -1449,6 +1540,12 @@ function SheetLabApp() {
               glissando ? 'Glissando enabled' : 'Glissando disabled',
             )
           }
+          onGraceNotesChange={(graceNotes) =>
+            handleSelectedEventAnnotationChange(
+              { graceNotes },
+              graceNotes ? 'Grace notes updated' : 'Grace notes cleared',
+            )
+          }
           onHairpinChange={(hairpin) =>
             handleSelectedEventAnnotationChange(
               { hairpin },
@@ -1462,6 +1559,7 @@ function SheetLabApp() {
               lyric ? 'Lyric updated' : 'Lyric cleared',
             )
           }
+          onLyricBulkApply={handleLyricBulkApply}
           onOttavaClear={handleOttavaClear}
           onOttavaToggle={handleOttavaToggle}
           onPedalChange={(pedal) =>

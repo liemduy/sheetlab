@@ -1463,6 +1463,69 @@ describe('App editor state', () => {
     );
   });
 
+  it('applies a lyric line from the selected note across following notes', async () => {
+    render(<App />);
+    startWriting();
+
+    const overlay = screen.getByTestId('staff-renderer');
+
+    [
+      { beat: 0, step: 'C' as const },
+      { beat: 1, step: 'D' as const },
+      { beat: 2, step: 'E' as const },
+    ].forEach(({ beat, step }) => {
+      fireEvent.click(overlay, {
+        clientX: getBeatX(0, beat, 4),
+        clientY: getPitchY({ step, octave: 4 }, 'treble', 0),
+      });
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select tool' }));
+    fireEvent.click(screen.getAllByTestId('score-event')[0]);
+    fireEvent.change(screen.getByLabelText('Lyric line'), {
+      target: { value: 'xin chao em' },
+    });
+    fireEvent.blur(screen.getByLabelText('Lyric line'));
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByTestId('rendered-lyric').map((node) => node.textContent),
+      ).toEqual(['xin', 'chao', 'em']);
+    });
+  });
+
+  it('adds grace notes from the selected note editor and includes them in playback', async () => {
+    const playTimelineAudioMock = vi.mocked(playTimelineAudio);
+
+    render(<App />);
+    startWriting();
+
+    fireEvent.click(screen.getByTestId('staff-renderer'), {
+      clientX: getBeatX(0, 0, 4),
+      clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Select tool' }));
+    fireEvent.click(screen.getByTestId('score-event'));
+    fireEvent.change(screen.getByLabelText('Grace'), {
+      target: { value: 'upper' },
+    });
+
+    playTimelineAudioMock.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+
+    await waitFor(() => {
+      expect(playTimelineAudioMock).toHaveBeenCalled();
+    });
+
+    const timeline = playTimelineAudioMock.mock.calls[0]?.[0] ?? [];
+    const graceEvent = timeline.find((event) => event.id.endsWith(':grace:0'));
+
+    expect(graceEvent).toMatchObject({
+      pitches: [{ octave: 4, step: 'F' }],
+      sustainedEventIds: [expect.any(String)],
+    });
+  });
+
   it('toggles combinable articulations on the selected note', async () => {
     const { container } = render(<App />);
     startWriting();
@@ -2693,7 +2756,14 @@ describe('App editor state', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Play' }));
 
-    expect(await screen.findByRole('button', { name: 'Stop' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Pause' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeEnabled();
+    expect(screen.getByTestId('score-event')).toHaveClass('is-playing');
+    expect(screen.getByTestId('playhead')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+
+    expect(screen.getByRole('button', { name: 'Resume' })).toBeInTheDocument();
     expect(screen.getByTestId('score-event')).toHaveClass('is-playing');
     expect(screen.getByTestId('playhead')).toBeInTheDocument();
 

@@ -103,6 +103,10 @@ describe('externalScoreImport', () => {
               <direction-type><dynamics><mf/></dynamics></direction-type>
               <staff>1</staff>
             </direction>
+            <direction>
+              <direction-type><wedge type="crescendo"/></direction-type>
+              <staff>1</staff>
+            </direction>
             <note>
               <pitch><step>C</step><octave>5</octave></pitch>
               <duration>1</duration>
@@ -139,6 +143,7 @@ describe('externalScoreImport', () => {
     expect(analysis.measureCount).toBe(1);
     expect(analysis.staffCount).toBe(2);
     expect(analysis.backupCount).toBe(1);
+    expect(analysis.hairpinCount).toBe(1);
     expect(result.score.type).toBe('grand');
     expect(result.score.title).toBe('Piano XML');
     expect(result.score.composer).toBe('Tester');
@@ -146,6 +151,7 @@ describe('externalScoreImport', () => {
     expect(bassEvents.some((event) => event.kind !== 'rest')).toBe(true);
     expect(trebleEvents.some((event) => event.lyric === 'Xin')).toBe(true);
     expect(trebleEvents.some((event) => event.dynamic === 'mf')).toBe(true);
+    expect(trebleEvents.some((event) => event.hairpin === 'crescendo')).toBe(true);
     expect(bassEvents.some((event) => event.pedal)).toBe(true);
   });
 

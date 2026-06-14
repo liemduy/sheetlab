@@ -16,11 +16,23 @@ interface UsePlaybackControllerOptions {
   setEditorMessage: (message: string) => void;
 }
 
+function getControllerElapsedSeconds(controller: PlaybackController | null) {
+  if (!controller) {
+    return 0;
+  }
+
+  return (
+    controller.getElapsedSeconds?.() ??
+    (performance.now() - controller.startedAtMs) / 1000
+  );
+}
+
 export function usePlaybackController({
   score,
   setEditorMessage,
 }: UsePlaybackControllerOptions) {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [playbackElapsedSeconds, setPlaybackElapsedSeconds] = useState(0);
   const [playbackStartOffsetSeconds, setPlaybackStartOffsetSeconds] =
     useState(0);
@@ -43,8 +55,32 @@ export function usePlaybackController({
     clearPlaybackAnimationFrame();
 
     setIsPlaying(false);
+    setIsPaused(false);
     setPlaybackElapsedSeconds(0);
     setPlaybackStartOffsetSeconds(0);
+    setEditorMessage(message);
+  }
+
+  function pausePlayback(message = 'Playback paused') {
+    if (!isPlaying) {
+      return;
+    }
+
+    playbackRunId.current += 1;
+    const pausedAtSeconds = Math.max(
+      0,
+      playbackStartOffsetSeconds +
+        Math.max(0, getControllerElapsedSeconds(playbackController.current)),
+    );
+
+    playbackController.current?.stop();
+    playbackController.current = null;
+    clearPlaybackAnimationFrame();
+
+    setIsPlaying(false);
+    setIsPaused(true);
+    setPlaybackElapsedSeconds(0);
+    setPlaybackStartOffsetSeconds(pausedAtSeconds);
     setEditorMessage(message);
   }
 
@@ -70,6 +106,7 @@ export function usePlaybackController({
     }
 
     setIsPlaying(true);
+    setIsPaused(false);
     setPlaybackElapsedSeconds(Number.NEGATIVE_INFINITY);
     setPlaybackStartOffsetSeconds(safeStartSeconds);
     setEditorMessage(messages.starting);
@@ -104,6 +141,7 @@ export function usePlaybackController({
         playbackController.current = null;
         clearPlaybackAnimationFrame();
         setIsPlaying(false);
+        setIsPaused(false);
         setPlaybackElapsedSeconds(0);
         setPlaybackStartOffsetSeconds(0);
         setEditorMessage('Playback finished');
@@ -119,7 +157,16 @@ export function usePlaybackController({
 
   async function handlePlaybackToggle() {
     if (isPlaying) {
-      stopPlayback();
+      pausePlayback();
+      return;
+    }
+
+    if (isPaused) {
+      await warmUpPlaybackAudio();
+      await startPlayback(playbackTimeline, playbackStartOffsetSeconds, {
+        started: 'Playback resumed',
+        starting: 'Playback resuming',
+      });
       return;
     }
 
@@ -138,7 +185,7 @@ export function usePlaybackController({
   }
 
   async function handlePlaybackFromSelectedEvent(eventId: string | null) {
-    if (isPlaying) {
+    if (isPlaying || isPaused) {
       stopPlayback();
       return;
     }
@@ -164,15 +211,18 @@ export function usePlaybackController({
     });
   }
 
-  const isPlaybackClockStarted = playbackElapsedSeconds >= 0;
-  const playbackClockSeconds = isPlaybackClockStarted
+  const isPlaybackActive = isPlaying || isPaused;
+  const isPlaybackClockStarted = isPaused || playbackElapsedSeconds >= 0;
+  const playbackClockSeconds = isPaused
+    ? playbackStartOffsetSeconds
+    : isPlaybackClockStarted
     ? playbackStartOffsetSeconds + playbackElapsedSeconds
     : playbackElapsedSeconds;
-  const activePlaybackEvents = isPlaying && isPlaybackClockStarted
+  const activePlaybackEvents = isPlaybackActive && isPlaybackClockStarted
     ? getActiveTimelineEvents(playbackTimeline, playbackClockSeconds)
     : [];
   const activePlaybackEvent = activePlaybackEvents[0] ?? null;
-  const playbackBeat = isPlaying && isPlaybackClockStarted
+  const playbackBeat = isPlaybackActive && isPlaybackClockStarted
     ? getPlaybackScoreBeatAtSeconds(
         playbackTimeline,
         score.tempo,
@@ -190,7 +240,9 @@ export function usePlaybackController({
       ),
     ],
     handlePlaybackFromSelectedEvent,
+    handlePlaybackStop: stopPlayback,
     handlePlaybackToggle,
+    isPlaybackPaused: isPaused,
     isPlaying,
     playbackBeat,
   };

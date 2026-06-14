@@ -9,6 +9,7 @@ import type {
   Accidental,
   DurationValue,
   GraceNoteAttachment,
+  HairpinMark,
   KeySignature,
   NoteStep,
   PedalMark,
@@ -116,6 +117,7 @@ interface MusicXmlDuration {
 interface MusicXmlDirectionMark {
   beat: number;
   dynamic?: string;
+  hairpin?: HairpinMark;
   pedal?: PedalMark;
   staffId: StaffId;
 }
@@ -132,6 +134,7 @@ export interface MusicXmlImportAnalysis {
   directionCount: number;
   dynamicCount: number;
   fileName: string;
+  hairpinCount: number;
   lyricCount: number;
   measureCount: number;
   noteCount: number;
@@ -658,8 +661,10 @@ function parseMusicXmlDirection(
 ) {
   const dynamicElement = direction.querySelector('dynamics')?.firstElementChild;
   const pedalElement = direction.querySelector('pedal');
+  const wedgeElement = direction.querySelector('wedge');
   const staffId = parseMusicXmlStaffId(direction, fallbackStaffId);
   const pedalType = pedalElement?.getAttribute('type') ?? '';
+  const wedgeType = wedgeElement?.getAttribute('type') ?? '';
   const pedal: PedalMark | undefined =
     pedalType === 'start'
       ? 'start'
@@ -668,14 +673,21 @@ function parseMusicXmlDirection(
         : pedalType === 'change'
           ? 'start-release'
           : undefined;
+  const hairpin: HairpinMark | undefined =
+    wedgeType === 'crescendo'
+      ? 'crescendo'
+      : wedgeType === 'diminuendo'
+        ? 'diminuendo'
+        : undefined;
 
-  if (!dynamicElement && !pedal) {
+  if (!dynamicElement && !pedal && !hairpin) {
     return null;
   }
 
   return {
     beat: getDirectionBeat(direction, cursorUnits, divisions),
     dynamic: dynamicElement?.localName,
+    hairpin,
     pedal,
     staffId,
   } satisfies MusicXmlDirectionMark;
@@ -717,6 +729,10 @@ function applyMusicXmlDirectionMarks(
     if (mark.pedal) {
       target.pedal = mergePedalMark(target.pedal, mark.pedal);
     }
+
+    if (mark.hairpin) {
+      target.hairpin = mark.hairpin;
+    }
   });
 }
 
@@ -747,6 +763,7 @@ export function analyzeMusicXml(
     directionCount: document.querySelectorAll('direction').length,
     dynamicCount: document.querySelectorAll('dynamics').length,
     fileName,
+    hairpinCount: document.querySelectorAll('wedge').length,
     lyricCount: document.querySelectorAll('lyric').length,
     measureCount: firstPart?.querySelectorAll(':scope > measure').length ??
       document.querySelectorAll('measure').length,
