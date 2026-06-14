@@ -8,6 +8,8 @@ function createReviewSummary(
   return {
     completionPercent: 100,
     earlyCount: 0,
+    holdIssueCount: 0,
+    holdScorePercent: null,
     issueRows: [],
     lateCount: 0,
     meanTimingBiasMs: null,
@@ -24,16 +26,17 @@ function createReviewSummary(
 }
 
 describe('practice score repository helpers', () => {
-  it('averages available note, timing, and pedal scores', () => {
+  it('weights available core scores and optional pedal scores', () => {
     expect(
       getPracticeScorePercent(
         createReviewSummary({
+          holdScorePercent: 80,
           noteAccuracyPercent: 90,
           pedalScorePercent: 60,
           timingScorePercent: 75,
         }),
       ),
-    ).toBe(75);
+    ).toBe(80);
   });
 
   it('falls back to note accuracy when expression scores are unavailable', () => {

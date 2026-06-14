@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getMidiChordSettleMs,
   getMidiChordWindowLabel,
   mergeBufferedMidiNotes,
 } from './midiChordBuffer';
@@ -10,6 +11,8 @@ describe('midi chord buffering', () => {
   });
 
   it('formats the chord settle window label', () => {
-    expect(getMidiChordWindowLabel(70)).toBe('70ms');
+    expect(getMidiChordWindowLabel(100)).toBe('100ms');
+    expect(getMidiChordSettleMs('beginner')).toBe(160);
+    expect(getMidiChordSettleMs('strict')).toBe(65);
   });
 });

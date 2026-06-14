@@ -1,15 +1,20 @@
 import {
+  formatMidiNoteList,
   getPracticeAccuracyPercent,
-  getPracticeResultMessage,
   type PracticeResult,
 } from './noteMatcher';
 import type {
   PracticePedalResult,
   PracticePedalTarget,
 } from './practicePedal';
+import {
+  getPracticeHoldScorePercent,
+  type PracticeHoldResult,
+} from './practiceHold';
 import type { PracticeTarget } from './practiceTimeline';
 
 export interface PracticeMeasureReview {
+  holdIssues: number;
   labels: string[];
   measureIndex: number;
   noteIssues: number;
@@ -20,6 +25,8 @@ export interface PracticeMeasureReview {
 export interface PracticeReviewSummary {
   completionPercent: number;
   earlyCount: number;
+  holdIssueCount: number;
+  holdScorePercent: number | null;
   issueRows: string[];
   lateCount: number;
   measureSummaries: PracticeMeasureReview[];
@@ -59,6 +66,7 @@ function getMeasureReview(
 
   const nextReview = {
     labels: [],
+    holdIssues: 0,
     measureIndex,
     noteIssues: 0,
     pedalIssues: 0,
@@ -108,7 +116,7 @@ function addMeasureLabel(
   label: string,
   counters: Partial<Pick<
     PracticeMeasureReview,
-    'noteIssues' | 'pedalIssues' | 'timingIssues'
+    'holdIssues' | 'noteIssues' | 'pedalIssues' | 'timingIssues'
   >>,
 ) {
   const review = getMeasureReview(measureReviews, measureIndex);
@@ -117,11 +125,52 @@ function addMeasureLabel(
   review.noteIssues += counters.noteIssues ?? 0;
   review.pedalIssues += counters.pedalIssues ?? 0;
   review.timingIssues += counters.timingIssues ?? 0;
+  review.holdIssues += counters.holdIssues ?? 0;
+}
+
+function getHoldReviewLabel(result: PracticeHoldResult) {
+  if (result.status === 'held') {
+    return 'Hold ok';
+  }
+
+  if (result.status === 'released-early') {
+    return `released ${result.earlyReleaseMs ?? 0}ms early`;
+  }
+
+  if (result.status === 'overheld') {
+    return `held ${result.overheldMs ?? 0}ms too long`;
+  }
+
+  return 'hold missing';
+}
+
+function getNoteReviewLabel(result: PracticeResult) {
+  if (result.status === 'missed') {
+    return `Missed ${formatMidiNoteList(result.expectedNotes)}`;
+  }
+
+  const labels = [
+    result.missingNotes.length > 0
+      ? `Missing ${formatMidiNoteList(result.missingNotes)}`
+      : null,
+    result.extraNotes.length > 0
+      ? `Extra ${formatMidiNoteList(result.extraNotes)}`
+      : null,
+    result.earlyMs !== undefined ? `${result.earlyMs}ms early` : null,
+    result.lateMs !== undefined ? `${result.lateMs}ms late` : null,
+  ].filter(Boolean);
+
+  if (labels.length > 0) {
+    return labels.join(', ');
+  }
+
+  return result.status === 'correct' ? 'Correct notes' : 'Try this target again';
 }
 
 export function buildPracticeReviewSummary({
   pedalResults,
   pedalTargets,
+  holdResults,
   results,
   targets,
   getTimingToleranceMs,
@@ -129,6 +178,7 @@ export function buildPracticeReviewSummary({
 }: {
   pedalResults: ReadonlyMap<string, PracticePedalResult>;
   pedalTargets: readonly PracticePedalTarget[];
+  holdResults?: ReadonlyMap<string, PracticeHoldResult>;
   results: ReadonlyMap<string, PracticeResult>;
   targets: readonly PracticeTarget[];
   getTimingToleranceMs?: (target: PracticeTarget) => number;
@@ -141,6 +191,7 @@ export function buildPracticeReviewSummary({
   let timedResultCount = 0;
   let timingCorrectCount = 0;
   let rhythmIssueCount = 0;
+  let holdIssueCount = 0;
   let earlyCount = 0;
   let lateCount = 0;
   const timingDeltas: number[] = [];
@@ -182,7 +233,7 @@ export function buildPracticeReviewSummary({
       addMeasureLabel(
         measureReviews,
         target.measureIndex,
-        `M${target.measureIndex + 1}: ${getPracticeResultMessage(result)}`,
+        `M${target.measureIndex + 1}: ${getNoteReviewLabel(result)}`,
         {
           noteIssues: noteIssue ? 1 : 0,
           timingIssues: timingIssue ? 1 : 0,
@@ -217,6 +268,26 @@ export function buildPracticeReviewSummary({
     }
   });
 
+  holdResults?.forEach((result) => {
+    if (result.status === 'held') {
+      return;
+    }
+
+    const target = targets.find((candidate) => candidate.id === result.targetId);
+
+    if (!target) {
+      return;
+    }
+
+    holdIssueCount += 1;
+    addMeasureLabel(
+      measureReviews,
+      target.measureIndex,
+      `M${target.measureIndex + 1}: ${getHoldReviewLabel(result)}`,
+      { holdIssues: 1 },
+    );
+  });
+
   const pedalCorrectCount = [...pedalResults.values()].filter(
     (result) => result.status === 'correct',
   ).length;
@@ -235,6 +306,10 @@ export function buildPracticeReviewSummary({
     completionPercent:
       targets.length === 0 ? 0 : Math.round((results.size / targets.length) * 100),
     earlyCount,
+    holdIssueCount,
+    holdScorePercent: holdResults
+      ? getPracticeHoldScorePercent(holdResults)
+      : null,
     issueRows: measureSummaries.flatMap((review) => review.labels),
     lateCount,
     measureSummaries,

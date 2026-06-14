@@ -10,17 +10,22 @@ export interface PracticeTargetVoiceRef {
 }
 
 export interface PracticeTarget {
+  attackMidiNotes?: number[];
   beat: number;
   durationSeconds: number;
   eventIds: string[];
+  expectedReleaseSeconds?: number;
   id: string;
+  isGrace?: boolean;
   measureIndex: number;
   midiNotes: number[];
   pitches: Pitch[];
+  sourceTimelineEventIds?: string[];
   staffId: StaffId;
   staffIds: StaffId[];
   startBeat: number;
   startSeconds: number;
+  sustainedMidiNotes?: number[];
   voiceRefs: PracticeTargetVoiceRef[];
 }
 
@@ -117,27 +122,36 @@ export function buildPracticeTargets(
         (a, b) => a - b,
       );
       const startSeconds = firstEvent?.startSeconds ?? 0;
+      const durationSeconds = group.reduce(
+        (candidateDurationSeconds, event) =>
+          Math.max(
+            candidateDurationSeconds,
+            event.startSeconds + event.durationSeconds - startSeconds,
+          ),
+        0,
+      );
       const voiceRefs = getPracticeTargetVoiceRefs(group);
+      const sourceTimelineEventIds = group.map((event) => event.id);
 
       return {
+        attackMidiNotes: midiNotes,
         beat: firstEvent?.beat ?? 0,
-        durationSeconds: group.reduce(
-          (durationSeconds, event) =>
-            Math.max(
-              durationSeconds,
-              event.startSeconds + event.durationSeconds - startSeconds,
-            ),
-          0,
-        ),
+        durationSeconds,
         eventIds,
+        expectedReleaseSeconds: startSeconds + durationSeconds,
         id: `${eventIds.join('+')}-${index}`,
+        isGrace: sourceTimelineEventIds.every((eventId) =>
+          eventId.includes(':grace:'),
+        ),
         measureIndex: firstEvent?.measureIndex ?? 0,
         midiNotes,
         pitches,
+        sourceTimelineEventIds,
         staffId: firstEvent?.staffId ?? 'treble',
         staffIds: [...new Set(group.map((event) => event.staffId))],
         startBeat: firstEvent?.startBeat ?? 0,
         startSeconds,
+        sustainedMidiNotes: midiNotes,
         voiceRefs,
       };
     })

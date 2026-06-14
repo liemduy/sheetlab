@@ -47,19 +47,40 @@ function getSupabaseOrThrow() {
 }
 
 export function getPracticeScorePercent(summary: PracticeReviewSummary) {
-  const scoreParts = [
-    summary.noteAccuracyPercent,
-    summary.timingScorePercent,
-    summary.pedalScorePercent,
-  ].filter((scorePart): scorePart is number => typeof scorePart === 'number');
+  const weightedScoreParts = [
+    { score: summary.noteAccuracyPercent, weight: 50 },
+    summary.timingScorePercent === null
+      ? null
+      : { score: summary.timingScorePercent, weight: 30 },
+    summary.holdScorePercent === null
+      ? null
+      : { score: summary.holdScorePercent, weight: 20 },
+    summary.pedalScorePercent === null
+      ? null
+      : { score: summary.pedalScorePercent, weight: 15 },
+  ].filter(
+    (
+      scorePart,
+    ): scorePart is {
+      score: number;
+      weight: number;
+    } => scorePart !== null,
+  );
 
-  if (scoreParts.length === 0) {
+  if (weightedScoreParts.length === 0) {
     return 0;
   }
 
+  const totalWeight = weightedScoreParts.reduce(
+    (weight, scorePart) => weight + scorePart.weight,
+    0,
+  );
+
   return Math.round(
-    scoreParts.reduce((total, scorePart) => total + scorePart, 0) /
-      scoreParts.length,
+    weightedScoreParts.reduce(
+      (total, scorePart) => total + scorePart.score * scorePart.weight,
+      0,
+    ) / totalWeight,
   );
 }
 

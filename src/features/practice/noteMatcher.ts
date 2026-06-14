@@ -33,7 +33,7 @@ export function evaluatePracticeTarget(
   playedMidiNotes: readonly number[],
   options: PracticeMatchOptions = {},
 ): PracticeResult {
-  const expectedNotes = uniqueSorted(target.midiNotes);
+  const expectedNotes = uniqueSorted(target.attackMidiNotes ?? target.midiNotes);
   const playedNotes = uniqueSorted(playedMidiNotes);
   const missingNotes = expectedNotes.filter((note) => !playedNotes.includes(note));
   const extraNotes = playedNotes.filter((note) => !expectedNotes.includes(note));
@@ -73,10 +73,12 @@ export function evaluatePracticeTarget(
 }
 
 export function createMissedPracticeResult(target: PracticeTarget): PracticeResult {
+  const expectedNotes = uniqueSorted(target.attackMidiNotes ?? target.midiNotes);
+
   return {
-    expectedNotes: uniqueSorted(target.midiNotes),
+    expectedNotes,
     extraNotes: [],
-    missingNotes: uniqueSorted(target.midiNotes),
+    missingNotes: expectedNotes,
     playedNotes: [],
     status: 'missed',
     targetId: target.id,

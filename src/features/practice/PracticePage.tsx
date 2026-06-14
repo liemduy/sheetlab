@@ -46,10 +46,15 @@ import {
   type PracticeResult,
 } from './noteMatcher';
 import {
+  getMidiChordSettleMs,
   getMidiChordWindowLabel,
   mergeBufferedMidiNotes,
-  MIDI_CHORD_SETTLE_MS,
 } from './midiChordBuffer';
+import {
+  evaluatePracticeHolds,
+  type PracticeNoteLifecycle,
+} from './practiceHold';
+import { findSequentialPracticeTarget } from './practiceMatcher';
 import {
   buildPracticePedalTargets,
   createMissedPedalResult,
@@ -58,6 +63,7 @@ import {
   type PracticePedalResult,
 } from './practicePedal';
 import {
+  buildPracticeExpressionFeedback,
   getPracticeExpressionCapabilitySummary,
   getPracticeTargetExpressionLabels,
 } from './practiceExpressions';
@@ -82,6 +88,7 @@ import {
 import { useMidiInputs } from './useMidiInputs';
 
 type PracticeMode = 'listen' | 'wait' | 'rhythm';
+type PedalPracticeMode = 'guide' | 'off' | 'score';
 type PracticeReferenceMute = 'left' | 'none' | 'right';
 const RHYTHM_MISS_GRACE_SECONDS = 0.36;
 const PAGE_OBSERVER_DELAY_MS = 160;
@@ -227,6 +234,44 @@ function getPedalResultLabel(result: PracticePedalResult) {
   }
 
   return `${action} ${Math.abs(result.deltaMs ?? 0)}ms ${result.status}`;
+}
+
+function getMeasureIssueCount(review: {
+  holdIssues: number;
+  noteIssues: number;
+  pedalIssues: number;
+  timingIssues: number;
+}) {
+  return (
+    review.holdIssues +
+    review.noteIssues +
+    review.pedalIssues +
+    review.timingIssues
+  );
+}
+
+function getCoachModeCue(mode: PracticeMode) {
+  if (mode === 'listen') {
+    return 'Listen mode: press keys to find them on the score';
+  }
+
+  if (mode === 'wait') {
+    return 'Wait mode: get the next note or chord right';
+  }
+
+  return 'Rhythm mode: notes, timing, and hold are being checked';
+}
+
+function getPedalModeLabel(mode: PedalPracticeMode) {
+  if (mode === 'off') {
+    return 'Off';
+  }
+
+  if (mode === 'score') {
+    return 'Score';
+  }
+
+  return 'Guide';
 }
 
 function formatTopScoreDate(value: string) {
@@ -528,6 +573,9 @@ export function PracticePage({
   const [isReferenceEnabled, setIsReferenceEnabled] = useState(true);
   const [isMetronomeEnabled, setIsMetronomeEnabled] = useState(true);
   const [showFingeringHints, setShowFingeringHints] = useState(true);
+  const [isExpressionFeedbackEnabled, setIsExpressionFeedbackEnabled] =
+    useState(true);
+  const [pedalMode, setPedalMode] = useState<PedalPracticeMode>('guide');
   const [countInMeasures, setCountInMeasures] = useState(1);
   const [referenceMute, setReferenceMute] =
     useState<PracticeReferenceMute>('none');
@@ -552,6 +600,9 @@ export function PracticePage({
   const [pedalResults, setPedalResults] = useState<
     Map<string, PracticePedalResult>
   >(() => new Map());
+  const [noteLifecycles, setNoteLifecycles] = useState<PracticeNoteLifecycle[]>(
+    [],
+  );
   const [completedAttempts, setCompletedAttempts] = useState(0);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [practiceMessage, setPracticeMessage] = useState('Ready');
@@ -577,12 +628,15 @@ export function PracticePage({
   const pendingMidiEvaluationTimerRef = useRef<number | null>(null);
   const pendingMidiNoteOnsRef = useRef<number[]>([]);
   const pendingRhythmElapsedSecondsRef = useRef<number | null>(null);
+  const noteLifecyclesRef = useRef(noteLifecycles);
   const pedalResultsRef = useRef(pedalResults);
   const resultsRef = useRef(results);
   const rhythmStartedAtRef = useRef(0);
   const latencyOffsetMsRef = useRef(latencyOffsetMs);
+  const pedalModeRef = useRef(pedalMode);
   const timingLevelRef = useRef(timingLevel);
   const sessionStatusRef = useRef(sessionStatus);
+  const sustainPedalDownRef = useRef(false);
   const savedPracticeAttemptKeyRef = useRef<string | null>(null);
   const normalizedMeasureStart = Math.min(measureStart, measureEnd) - 1;
   const normalizedMeasureEnd = Math.max(measureStart, measureEnd) - 1;
@@ -608,6 +662,10 @@ export function PracticePage({
     () =>
       rawTargets.map((target) => ({
         ...target,
+        expectedReleaseSeconds:
+          target.expectedReleaseSeconds === undefined
+            ? undefined
+            : target.expectedReleaseSeconds - practiceStartSeconds,
         startSeconds: target.startSeconds - practiceStartSeconds,
       })),
     [practiceStartSeconds, rawTargets],
@@ -647,6 +705,15 @@ export function PracticePage({
     [normalizedMeasureEnd, normalizedMeasureStart, practiceStartSeconds, score],
   );
   const pedalTargetsRef = useRef(pedalTargets);
+  const isPedalScoringEnabled = mode === 'rhythm' && pedalMode === 'score';
+  const scoredPedalTargets = useMemo(
+    () => (isPedalScoringEnabled ? pedalTargets : []),
+    [isPedalScoringEnabled, pedalTargets],
+  );
+  const scoredPedalResults = useMemo(
+    () => (isPedalScoringEnabled ? pedalResults : new Map()),
+    [isPedalScoringEnabled, pedalResults],
+  );
   const currentTarget = targets[currentTargetIndex] ?? null;
   const nextTarget = targets[currentTargetIndex + 1] ?? null;
   const targetById = useMemo(
@@ -658,19 +725,43 @@ export function PracticePage({
     () => getPracticeAccuracyPercent(results, targets.length),
     [results, targets.length],
   );
-  const pedalSummary = useMemo(() => getPedalSummary(pedalResults), [pedalResults]);
+  const pedalSummary = useMemo(
+    () => getPedalSummary(scoredPedalResults),
+    [scoredPedalResults],
+  );
+  const holdResults = useMemo(
+    () =>
+      mode === 'rhythm'
+        ? evaluatePracticeHolds(targets, noteLifecycles, {
+            evaluationEndSeconds: Math.max(
+              practiceDurationSeconds,
+              elapsedSeconds,
+            ),
+          })
+        : new Map(),
+    [elapsedSeconds, mode, noteLifecycles, practiceDurationSeconds, targets],
+  );
   const reviewSummary = useMemo(
     () =>
       buildPracticeReviewSummary({
-        pedalResults,
-        pedalTargets: mode === 'rhythm' ? pedalTargets : [],
+        holdResults: mode === 'rhythm' ? holdResults : undefined,
+        pedalResults: scoredPedalResults,
+        pedalTargets: scoredPedalTargets,
         results,
         targets,
         getTimingToleranceMs: (target) =>
           getPracticeTimingToleranceMs(timingLevel, target, targets),
         timingToleranceMs: PRACTICE_TIMING_TOLERANCE_MS[timingLevel],
       }),
-    [mode, pedalResults, pedalTargets, results, targets, timingLevel],
+    [
+      holdResults,
+      mode,
+      results,
+      scoredPedalResults,
+      scoredPedalTargets,
+      targets,
+      timingLevel,
+    ],
   );
   const reviewScorePercent = useMemo(
     () => getPracticeScorePercent(reviewSummary),
@@ -683,6 +774,26 @@ export function PracticePage({
   const expressionCapabilities = useMemo(
     () => getPracticeExpressionCapabilitySummary(score),
     [score],
+  );
+  const expressionFeedback = useMemo(
+    () =>
+      isExpressionFeedbackEnabled
+        ? buildPracticeExpressionFeedback({
+            lifecycles: noteLifecycles,
+            score,
+            targets,
+          })
+        : [],
+    [isExpressionFeedbackEnabled, noteLifecycles, score, targets],
+  );
+  const currentExpressionFeedback = useMemo(
+    () =>
+      currentTarget
+        ? expressionFeedback.filter(
+            (feedback) => feedback.targetId === currentTarget.id,
+          )
+        : [],
+    [currentTarget, expressionFeedback],
   );
   const practiceFeedbackByEventId = useMemo(() => {
     const feedbackByEventId: Record<string, PracticeFeedbackStatus> = {};
@@ -749,6 +860,77 @@ export function PracticePage({
     pedalResultsRef.current = nextResults;
     setPedalResults(nextResults);
   }, []);
+
+  const setRecordedNoteLifecycles = useCallback(
+    (nextLifecycles: PracticeNoteLifecycle[]) => {
+      noteLifecyclesRef.current = nextLifecycles;
+      setNoteLifecycles(nextLifecycles);
+    },
+    [],
+  );
+
+  const clearNoteLifecycles = useCallback(() => {
+    setRecordedNoteLifecycles([]);
+  }, [setRecordedNoteLifecycles]);
+
+  const recordMidiNoteOnLifecycle = useCallback(
+    (midiNote: number, startSeconds: number, velocity?: number) => {
+      setRecordedNoteLifecycles([
+        ...noteLifecyclesRef.current,
+        { midiNote, startSeconds, velocity },
+      ]);
+    },
+    [setRecordedNoteLifecycles],
+  );
+
+  const closeMidiNoteLifecycle = useCallback(
+    (midiNote: number, endSeconds: number) => {
+      let closed = false;
+      const nextLifecycles = [...noteLifecyclesRef.current]
+        .reverse()
+        .map((lifecycle) => {
+          if (
+            closed ||
+            lifecycle.midiNote !== midiNote ||
+            lifecycle.endSeconds !== undefined
+          ) {
+            return lifecycle;
+          }
+
+          closed = true;
+          return { ...lifecycle, endSeconds };
+        })
+        .reverse();
+
+      if (closed) {
+        setRecordedNoteLifecycles(nextLifecycles);
+      }
+    },
+    [setRecordedNoteLifecycles],
+  );
+
+  const closeReleasedSustainedLifecycles = useCallback(
+    (endSeconds: number) => {
+      const physicallyHeldNotes = new Set(activeMidiNotesRef.current);
+      let changed = false;
+      const nextLifecycles = noteLifecyclesRef.current.map((lifecycle) => {
+        if (
+          lifecycle.endSeconds !== undefined ||
+          physicallyHeldNotes.has(lifecycle.midiNote)
+        ) {
+          return lifecycle;
+        }
+
+        changed = true;
+        return { ...lifecycle, endSeconds };
+      });
+
+      if (changed) {
+        setRecordedNoteLifecycles(nextLifecycles);
+      }
+    },
+    [setRecordedNoteLifecycles],
+  );
 
   const upsertResult = useCallback((result: PracticeResult) => {
     const nextResults = new Map(resultsRef.current);
@@ -928,6 +1110,8 @@ export function PracticePage({
       clearPendingMidiEvaluation();
       clearResults();
       clearPedalResults();
+      clearNoteLifecycles();
+      sustainPedalDownRef.current = false;
       elapsedSecondsRef.current = 0;
       currentTargetIndexRef.current = targetsRef.current.length > 0 ? 0 : -1;
       rhythmStartedAtRef.current = performance.now();
@@ -937,7 +1121,7 @@ export function PracticePage({
       updateSessionStatus(nextStatus);
       setPracticeMessage(message);
     },
-    [clearPedalResults, clearResults, updateSessionStatus],
+    [clearNoteLifecycles, clearPedalResults, clearResults, updateSessionStatus],
   );
 
   const completePracticeRound = useCallback(
@@ -1020,11 +1204,14 @@ export function PracticePage({
     const scoringElapsedSeconds =
       bufferedRhythmElapsedSeconds ??
       getCalibratedElapsedSeconds(elapsedSecondsRef.current);
-    const rhythmTarget = findPracticeTargetInDynamicWindow(
-      targetsRef.current,
-      scoringElapsedSeconds,
-      timingLevelRef.current,
-    );
+    const rhythmMatch = findSequentialPracticeTarget({
+      currentTargetIndex: currentTargetIndexRef.current,
+      elapsedSeconds: scoringElapsedSeconds,
+      resolvedTargetIds: getCorrectTargetIds(resultsRef.current),
+      targets: targetsRef.current,
+      timingLevel: timingLevelRef.current,
+    });
+    const rhythmTarget = rhythmMatch.target;
 
     if (!rhythmTarget) {
       setPracticeMessage('Off target chord');
@@ -1084,7 +1271,7 @@ export function PracticePage({
 
       pendingMidiEvaluationTimerRef.current = window.setTimeout(
         flushBufferedMidiNoteEvaluation,
-        MIDI_CHORD_SETTLE_MS,
+        getMidiChordSettleMs(timingLevelRef.current),
       );
     },
     [flushBufferedMidiNoteEvaluation],
@@ -1092,27 +1279,62 @@ export function PracticePage({
 
   const handleMidiEvent = useCallback(
     (event: ParsedMidiEvent) => {
+      const scoringElapsedSeconds = getCalibratedElapsedSeconds(
+        elapsedSecondsRef.current,
+      );
+
       if (event.type === 'note-on') {
         activeMidiNotesRef.current = [
           ...new Set([...activeMidiNotesRef.current, event.midiNote]),
         ].sort((a, b) => a - b);
-      } else if (event.type === 'note-off') {
-        activeMidiNotesRef.current = activeMidiNotesRef.current.filter(
-          (midiNote) => midiNote !== event.midiNote,
-        );
-      }
-
-      if (isSustainPedalEvent(event)) {
-        const scoringElapsedSeconds = getCalibratedElapsedSeconds(
-          elapsedSecondsRef.current,
-        );
 
         if (
           modeRef.current === 'rhythm' &&
           isPracticingRef.current &&
           scoringElapsedSeconds >= 0
         ) {
-          const action = event.value >= 64 ? 'down' : 'up';
+          recordMidiNoteOnLifecycle(
+            event.midiNote,
+            scoringElapsedSeconds,
+            event.velocity,
+          );
+        }
+      } else if (event.type === 'note-off') {
+        activeMidiNotesRef.current = activeMidiNotesRef.current.filter(
+          (midiNote) => midiNote !== event.midiNote,
+        );
+
+        if (
+          modeRef.current === 'rhythm' &&
+          isPracticingRef.current &&
+          scoringElapsedSeconds >= 0 &&
+          !sustainPedalDownRef.current
+        ) {
+          closeMidiNoteLifecycle(event.midiNote, scoringElapsedSeconds);
+        }
+      }
+
+      if (isSustainPedalEvent(event)) {
+        const isPedalDown = event.value >= 64;
+
+        if (
+          modeRef.current === 'rhythm' &&
+          isPracticingRef.current &&
+          scoringElapsedSeconds >= 0 &&
+          !isPedalDown
+        ) {
+          closeReleasedSustainedLifecycles(scoringElapsedSeconds);
+        }
+
+        sustainPedalDownRef.current = isPedalDown;
+
+        if (
+          modeRef.current === 'rhythm' &&
+          isPracticingRef.current &&
+          scoringElapsedSeconds >= 0 &&
+          pedalModeRef.current === 'score'
+        ) {
+          const action = isPedalDown ? 'down' : 'up';
           const target = findNearestPedalTarget(pedalTargetsRef.current, {
             action,
             elapsedSeconds: scoringElapsedSeconds,
@@ -1162,7 +1384,10 @@ export function PracticePage({
       );
     },
     [
+      closeMidiNoteLifecycle,
+      closeReleasedSustainedLifecycles,
       getCalibratedElapsedSeconds,
+      recordMidiNoteOnLifecycle,
       scheduleBufferedMidiNoteEvaluation,
       upsertPedalResult,
     ],
@@ -1277,6 +1502,10 @@ export function PracticePage({
   }, [latencyOffsetMs]);
 
   useEffect(() => {
+    pedalModeRef.current = pedalMode;
+  }, [pedalMode]);
+
+  useEffect(() => {
     timingLevelRef.current = timingLevel;
   }, [timingLevel]);
 
@@ -1385,8 +1614,11 @@ export function PracticePage({
     targetsRef.current = targets;
     resultsRef.current = new Map();
     pedalResultsRef.current = new Map();
+    noteLifecyclesRef.current = [];
+    sustainPedalDownRef.current = false;
     setResults(new Map());
     setPedalResults(new Map());
+    setNoteLifecycles([]);
     setCurrentTargetIndex(targets.length > 0 ? 0 : -1);
     currentTargetIndexRef.current = targets.length > 0 ? 0 : -1;
     setElapsedSeconds(0);
@@ -1547,6 +1779,7 @@ export function PracticePage({
   ]);
 
   function handleModeChange(nextMode: PracticeMode) {
+    clearNoteLifecycles();
     stopGuidePlayback(false);
     setMode(nextMode);
     setIsPracticing(false);
@@ -1721,6 +1954,7 @@ export function PracticePage({
     const measureNumber = clampNumber(measureIndex + 1, 1, measureCount);
 
     clearPendingMidiEvaluation();
+    clearNoteLifecycles();
     stopGuidePlayback(true);
     setMeasureStart(measureNumber);
     setMeasureEnd(measureNumber);
@@ -1838,7 +2072,9 @@ export function PracticePage({
   const targetStaffLabel = formatPracticeTargetVoiceLabel(currentTarget);
   const nextTargetLabel = getTargetLabel(nextTarget);
   const nextTargetDeltaLabel = getTargetDeltaLabel(currentTarget, nextTarget);
-  const midiChordWindowLabel = getMidiChordWindowLabel();
+  const midiChordWindowLabel = getMidiChordWindowLabel(
+    getMidiChordSettleMs(timingLevel),
+  );
   const lastMidiEvent = recentEvents[0] ?? null;
   const progressLabel = `${resultSummary.correct}/${targets.length}`;
   const guideMeasureIndex = activeGuideEvents[0]?.measureIndex ?? null;
@@ -1850,6 +2086,32 @@ export function PracticePage({
     : isGuidePaused
       ? 'Resume Ref'
       : 'Reference';
+  const weakestMeasureReview = reviewSummary.measureSummaries.reduce<
+    (typeof reviewSummary.measureSummaries)[number] | null
+  >((weakestReview, review) => {
+    if (!weakestReview) {
+      return review;
+    }
+
+    return getMeasureIssueCount(review) > getMeasureIssueCount(weakestReview)
+      ? review
+      : weakestReview;
+  }, null);
+  const coachHeadline = isReviewOpen
+    ? weakestMeasureReview
+      ? `Retry M${weakestMeasureReview.measureIndex + 1}`
+      : 'Clean pass'
+    : targets.length === 0
+      ? 'No playable notes'
+      : getCoachModeCue(mode);
+  const coachDetail = isReviewOpen
+    ? weakestMeasureReview
+      ? weakestMeasureReview.labels[0] ?? 'Focus this measure first'
+      : 'No issues found in this pass'
+    : getTargetLabel(currentTarget);
+  const practiceContextLabel = `M${normalizedMeasureStart + 1}-${
+    normalizedMeasureEnd + 1
+  } ${handMode} ${timingLevel} pedal ${getPedalModeLabel(pedalMode)}`;
 
   return (
     <main className="app-shell practice-shell" data-testid="practice-page">
@@ -1912,6 +2174,23 @@ export function PracticePage({
             <strong>{practiceMessage}</strong>
           </div>
 
+          <section className="practice-coach-card" data-testid="practice-coach">
+            <span>Coach</span>
+            <strong>{coachHeadline}</strong>
+            <small>{coachDetail}</small>
+            <small>{practiceContextLabel}</small>
+            {isReviewOpen && weakestMeasureReview ? (
+              <button
+                type="button"
+                className="practice-review-retry"
+                data-testid="practice-retry-weakest"
+                onClick={() => handleRetryMeasure(weakestMeasureReview.measureIndex)}
+              >
+                Retry M{weakestMeasureReview.measureIndex + 1}
+              </button>
+            ) : null}
+          </section>
+
           <div className="practice-kpi-grid">
             <div>
               <span>Progress</span>
@@ -1940,7 +2219,9 @@ export function PracticePage({
             <div>
               <span>Pedal</span>
               <strong>
-                {pedalSummary.correct}/{pedalTargets.length}
+                {isPedalScoringEnabled
+                  ? `${pedalSummary.correct}/${scoredPedalTargets.length}`
+                  : getPedalModeLabel(pedalMode)}
               </strong>
             </div>
           </div>
@@ -1950,6 +2231,7 @@ export function PracticePage({
               <span>Top 5</span>
               <strong>{practiceTopScoreStatus}</strong>
             </div>
+            <small className="practice-context-note">{practiceContextLabel}</small>
             <ol>
               {practiceTopScores.length > 0 ? (
                 practiceTopScores.map((attempt, index) => (
@@ -2072,7 +2354,35 @@ export function PracticePage({
               />
               Metronome
             </label>
+            <label className="practice-check-row">
+              <input
+                type="checkbox"
+                data-testid="practice-expression-feedback-toggle"
+                checked={isExpressionFeedbackEnabled}
+                onChange={(event) =>
+                  setIsExpressionFeedbackEnabled(event.target.checked)
+                }
+              />
+              Expression feedback
+            </label>
+            <label className="practice-field">
+              Pedal mode
+              <select
+                data-testid="practice-pedal-mode"
+                value={pedalMode}
+                onChange={(event) =>
+                  setPedalMode(event.target.value as PedalPracticeMode)
+                }
+              >
+                <option value="guide">Guide</option>
+                <option value="score">Score</option>
+                <option value="off">Off</option>
+              </select>
+            </label>
           </div>
+
+          <details className="practice-disclosure" data-testid="practice-advanced">
+            <summary>Advanced</summary>
 
           <div className="practice-range-grid">
             <label className="practice-field">
@@ -2112,9 +2422,9 @@ export function PracticePage({
                 setTimingLevel(event.target.value as PracticeTimingLevel)
               }
             >
-              <option value="beginner">Beginner ±280ms</option>
-              <option value="normal">Normal ±180ms</option>
-              <option value="strict">Strict ±90ms</option>
+              <option value="beginner">Beginner +/-280ms</option>
+              <option value="normal">Normal +/-180ms</option>
+              <option value="strict">Strict +/-90ms</option>
             </select>
           </label>
 
@@ -2130,6 +2440,8 @@ export function PracticePage({
               onChange={(event) => handleLatencyOffsetChange(event.target.value)}
             />
           </label>
+
+          </details>
 
           <div className="practice-range-grid">
             <label className="practice-field">
@@ -2189,6 +2501,15 @@ export function PracticePage({
             {expressionLabels.length > 0 ? (
               <small>Expression {expressionLabels.join(' / ')}</small>
             ) : null}
+            {currentExpressionFeedback.length > 0 ? (
+              <small>
+                Coach{' '}
+                {currentExpressionFeedback
+                  .slice(0, 2)
+                  .map((feedback) => feedback.label)
+                  .join(' / ')}
+              </small>
+            ) : null}
             <small>
               Active {activeNotesLabel}
               {sustainPedalDown ? ' + sustain' : ''}
@@ -2197,6 +2518,9 @@ export function PracticePage({
               <small>Score marks {expressionCapabilities.join(', ')}</small>
             ) : null}
           </div>
+
+          <details className="practice-disclosure" data-testid="practice-midi-details">
+            <summary>MIDI details</summary>
 
           <ol className="practice-recent-events" aria-label="Recent MIDI events">
             {recentEvents.length > 0 ? (
@@ -2255,6 +2579,8 @@ export function PracticePage({
             </div>
           </div>
 
+          </details>
+
           <dl className="practice-result-list">
             <div>
               <dt>Partial</dt>
@@ -2267,6 +2593,10 @@ export function PracticePage({
             <div>
               <dt>Pedal issues</dt>
               <dd>{pedalSummary.early + pedalSummary.late + pedalSummary.missed}</dd>
+            </div>
+            <div>
+              <dt>Hold issues</dt>
+              <dd>{reviewSummary.holdIssueCount}</dd>
             </div>
             <div>
               <dt>Elapsed</dt>
@@ -2306,6 +2636,14 @@ export function PracticePage({
                     {reviewSummary.timingScorePercent === null
                       ? 'n/a'
                       : `${reviewSummary.timingScorePercent}%`}
+                  </strong>
+                </div>
+                <div>
+                  <span>Hold</span>
+                  <strong>
+                    {reviewSummary.holdScorePercent === null
+                      ? 'n/a'
+                      : `${reviewSummary.holdScorePercent}%`}
                   </strong>
                 </div>
                 <div>
@@ -2366,6 +2704,19 @@ export function PracticePage({
                   <li>Clean pass</li>
                 )}
               </ol>
+              {isExpressionFeedbackEnabled && expressionFeedback.length > 0 ? (
+                <ol
+                  className="practice-review-list practice-expression-list"
+                  aria-label="Expression feedback"
+                >
+                  {expressionFeedback.slice(0, 5).map((feedback, index) => (
+                    <li key={`${feedback.targetId}-${feedback.kind}-${index}`}>
+                      <strong>M{feedback.measureIndex + 1}</strong>
+                      <span>{feedback.label}</span>
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
             </section>
           ) : null}
         </aside>

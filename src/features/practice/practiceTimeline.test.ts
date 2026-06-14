@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createEmptyScore } from '../../domain/score/factories';
-import { placeScoreEvent } from '../../domain/score/editing';
+import { placeScoreEvent, tryUpdateScoreEvent } from '../../domain/score/editing';
 import { pianoPolyphonyStudyFixture } from '../../domain/score/fixtures';
 import {
   buildPracticeTargets,
@@ -22,7 +22,9 @@ describe('practice timeline', () => {
     const targets = buildPracticeTargets(score);
 
     expect(targets[0]).toMatchObject({
+      attackMidiNotes: [60],
       eventIds: ['middle-c'],
+      expectedReleaseSeconds: 0.5,
       measureIndex: 0,
       midiNotes: [60],
       staffId: 'treble',
@@ -86,6 +88,77 @@ describe('practice timeline', () => {
         { staffId: 'treble', voiceIndex: 0 },
       ],
     });
+  });
+
+  it('keeps tied continuations inside the source attack target duration', () => {
+    const firstNoteScore = placeScoreEvent(createEmptyScore('treble', { tempo: 120 }), {
+      beat: 0,
+      duration: 'half',
+      entryMode: 'note',
+      eventId: 'tie-source',
+      measureIndex: 0,
+      pitch: { step: 'C', octave: 4 },
+      staffId: 'treble',
+    });
+    const secondNoteScore = placeScoreEvent(firstNoteScore, {
+      beat: 2,
+      duration: 'half',
+      entryMode: 'note',
+      eventId: 'tie-target',
+      measureIndex: 0,
+      pitch: { step: 'C', octave: 4 },
+      staffId: 'treble',
+    });
+    const tiedScore = tryUpdateScoreEvent(secondNoteScore, 'tie-source', {
+      ties: [
+        {
+          pitchIndex: 0,
+          targetEventId: 'tie-target',
+          targetPitchIndex: 0,
+        },
+      ],
+    }).score;
+    const targets = buildPracticeTargets(tiedScore);
+
+    expect(targets).toHaveLength(1);
+    expect(targets[0]).toMatchObject({
+      attackMidiNotes: [60],
+      durationSeconds: 2,
+      eventIds: ['tie-source', 'tie-target'],
+      expectedReleaseSeconds: 2,
+    });
+  });
+
+  it('marks grace-note targets without scoring them as regular holds', () => {
+    const noteScore = placeScoreEvent(createEmptyScore('treble', { tempo: 120 }), {
+      beat: 1,
+      duration: 'quarter',
+      entryMode: 'note',
+      eventId: 'main-note',
+      measureIndex: 0,
+      pitch: { step: 'D', octave: 4 },
+      staffId: 'treble',
+    });
+    const graceScore = tryUpdateScoreEvent(noteScore, 'main-note', {
+      graceNotes: [
+        {
+          duration: 'eighth',
+          pitches: [{ step: 'C', octave: 4 }],
+          slash: true,
+        },
+      ],
+    }).score;
+    const targets = buildPracticeTargets(graceScore);
+    const graceTarget = targets.find((target) => target.isGrace);
+
+    expect(graceTarget).toMatchObject({
+      attackMidiNotes: [60],
+      eventIds: ['main-note'],
+      isGrace: true,
+    });
+    expect(targets.some((target) => !target.isGrace && target.midiNotes.includes(62))).toBe(
+      true,
+    );
   });
 
   it('keeps same-staff polyphony voices in one attack target with lane labels', () => {
