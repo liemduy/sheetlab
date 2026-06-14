@@ -8,6 +8,7 @@ import { setMeasureKeySignature } from './editing';
 import type {
   Accidental,
   DurationValue,
+  GraceNoteAttachment,
   KeySignature,
   NoteStep,
   PedalMark,
@@ -16,6 +17,7 @@ import type {
   ScoreEvent,
   StaffId,
   TimeSignature,
+  TupletInfo,
 } from './types';
 
 const ABC_UNITS_PER_QUARTER = 8;
@@ -116,6 +118,13 @@ interface MusicXmlDirectionMark {
   dynamic?: string;
   pedal?: PedalMark;
   staffId: StaffId;
+}
+
+interface MusicXmlTupletState {
+  actualNotes: number;
+  id: string;
+  index: number;
+  normalNotes: number;
 }
 
 export interface MusicXmlImportAnalysis {
@@ -292,6 +301,17 @@ const MUSIC_XML_DURATION_BY_UNITS = new Map<number, MusicXmlDuration>([
   [2, { duration: 'sixteenth', dots: 0 }],
   [1, { duration: 'thirtySecond', dots: 0 }],
 ]);
+const MUSIC_XML_DURATION_BY_TYPE = new Map<string, DurationValue>([
+  ['whole', 'whole'],
+  ['half', 'half'],
+  ['quarter', 'quarter'],
+  ['eighth', 'eighth'],
+  ['8th', 'eighth'],
+  ['16th', 'sixteenth'],
+  ['sixteenth', 'sixteenth'],
+  ['32nd', 'thirtySecond'],
+  ['thirty-second', 'thirtySecond'],
+]);
 
 function getDirectChild(parent: Element, localName: string) {
   return [...parent.children].find((child) => child.localName === localName) ??
@@ -328,7 +348,7 @@ function getMusicXmlDurationUnits(
     return 0;
   }
 
-  return getClosestAbcUnits(durationValue / Math.max(1, divisions));
+  return (durationValue / Math.max(1, divisions)) * ABC_UNITS_PER_QUARTER;
 }
 
 function getMusicXmlDuration(
@@ -347,6 +367,146 @@ function getMusicXmlDuration(
   }
 
   return duration;
+}
+
+function getMusicXmlGraceDuration(note: Element): DurationValue {
+  return (
+    MUSIC_XML_DURATION_BY_TYPE.get(getTextContent(note, 'type').toLowerCase()) ??
+    'sixteenth'
+  );
+}
+
+function getMusicXmlDirectChildCount(parent: Element, localName: string) {
+  return [...parent.children].filter((child) => child.localName === localName).length;
+}
+
+function getMusicXmlNotatedDuration(note: Element): MusicXmlDuration | null {
+  const duration = MUSIC_XML_DURATION_BY_TYPE.get(
+    getTextContent(note, 'type').toLowerCase(),
+  );
+
+  return duration
+    ? {
+        dots: Math.min(1, getMusicXmlDirectChildCount(note, 'dot')),
+        duration,
+      }
+    : null;
+}
+
+function getMusicXmlEventDuration(
+  note: Element,
+  durationUnits: number,
+  warnings: string[],
+): MusicXmlDuration {
+  if (note.querySelector('time-modification')) {
+    return getMusicXmlNotatedDuration(note) ?? getMusicXmlDuration(durationUnits, warnings);
+  }
+
+  return getMusicXmlDuration(durationUnits, warnings);
+}
+
+function getMusicXmlTupletSpec(note: Element) {
+  const timeModification = note.querySelector('time-modification');
+
+  if (!timeModification) {
+    return null;
+  }
+
+  const actualNotes = Number(getTextContent(timeModification, 'actual-notes'));
+  const normalNotes = Number(getTextContent(timeModification, 'normal-notes'));
+
+  if (
+    !Number.isInteger(actualNotes) ||
+    actualNotes < 2 ||
+    actualNotes > 9 ||
+    !Number.isInteger(normalNotes) ||
+    normalNotes < 1
+  ) {
+    return null;
+  }
+
+  return {
+    actualNotes,
+    normalNotes,
+  };
+}
+
+function getMusicXmlTupletBoundary(note: Element) {
+  const tuplet = note.querySelector('notations tuplet');
+  const type = tuplet?.getAttribute('type');
+
+  return type === 'start' || type === 'stop' ? type : null;
+}
+
+function getMusicXmlTupletInfo({
+  eventCounter,
+  measureIndex,
+  note,
+  staffId,
+  states,
+}: {
+  eventCounter: number;
+  measureIndex: number;
+  note: Element;
+  staffId: StaffId;
+  states: Map<StaffId, MusicXmlTupletState>;
+}): TupletInfo | undefined {
+  const spec = getMusicXmlTupletSpec(note);
+
+  if (!spec) {
+    return undefined;
+  }
+
+  const boundary = getMusicXmlTupletBoundary(note);
+  let state = states.get(staffId);
+
+  if (
+    !state ||
+    boundary === 'start' ||
+    state.actualNotes !== spec.actualNotes ||
+    state.normalNotes !== spec.normalNotes ||
+    state.index >= spec.actualNotes
+  ) {
+    state = {
+      ...spec,
+      id: `xml-tuplet-${measureIndex + 1}-${staffId}-${eventCounter}`,
+      index: 0,
+    };
+  }
+
+  const tuplet = {
+    actualNotes: spec.actualNotes,
+    id: state.id,
+    index: Math.min(state.index, spec.actualNotes - 1),
+    normalNotes: spec.normalNotes,
+  };
+  const nextState = {
+    ...state,
+    index: state.index + 1,
+  };
+
+  if (boundary === 'stop' || nextState.index >= spec.actualNotes) {
+    states.delete(staffId);
+  } else {
+    states.set(staffId, nextState);
+  }
+
+  return tuplet;
+}
+
+function isMusicXmlGraceNote(note: Element) {
+  return Boolean(getDirectChild(note, 'grace'));
+}
+
+function createMusicXmlGraceNote(note: Element, pitch: Pitch): GraceNoteAttachment {
+  const grace = getDirectChild(note, 'grace');
+  const slash = grace?.getAttribute('slash') === 'yes';
+
+  return {
+    duration: getMusicXmlGraceDuration(note),
+    pitches: [pitch],
+    ...(slash ? { slash } : {}),
+  };
 }
 
 function parseMusicXmlStaffId(element: Element, fallback: StaffId): StaffId {
@@ -421,16 +581,20 @@ function createMusicXmlEvent({
   beat,
   duration,
   eventCounter,
+  graceNotes,
   isRest,
   lyric,
   pitch,
+  tuplet,
 }: {
   beat: number;
   duration: MusicXmlDuration;
   eventCounter: number;
+  graceNotes?: GraceNoteAttachment[];
   isRest: boolean;
   lyric?: string;
   pitch: Pitch | null;
+  tuplet?: TupletInfo;
 }): ScoreEvent {
   const base = {
     beat,
@@ -438,6 +602,7 @@ function createMusicXmlEvent({
     duration: duration.duration,
     id: `xml-${eventCounter}`,
     lyric,
+    tuplet,
   };
 
   if (isRest || !pitch) {
@@ -449,6 +614,7 @@ function createMusicXmlEvent({
 
   return {
     ...base,
+    graceNotes,
     kind: 'note',
     pitch,
   };
@@ -706,6 +872,8 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
       let cursorUnits = 0;
       const directionMarks: MusicXmlDirectionMark[] = [];
       const lastEventByStaff = new Map<StaffId, ScoreEvent>();
+      const pendingGraceNotesByStaff = new Map<StaffId, GraceNoteAttachment[]>();
+      const tupletStatesByStaff = new Map<StaffId, MusicXmlTupletState>();
 
       [...measure.children].forEach((child) => {
         if (child.localName === 'attributes') {
@@ -748,15 +916,33 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
           return;
         }
 
-        const durationUnits = getMusicXmlDurationUnits(child, divisions, warnings);
-        const duration = getMusicXmlDuration(durationUnits, warnings);
         const isChord = Boolean(getDirectChild(child, 'chord'));
+        const isGrace = isMusicXmlGraceNote(child);
         const isRest = Boolean(getDirectChild(child, 'rest'));
         const pitch = parseMusicXmlPitch(child);
         const staffId = forcedStaffId ??
           parseMusicXmlStaffId(child, scoreType === 'grand' ? 'treble' : 'treble');
         const events = getMeasureEvents(staffId, measureIndex);
         const lyric = getMusicXmlLyric(child);
+
+        if (isGrace) {
+          if (!pitch) {
+            return;
+          }
+
+          const pendingGraceNotes = pendingGraceNotesByStaff.get(staffId) ?? [];
+
+          if (isChord && pendingGraceNotes.length > 0) {
+            pendingGraceNotes[pendingGraceNotes.length - 1]?.pitches.push(pitch);
+          } else {
+            pendingGraceNotes.push(createMusicXmlGraceNote(child, pitch));
+          }
+          pendingGraceNotesByStaff.set(staffId, pendingGraceNotes);
+          return;
+        }
+
+        const durationUnits = getMusicXmlDurationUnits(child, divisions, warnings);
+        const duration = getMusicXmlEventDuration(child, durationUnits, warnings);
 
         if (isChord && pitch) {
           const previousEvent = lastEventByStaff.get(staffId);
@@ -776,17 +962,28 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
           return;
         }
 
+        const tuplet = getMusicXmlTupletInfo({
+          eventCounter,
+          measureIndex,
+          note: child,
+          staffId,
+          states: tupletStatesByStaff,
+        });
+
         const event = createMusicXmlEvent({
           beat: cursorUnits / ABC_UNITS_PER_QUARTER,
           duration,
           eventCounter,
+          graceNotes: pendingGraceNotesByStaff.get(staffId),
           isRest,
           lyric,
           pitch,
+          tuplet,
         });
 
         eventCounter += 1;
         events.push(event);
+        pendingGraceNotesByStaff.delete(staffId);
 
         if (event.kind !== 'rest') {
           lastEventByStaff.set(staffId, event);

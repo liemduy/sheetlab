@@ -7,6 +7,7 @@ import type {
   Clef,
   ClefChange,
   DurationValue,
+  GraceNoteAttachment,
   HairpinMark,
   KeySignature,
   KeySignatureAccidental,
@@ -213,6 +214,17 @@ function isSlurMark(value: unknown): value is SlurMark {
   );
 }
 
+function isGraceNoteAttachment(value: unknown): value is GraceNoteAttachment {
+  return (
+    isRecord(value) &&
+    DURATIONS.has(value.duration as DurationValue) &&
+    Array.isArray(value.pitches) &&
+    value.pitches.length > 0 &&
+    value.pitches.every(isPitch) &&
+    (value.slash === undefined || typeof value.slash === 'boolean')
+  );
+}
+
 function isScoreEvent(value: unknown): value is ScoreEvent {
   if (!isRecord(value)) {
     return false;
@@ -229,6 +241,9 @@ function isScoreEvent(value: unknown): value is ScoreEvent {
     (value.chordSymbol === undefined || isString(value.chordSymbol)) &&
     (value.dynamic === undefined || isString(value.dynamic)) &&
     (value.fermata === undefined || typeof value.fermata === 'boolean') &&
+    (value.graceNotes === undefined ||
+      (Array.isArray(value.graceNotes) &&
+        value.graceNotes.every(isGraceNoteAttachment))) &&
     (value.glissando === undefined || typeof value.glissando === 'boolean') &&
     (value.hairpin === undefined ||
       HAIRPIN_MARKS.has(value.hairpin as HairpinMark)) &&
@@ -254,6 +269,7 @@ function isScoreEvent(value: unknown): value is ScoreEvent {
   if (value.kind === 'rest') {
     return (
       value.articulations === undefined &&
+      value.graceNotes === undefined &&
       value.hairpin === undefined &&
       value.stemDirection === undefined &&
       value.slurs === undefined &&

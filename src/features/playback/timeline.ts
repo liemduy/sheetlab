@@ -47,6 +47,8 @@ export interface PlaybackTimelineEvent {
 }
 
 const DEFAULT_PLAYBACK_VELOCITY = 0.82;
+const GRACE_NOTE_SOUND_SECONDS = 0.075;
+const GRACE_NOTE_VELOCITY = 0.58;
 
 interface PlaybackEventContext {
   event: ScoreEvent;
@@ -615,8 +617,68 @@ export function buildPlaybackTimeline(score: Score): PlaybackTimelineEvent[] {
                   measure.index,
                   event.beat,
                 );
+                const graceTimelineEvents =
+                  sourcePitches.length > 0 && event.graceNotes?.length
+                    ? event.graceNotes.flatMap((graceNote, graceNoteIndex) => {
+                        const gracePitches = graceNote.pitches.map((pitch) =>
+                          applyOttavaToPitch(
+                            applyKeySignatureMapToPitch(pitch, keySignatureMap),
+                            ottavaShift,
+                          ),
+                        );
 
-                return groupPitchesByDuration(
+                        if (gracePitches.length === 0) {
+                          return [];
+                        }
+
+                        const mainStartSeconds = playbackStartBeat * secondsPerBeat;
+                        const graceNoteCount = event.graceNotes?.length ?? 1;
+                        const graceWindowSeconds = Math.min(
+                          mainStartSeconds,
+                          GRACE_NOTE_SOUND_SECONDS * graceNoteCount,
+                        );
+                        const graceStepSeconds =
+                          graceWindowSeconds > 0
+                            ? graceWindowSeconds / graceNoteCount
+                            : 0;
+                        const graceStartSeconds =
+                          graceWindowSeconds > 0
+                            ? mainStartSeconds -
+                              graceWindowSeconds +
+                              graceStepSeconds * graceNoteIndex
+                            : mainStartSeconds;
+                        const durationSeconds =
+                          graceStepSeconds > 0
+                            ? Math.min(GRACE_NOTE_SOUND_SECONDS, graceStepSeconds)
+                            : GRACE_NOTE_SOUND_SECONDS;
+
+                        return [
+                          {
+                            id: `${event.id}:grace:${graceNoteIndex}`,
+                            staffId: staff.id,
+                            voiceIndex,
+                            measureIndex: measure.index,
+                            beat: event.beat,
+                            startBeat,
+                            playbackStartBeat,
+                            durationBeats: durationSeconds / secondsPerBeat,
+                            startSeconds: graceStartSeconds,
+                            durationSeconds,
+                            soundDurationSeconds: durationSeconds,
+                            velocity: GRACE_NOTE_VELOCITY,
+                            kind:
+                              gracePitches.length > 1
+                                ? ('chord' as const)
+                                : ('note' as const),
+                            pitch: gracePitches[0],
+                            pitches: gracePitches,
+                            sustainedEventIds: [event.id],
+                          },
+                        ];
+                      })
+                    : [];
+
+                const pitchedTimelineEvents = groupPitchesByDuration(
                   event,
                   score,
                   attackPitchIndexes,
@@ -665,6 +727,8 @@ export function buildPlaybackTimeline(score: Score): PlaybackTimelineEvent[] {
                       },
                     ];
                   });
+
+                return [...graceTimelineEvents, ...pitchedTimelineEvents];
               }),
           );
         }),

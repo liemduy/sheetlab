@@ -251,6 +251,48 @@ describe('playback timeline', () => {
     });
   });
 
+  it('plays attached grace notes as short pickups without changing main duration', () => {
+    const score = placeScoreEvent(createEmptyScore('treble', { tempo: 120 }), {
+      eventId: 'grace-main',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 1,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+    const markedScore = tryUpdateScoreEvent(score, 'grace-main', {
+      graceNotes: [
+        {
+          duration: 'sixteenth',
+          pitches: [{ step: 'D', octave: 4 }],
+          slash: true,
+        },
+      ],
+    }).score;
+    const timeline = buildPlaybackTimeline(markedScore);
+
+    expect(timeline.map((event) => event.id)).toEqual([
+      'grace-main:grace:0',
+      'grace-main',
+    ]);
+    expect(timeline[0]).toMatchObject({
+      durationSeconds: 0.075,
+      pitches: [{ step: 'D', octave: 4 }],
+      sustainedEventIds: ['grace-main'],
+    });
+    expect(timeline[0]?.startSeconds).toBeCloseTo(0.425, 4);
+    expect(timeline[1]).toMatchObject({
+      durationSeconds: 0.5,
+      pitches: [{ step: 'E', octave: 4 }],
+      startSeconds: 0.5,
+    });
+    expect(findPlaybackStartSecondsForEventId(timeline, 'grace-main')).toBeCloseTo(
+      0.425,
+      4,
+    );
+  });
+
   it('applies short articulations and breath marks to sound length without changing notation duration', () => {
     const score = placeScoreEvent(createEmptyScore('treble', { tempo: 60 }), {
       eventId: 'breath-staccatissimo',

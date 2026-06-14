@@ -2,12 +2,15 @@ import {
   Accidental as VexFlowAccidental,
   Articulation as VexFlowArticulation,
   Dot,
+  GraceNote as VexFlowGraceNote,
+  GraceNoteGroup,
   ModifierPosition,
   StaveNote,
 } from 'vexflow';
 import type {
   ArticulationKind,
   Clef,
+  GraceNoteAttachment,
   ScoreEvent,
   StemDirection,
   Staff,
@@ -50,6 +53,30 @@ const ARTICULATION_RENDER_ORDER: ArticulationKind[] = [
   'accent',
   'marcato',
 ];
+
+function createVexFlowGraceNote(
+  graceNote: GraceNoteAttachment,
+  clef: Clef,
+) {
+  const pitches = graceNote.pitches.map((pitch) => clampPitchToClefRange(pitch, clef));
+  const vexFlowGraceNote = new VexFlowGraceNote({
+    clef,
+    duration: durationToVexFlowDuration(graceNote.duration),
+    keys: pitches.map(pitchToVexFlowKey),
+    slash: graceNote.slash,
+  });
+
+  pitches.forEach((pitch, pitchIndex) => {
+    if (pitch.accidental) {
+      vexFlowGraceNote.addModifier(
+        new VexFlowAccidental(accidentalToVexFlow(pitch.accidental)),
+        pitchIndex,
+      );
+    }
+  });
+
+  return vexFlowGraceNote;
+}
 
 export function getVexFlowEventClasses(event: ScoreEvent) {
   return isGeneratedRestEvent(event)
@@ -117,6 +144,15 @@ export function createVexFlowNote(
       staveNote.addModifier(vexFlowArticulation, 0);
     });
 
+    if (event.graceNotes?.length) {
+      const graceNoteGroup = new GraceNoteGroup(
+        event.graceNotes.map((graceNote) =>
+          createVexFlowGraceNote(graceNote, clef),
+        ),
+      ).beamNotes();
+
+      staveNote.addModifier(graceNoteGroup, 0);
+    }
   }
 
   if (eventDots > 0) {

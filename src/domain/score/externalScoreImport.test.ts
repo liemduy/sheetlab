@@ -7,6 +7,7 @@ import {
   importScoreFromMusicXml,
 } from './externalScoreImport';
 import { countScoreEvents } from './editing';
+import { getScoreRhythmIssues } from './rhythm';
 
 function bytes(...values: number[]) {
   return new Uint8Array(values);
@@ -146,6 +147,134 @@ describe('externalScoreImport', () => {
     expect(trebleEvents.some((event) => event.lyric === 'Xin')).toBe(true);
     expect(trebleEvents.some((event) => event.dynamic === 'mf')).toBe(true);
     expect(bassEvents.some((event) => event.pedal)).toBe(true);
+  });
+
+  it('imports MusicXML grace notes as attachments without rhythm overlap', () => {
+    const result = importScoreFromMusicXml(`
+      <score-partwise version="3.1">
+        <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+        <part id="P1">
+          <measure number="1">
+            <attributes>
+              <divisions>4</divisions>
+              <time><beats>4</beats><beat-type>4</beat-type></time>
+            </attributes>
+            <note>
+              <grace slash="yes"/>
+              <pitch><step>D</step><octave>4</octave></pitch>
+              <voice>1</voice>
+              <type>16th</type>
+              <staff>1</staff>
+            </note>
+            <note>
+              <pitch><step>E</step><octave>4</octave></pitch>
+              <duration>4</duration>
+              <voice>1</voice>
+              <type>quarter</type>
+              <staff>1</staff>
+              <lyric><text>main</text></lyric>
+            </note>
+          </measure>
+        </part>
+      </score-partwise>
+    `);
+    const trebleEvents = getStaffEvents(result, 'treble');
+    const mainEvent = trebleEvents.find((event) => event.kind === 'note');
+
+    expect(result.warnings).not.toContain(
+      'Skipped a MusicXML duration with invalid value',
+    );
+    expect(mainEvent).toMatchObject({
+      beat: 0,
+      duration: 'quarter',
+      graceNotes: [
+        {
+          duration: 'sixteenth',
+          pitches: [{ octave: 4, step: 'D' }],
+          slash: true,
+        },
+      ],
+      lyric: 'main',
+    });
+    expect(getScoreRhythmIssues(result.score)).toEqual([]);
+  });
+
+  it('imports MusicXML tuplets using notated duration and time modification', () => {
+    const result = importScoreFromMusicXml(`
+      <score-partwise version="3.1">
+        <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+        <part id="P1">
+          <measure number="1">
+            <attributes>
+              <divisions>12</divisions>
+              <time><beats>4</beats><beat-type>4</beat-type></time>
+            </attributes>
+            <note>
+              <pitch><step>G</step><octave>4</octave></pitch>
+              <duration>12</duration>
+              <type>quarter</type>
+            </note>
+            <note>
+              <rest/>
+              <duration>6</duration>
+              <type>eighth</type>
+            </note>
+            <note>
+              <pitch><step>B</step><octave>3</octave></pitch>
+              <duration>6</duration>
+              <type>eighth</type>
+            </note>
+            <note>
+              <pitch><step>A</step><octave>3</octave></pitch>
+              <duration>8</duration>
+              <type>quarter</type>
+              <time-modification>
+                <actual-notes>3</actual-notes>
+                <normal-notes>2</normal-notes>
+              </time-modification>
+              <notations><tuplet type="start"/></notations>
+            </note>
+            <note>
+              <pitch><step>B</step><octave>3</octave></pitch>
+              <duration>12</duration>
+              <type>quarter</type>
+              <dot/>
+              <time-modification>
+                <actual-notes>3</actual-notes>
+                <normal-notes>2</normal-notes>
+              </time-modification>
+            </note>
+            <note>
+              <pitch><step>C</step><octave>4</octave></pitch>
+              <duration>4</duration>
+              <type>eighth</type>
+              <time-modification>
+                <actual-notes>3</actual-notes>
+                <normal-notes>2</normal-notes>
+              </time-modification>
+              <notations><tuplet type="stop"/></notations>
+            </note>
+          </measure>
+        </part>
+      </score-partwise>
+    `);
+    const trebleEvents = getStaffEvents(result, 'treble');
+    const tupletEvents = trebleEvents.filter((event) => event.tuplet);
+
+    expect(tupletEvents.map((event) => event.duration)).toEqual([
+      'quarter',
+      'quarter',
+      'eighth',
+    ]);
+    expect(tupletEvents.map((event) => event.dots ?? 0)).toEqual([0, 1, 0]);
+    expect(tupletEvents.map((event) => event.tuplet?.index)).toEqual([0, 1, 2]);
+    expect(new Set(tupletEvents.map((event) => event.tuplet?.id)).size).toBe(1);
+    expect(tupletEvents.map((event) => Number(event.beat.toFixed(4)))).toEqual([
+      2,
+      2.6667,
+      3.6667,
+    ]);
+    expect(getScoreRhythmIssues(result.score)).toEqual([]);
   });
 
   it('imports a minimal MIDI note track', () => {

@@ -22,6 +22,9 @@ export interface PlaybackAudioOptions {
 }
 
 const PLAYBACK_SCHEDULE_LEAD_SECONDS = 0.08;
+const PLAYBACK_LOOKAHEAD_SECONDS = 2.5;
+const PLAYBACK_SCHEDULER_INTERVAL_MS = 100;
+const AUDIO_SCHEDULE_PAST_TOLERANCE_SECONDS = 0.02;
 let toneImportPromise: Promise<typeof import('tone')> | null = null;
 
 function getAudioContextConstructor() {
@@ -162,49 +165,108 @@ export async function playTimelineAudio(
           },
         }).toDestination()
       : null;
+    let schedulerTimer: ReturnType<typeof globalThis.setInterval> | null = null;
+    let nextTimelineEventIndex = timeline.findIndex(
+      (event) => event.startSeconds >= startSeconds,
+    );
+    let nextMetronomeBeatIndex = -Math.max(
+      0,
+      options.metronome?.countInBeats ?? 0,
+    );
 
-    timeline.forEach((event) => {
-      if (
-        !shouldScheduleTimelineEvent(event, {
-          endSeconds,
-          staffIdSet,
-          startSeconds,
-        })
-      ) {
+    if (nextTimelineEventIndex < 0) {
+      nextTimelineEventIndex = timeline.length;
+    }
+
+    const scheduleTimelineWindow = () => {
+      const currentAudioSeconds = Tone.immediate();
+      const elapsedPlaybackSeconds = Math.max(
+        0,
+        currentAudioSeconds - playbackStartAudioSeconds,
+      );
+      const scheduleUntilSeconds = Math.min(
+        endSeconds,
+        startSeconds + elapsedPlaybackSeconds + PLAYBACK_LOOKAHEAD_SECONDS,
+      );
+
+      while (nextTimelineEventIndex < timeline.length) {
+        const event = timeline[nextTimelineEventIndex];
+
+        if (!event || event.startSeconds >= endSeconds) {
+          nextTimelineEventIndex = timeline.length;
+          break;
+        }
+
+        if (event.startSeconds > scheduleUntilSeconds) {
+          break;
+        }
+
+        nextTimelineEventIndex += 1;
+
+        if (
+          !shouldScheduleTimelineEvent(event, {
+            endSeconds,
+            staffIdSet,
+            startSeconds,
+          })
+        ) {
+          continue;
+        }
+
+        const eventStartAudioSeconds =
+          scheduledStartSeconds + delaySeconds + event.startSeconds - startSeconds;
+
+        if (
+          eventStartAudioSeconds <
+          currentAudioSeconds - AUDIO_SCHEDULE_PAST_TOLERANCE_SECONDS
+        ) {
+          continue;
+        }
+
+        synth.triggerAttackRelease(
+          event.pitches.map(pitchToToneNote),
+          event.soundDurationSeconds,
+          Math.max(Tone.now(), eventStartAudioSeconds),
+          event.velocity,
+        );
+      }
+    };
+
+    const scheduleMetronomeWindow = () => {
+      if (!options.metronome || !metronomeSynth) {
         return;
       }
 
-      synth.triggerAttackRelease(
-        event.pitches.map(pitchToToneNote),
-        event.soundDurationSeconds,
-        scheduledStartSeconds + delaySeconds + event.startSeconds - startSeconds,
-        event.velocity,
-      );
-    });
-
-    if (options.metronome && metronomeSynth) {
       const secondsPerBeat = 60 / options.metronome.tempo;
-      const countInBeats = Math.max(0, options.metronome.countInBeats ?? 0);
       const practiceBeatCount = getMetronomeBeatCount({
         endSeconds,
         startSeconds,
         tempo: options.metronome.tempo,
       });
+      const currentAudioSeconds = Tone.immediate();
+      const scheduleUntilAudioSeconds =
+        currentAudioSeconds + PLAYBACK_LOOKAHEAD_SECONDS;
 
-      for (
-        let beatIndex = -countInBeats;
-        beatIndex < practiceBeatCount;
-        beatIndex += 1
-      ) {
+      while (nextMetronomeBeatIndex < practiceBeatCount) {
         const clickTime =
-          scheduledStartSeconds + delaySeconds + beatIndex * secondsPerBeat;
+          scheduledStartSeconds +
+          delaySeconds +
+          nextMetronomeBeatIndex * secondsPerBeat;
 
-        if (clickTime < audioNowSeconds) {
+        if (
+          clickTime <
+          currentAudioSeconds - AUDIO_SCHEDULE_PAST_TOLERANCE_SECONDS
+        ) {
+          nextMetronomeBeatIndex += 1;
           continue;
         }
 
+        if (clickTime > scheduleUntilAudioSeconds) {
+          break;
+        }
+
         const playbackBeatIndex = Math.floor(
-          startSeconds / secondsPerBeat + beatIndex,
+          startSeconds / secondsPerBeat + nextMetronomeBeatIndex,
         );
         const accented = isAccentBeat(
           playbackBeatIndex,
@@ -214,11 +276,39 @@ export async function playTimelineAudio(
         metronomeSynth.triggerAttackRelease(
           accented ? 1320 : 880,
           0.035,
-          clickTime,
+          Math.max(Tone.now(), clickTime),
           accented ? 0.42 : 0.26,
         );
+        nextMetronomeBeatIndex += 1;
       }
-    }
+    };
+
+    const schedulePlaybackWindow = () => {
+      scheduleTimelineWindow();
+      scheduleMetronomeWindow();
+
+      if (
+        nextTimelineEventIndex >= timeline.length &&
+        (!options.metronome ||
+          nextMetronomeBeatIndex >=
+            getMetronomeBeatCount({
+              endSeconds,
+              startSeconds,
+              tempo: options.metronome.tempo,
+            }))
+      ) {
+        if (schedulerTimer !== null) {
+          globalThis.clearInterval(schedulerTimer);
+          schedulerTimer = null;
+        }
+      }
+    };
+
+    schedulePlaybackWindow();
+    schedulerTimer = globalThis.setInterval(
+      schedulePlaybackWindow,
+      PLAYBACK_SCHEDULER_INTERVAL_MS,
+    );
 
     return {
       audioStarted,
@@ -226,6 +316,9 @@ export async function playTimelineAudio(
         Tone.immediate() - playbackStartAudioSeconds,
       startedAtMs,
       stop: () => {
+        if (schedulerTimer !== null) {
+          globalThis.clearInterval(schedulerTimer);
+        }
         synth.releaseAll();
         synth.dispose();
         metronomeSynth?.dispose();

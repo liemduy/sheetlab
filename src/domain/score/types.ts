@@ -112,6 +112,12 @@ export interface SlurMark {
   targetEventId: string;
 }
 
+export interface GraceNoteAttachment {
+  duration: DurationValue;
+  pitches: Pitch[];
+  slash?: boolean;
+}
+
 export interface ScorePosition {
   beat: number;
   measureIndex: number;
@@ -211,6 +217,7 @@ export interface BaseScoreEvent {
   chordSymbol?: string;
   dynamic?: string;
   fermata?: boolean;
+  graceNotes?: GraceNoteAttachment[];
   glissando?: boolean;
   hairpin?: HairpinMark;
   annotationPlacements?: AnnotationPlacements;

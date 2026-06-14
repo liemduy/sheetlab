@@ -5,6 +5,7 @@ import type {
   AnnotationKind,
   AnnotationPlacementSide,
   DurationValue,
+  GraceNoteAttachment,
   HairpinMark,
   LyricMap,
   PedalMark,
@@ -124,6 +125,7 @@ export interface UpdateScoreEventRequest {
   chordSymbol?: string | null;
   dynamic?: string | null;
   fermata?: boolean;
+  graceNotes?: GraceNoteAttachment[] | null;
   glissando?: boolean;
   hairpin?: HairpinMark | null;
   annotationPlacement?: {
@@ -422,6 +424,10 @@ function createUpdatedEventBase(
     dynamic: dynamic === undefined ? event.dynamic : dynamic ?? undefined,
     fermata:
       update.fermata === undefined ? event.fermata : update.fermata || undefined,
+    graceNotes:
+      update.graceNotes === undefined
+        ? event.graceNotes
+        : update.graceNotes ?? undefined,
     glissando:
       update.glissando === undefined
         ? event.glissando
@@ -451,6 +457,7 @@ function createUpdatedScoreEvent(
   if (event.kind === 'rest') {
     const {
       articulations: _articulations,
+      graceNotes: _graceNotes,
       hairpin: _hairpin,
       slurs: _slurs,
       stemDirection: _stemDirection,
