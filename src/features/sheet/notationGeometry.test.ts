@@ -329,7 +329,7 @@ describe('notation geometry', () => {
     expect(getMeasureWidth(0, score)).toBeGreaterThan(700);
   });
 
-  it('does not compress an overfull single-measure system below its readable width', () => {
+  it('compacts an overfull single-measure system inside the paper width', () => {
     const score = [0, 1, 2, 3].reduce((measureScore, beat) => {
       const result = tryPlaceTupletGroup(
         measureScore,
@@ -355,8 +355,10 @@ describe('notation geometry', () => {
 
     expect(getSystemIndex(0, score)).toBe(0);
     expect(getSystemIndex(1, score)).toBe(1);
-    expect(getMeasureWidth(0, score)).toBeGreaterThanOrEqual(readableMinWidth);
-    expect(getScoreSvgWidth(score)).toBeGreaterThan(SVG_WIDTH);
+    expect(readableMinWidth).toBeGreaterThan(STAFF_RIGHT - STAFF_LEFT);
+    expect(getMeasureWidth(0, score)).toBeCloseTo(STAFF_RIGHT - STAFF_LEFT, 2);
+    expect(getMeasureRight(0, score)).toBeCloseTo(STAFF_RIGHT, 2);
+    expect(getScoreSvgWidth(score)).toBe(SVG_WIDTH);
   });
 
   it('adds inter-system padding for previous bass annotations', () => {

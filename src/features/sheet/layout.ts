@@ -335,7 +335,9 @@ function getSystemMeasureWidths(score: Score, systemIndex: number) {
   }
 
   if (minWidthTotal >= SYSTEM_WIDTH) {
-    return minWidths;
+    const compactScale = SYSTEM_WIDTH / minWidthTotal;
+
+    return minWidths.map((width) => width * compactScale);
   }
 
   const availableExtraWidth = SYSTEM_WIDTH - minWidthTotal;
@@ -454,15 +456,7 @@ export function getScoreSvgWidth(score: Score | ScoreType) {
     return SVG_WIDTH;
   }
 
-  const rightMargin = SVG_WIDTH - STAFF_RIGHT;
-  const maxSystemRight = Math.max(
-    STAFF_RIGHT,
-    ...getScoreLayoutCache(score).systems.flatMap((system) =>
-      system.measureIndexes.map((measureIndex) => getMeasureRight(measureIndex, score)),
-    ),
-  );
-
-  return Math.max(SVG_WIDTH, maxSystemRight + rightMargin);
+  return SVG_WIDTH;
 }
 
 export function getStaticMeasureX(measureIndex: number) {

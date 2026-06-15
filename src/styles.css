@@ -1217,7 +1217,7 @@ button {
 .notation-scroll {
   position: relative;
   margin-top: clamp(1.75rem, 3vw, 2.75rem);
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: visible;
   padding-bottom: 0.35rem;
 }

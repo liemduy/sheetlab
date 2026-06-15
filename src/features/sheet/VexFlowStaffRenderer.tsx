@@ -31,7 +31,6 @@ import type {
   RenderedVoiceZoneLayout,
 } from './renderedEventLayout';
 import {
-  SVG_WIDTH,
   VEXFLOW_STAVE_TOP_LINE_OFFSET,
   getLocalMeasureIndex,
   getMeasureContentLeft,
@@ -644,7 +643,6 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
   const height = getScoreSvgHeight(props.score);
   const pageHeight = props.pageViewport?.height ?? height;
   const width = getScoreSvgWidth(props.score);
-  const isOverfullWidth = width > SVG_WIDTH;
 
   useEffect(() => {
     if (containerRef.current) {
@@ -736,12 +734,6 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
       data-testid="vexflow-renderer"
       style={{
         aspectRatio: `${width} / ${pageHeight}`,
-        ...(isOverfullWidth
-          ? {
-              maxWidth: 'none',
-              width: `${width}px`,
-            }
-          : null),
       }}
     >
       <div
