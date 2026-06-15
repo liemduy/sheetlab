@@ -13,6 +13,7 @@ describe('vexflow adapter', () => {
     expect(pitchToVexFlowKey({ step: 'C', octave: 4 })).toBe('c/4');
     expect(durationToVexFlowDuration('quarter')).toBe('q');
     expect(durationToVexFlowDuration('thirtySecond')).toBe('32');
+    expect(durationToVexFlowDuration('sixtyFourth')).toBe('64');
     expect(durationToVexFlowDuration('half', true)).toBe('hr');
   });
 
@@ -112,6 +113,7 @@ describe('vexflow adapter', () => {
     expect(splitBeatsIntoDurations(3.5)).toEqual(['half', 'quarter', 'eighth']);
     expect(splitBeatsIntoDurations(0.25)).toEqual(['sixteenth']);
     expect(splitBeatsIntoDurations(0.125)).toEqual(['thirtySecond']);
+    expect(splitBeatsIntoDurations(0.0625)).toEqual(['sixtyFourth']);
   });
 
   it('fills measure gaps with hidden rests for beat-accurate VexFlow layout', () => {

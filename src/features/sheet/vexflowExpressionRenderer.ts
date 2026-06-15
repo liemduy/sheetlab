@@ -21,6 +21,10 @@ import type { RenderedNoteRef } from './vexflowConnectionRenderer';
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 const CROSS_SYSTEM_PEDAL_BRACKET_HEIGHT = 10;
 const CROSS_SYSTEM_PEDAL_EDGE_PADDING = 12;
+const ARPEGGIO_MIN_HEIGHT = 28;
+const ARPEGGIO_NOTEHEAD_GAP = 10;
+const ARPEGGIO_WAVE_STEP = 5;
+const ARPEGGIO_WAVE_WIDTH = 4;
 
 function tagGroupedVexFlowElements({
   className,
@@ -295,6 +299,122 @@ function formatSvgNumber(value: number) {
   return Number(value.toFixed(2));
 }
 
+function createArpeggioPathData({
+  bottomY,
+  topY,
+  x,
+}: {
+  bottomY: number;
+  topY: number;
+  x: number;
+}) {
+  const commands = [`M ${formatSvgNumber(x)} ${formatSvgNumber(topY)}`];
+  let direction = 1;
+  let y = topY;
+
+  while (y < bottomY) {
+    const nextY = Math.min(y + ARPEGGIO_WAVE_STEP, bottomY);
+    const firstControlY = y + (nextY - y) / 3;
+    const secondControlY = y + ((nextY - y) * 2) / 3;
+    const controlX = x + direction * ARPEGGIO_WAVE_WIDTH;
+
+    commands.push(
+      [
+        'C',
+        formatSvgNumber(controlX),
+        formatSvgNumber(firstControlY),
+        formatSvgNumber(controlX),
+        formatSvgNumber(secondControlY),
+        formatSvgNumber(x),
+        formatSvgNumber(nextY),
+      ].join(' '),
+    );
+    y = nextY;
+    direction *= -1;
+  }
+
+  return commands.join(' ');
+}
+
+function getArpeggioYRange(ref: RenderedNoteRef) {
+  const noteYs = ref.note.getYs().filter((value) => Number.isFinite(value));
+
+  if (noteYs.length === 0) {
+    const stave = ref.note.checkStave();
+    const centerY = stave.getYForLine(2);
+
+    return {
+      bottomY: centerY + ARPEGGIO_MIN_HEIGHT / 2,
+      topY: centerY - ARPEGGIO_MIN_HEIGHT / 2,
+    };
+  }
+
+  const minY = Math.min(...noteYs);
+  const maxY = Math.max(...noteYs);
+  const centerY = (minY + maxY) / 2;
+  const halfHeight = Math.max(
+    ARPEGGIO_MIN_HEIGHT / 2,
+    (maxY - minY) / 2 + ARPEGGIO_NOTEHEAD_GAP,
+  );
+
+  return {
+    bottomY: centerY + halfHeight,
+    topY: centerY - halfHeight,
+  };
+}
+
+function getArpeggioX(ref: RenderedNoteRef) {
+  const noteHeadBeginX = ref.note.getNoteHeadBeginX();
+
+  if (Number.isFinite(noteHeadBeginX)) {
+    return noteHeadBeginX - ARPEGGIO_NOTEHEAD_GAP;
+  }
+
+  return ref.note.getAbsoluteX() - ARPEGGIO_NOTEHEAD_GAP;
+}
+
+function drawArpeggios({
+  context,
+  noteRefs,
+}: {
+  context: ReturnType<Renderer['getContext']>;
+  noteRefs: Map<string, RenderedNoteRef>;
+}) {
+  const svg = (context as { svg?: SVGSVGElement }).svg;
+
+  if (!svg) {
+    return;
+  }
+
+  noteRefs.forEach((ref) => {
+    if (ref.event.kind === 'rest' || !ref.event.arpeggio) {
+      return;
+    }
+
+    const { bottomY, topY } = getArpeggioYRange(ref);
+    const group = document.createElementNS(SVG_NAMESPACE, 'g');
+    const path = document.createElementNS(SVG_NAMESPACE, 'path');
+
+    group.classList.add('sheetlab-arpeggio');
+    group.setAttribute('data-event-id', ref.event.id);
+    group.setAttribute('data-testid', 'rendered-arpeggio');
+    path.setAttribute(
+      'd',
+      createArpeggioPathData({
+        bottomY,
+        topY,
+        x: getArpeggioX(ref),
+      }),
+    );
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', '#111111');
+    path.setAttribute('stroke-linecap', 'round');
+    path.setAttribute('stroke-width', '1.15');
+    group.appendChild(path);
+    svg.appendChild(group);
+  });
+}
+
 function appendPedalContinuationSegment({
   context,
   continuation,
@@ -530,6 +650,8 @@ export function drawVexFlowExpressionMarks({
   score: Score;
 }) {
   const refsByVoice = getPlayableNoteRefsByVoice(noteRefs);
+
+  drawArpeggios({ context, noteRefs });
 
   refsByVoice.forEach((refs) => {
     refs.forEach((ref, refIndex) => {

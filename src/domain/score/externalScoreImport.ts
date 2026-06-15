@@ -5,8 +5,13 @@ import {
 import { unzipSync } from 'fflate';
 import { createEmptyScore } from './factories';
 import { setMeasureKeySignature } from './editing';
+import { getEventPitches } from './events';
+import { createEmptyVoice } from './voices';
 import type {
   Accidental,
+  ArticulationKind,
+  Clef,
+  ClefChange,
   DurationValue,
   GraceNoteAttachment,
   HairpinMark,
@@ -16,7 +21,9 @@ import type {
   Pitch,
   Score,
   ScoreEvent,
+  SlurMark,
   StaffId,
+  TieMark,
   TimeSignature,
   TupletInfo,
 } from './types';
@@ -127,6 +134,22 @@ interface MusicXmlTupletState {
   id: string;
   index: number;
   normalNotes: number;
+}
+
+interface MusicXmlConnectionSource {
+  eventId: string;
+  pitchIndex: number;
+}
+
+interface MusicXmlNoteMarks {
+  arpeggio?: boolean;
+  articulations?: ArticulationKind[];
+  fermata?: boolean;
+  slurs: Array<{
+    id: string;
+    type: 'start' | 'stop';
+  }>;
+  ties: Array<'start' | 'stop'>;
 }
 
 export interface MusicXmlImportAnalysis {
@@ -292,18 +315,24 @@ function getMusicXmlTempo(document: Document) {
   return Number.isFinite(tempo) && tempo > 0 ? Math.round(tempo) : 96;
 }
 
-const MUSIC_XML_DURATION_BY_UNITS = new Map<number, MusicXmlDuration>([
-  [32, { duration: 'whole', dots: 0 }],
-  [24, { duration: 'half', dots: 1 }],
-  [16, { duration: 'half', dots: 0 }],
-  [12, { duration: 'quarter', dots: 1 }],
-  [8, { duration: 'quarter', dots: 0 }],
-  [6, { duration: 'eighth', dots: 1 }],
-  [4, { duration: 'eighth', dots: 0 }],
-  [3, { duration: 'sixteenth', dots: 1 }],
-  [2, { duration: 'sixteenth', dots: 0 }],
-  [1, { duration: 'thirtySecond', dots: 0 }],
-]);
+const MUSIC_XML_BASE_DURATION_UNITS = [
+  { duration: 'whole', units: 32 },
+  { duration: 'half', units: 16 },
+  { duration: 'quarter', units: 8 },
+  { duration: 'eighth', units: 4 },
+  { duration: 'sixteenth', units: 2 },
+  { duration: 'thirtySecond', units: 1 },
+  { duration: 'sixtyFourth', units: 0.5 },
+] satisfies Array<{ duration: DurationValue; units: number }>;
+const MUSIC_XML_DOT_MULTIPLIERS = [1, 1.5, 1.75, 1.875] as const;
+const MUSIC_XML_DURATION_CANDIDATES = MUSIC_XML_BASE_DURATION_UNITS.flatMap(
+  ({ duration, units }) =>
+    MUSIC_XML_DOT_MULTIPLIERS.map((multiplier, dots) => ({
+      dots,
+      duration,
+      units: units * multiplier,
+    })),
+);
 const MUSIC_XML_DURATION_BY_TYPE = new Map<string, DurationValue>([
   ['whole', 'whole'],
   ['half', 'half'],
@@ -314,11 +343,17 @@ const MUSIC_XML_DURATION_BY_TYPE = new Map<string, DurationValue>([
   ['sixteenth', 'sixteenth'],
   ['32nd', 'thirtySecond'],
   ['thirty-second', 'thirtySecond'],
+  ['64th', 'sixtyFourth'],
+  ['sixty-fourth', 'sixtyFourth'],
 ]);
 
 function getDirectChild(parent: Element, localName: string) {
   return [...parent.children].find((child) => child.localName === localName) ??
     null;
+}
+
+function getDirectChildren(parent: Element, localName: string) {
+  return [...parent.children].filter((child) => child.localName === localName);
 }
 
 function getDirectChildText(parent: Element, localName: string) {
@@ -358,18 +393,23 @@ function getMusicXmlDuration(
   units: number,
   warnings: string[],
 ): MusicXmlDuration {
-  const supportedUnits = getClosestSupportedUnitsAtMost(
-    Math.max(1, units),
-    32,
+  const normalizedUnits = Math.max(0.5, units);
+  const duration = MUSIC_XML_DURATION_CANDIDATES.reduce((best, candidate) =>
+    Math.abs(candidate.units - normalizedUnits) <
+    Math.abs(best.units - normalizedUnits)
+      ? candidate
+      : best,
   );
-  const duration = MUSIC_XML_DURATION_BY_UNITS.get(supportedUnits);
 
   if (!duration) {
-    warnings.push(`Unsupported MusicXML duration units "${units}", using 1/32`);
-    return { duration: 'thirtySecond', dots: 0 };
+    warnings.push(`Unsupported MusicXML duration units "${units}", using 1/64`);
+    return { duration: 'sixtyFourth', dots: 0 };
   }
 
-  return duration;
+  return {
+    dots: duration.dots,
+    duration: duration.duration,
+  };
 }
 
 function getMusicXmlGraceDuration(note: Element): DurationValue {
@@ -390,7 +430,7 @@ function getMusicXmlNotatedDuration(note: Element): MusicXmlDuration | null {
 
   return duration
     ? {
-        dots: Math.min(1, getMusicXmlDirectChildCount(note, 'dot')),
+        dots: Math.min(3, getMusicXmlDirectChildCount(note, 'dot')),
         duration,
       }
     : null;
@@ -446,13 +486,15 @@ function getMusicXmlTupletInfo({
   measureIndex,
   note,
   staffId,
+  stateKey,
   states,
 }: {
   eventCounter: number;
   measureIndex: number;
   note: Element;
   staffId: StaffId;
-  states: Map<StaffId, MusicXmlTupletState>;
+  stateKey: string;
+  states: Map<string, MusicXmlTupletState>;
 }): TupletInfo | undefined {
   const spec = getMusicXmlTupletSpec(note);
 
@@ -461,7 +503,7 @@ function getMusicXmlTupletInfo({
   }
 
   const boundary = getMusicXmlTupletBoundary(note);
-  let state = states.get(staffId);
+  let state = states.get(stateKey);
 
   if (
     !state ||
@@ -472,7 +514,7 @@ function getMusicXmlTupletInfo({
   ) {
     state = {
       ...spec,
-      id: `xml-tuplet-${measureIndex + 1}-${staffId}-${eventCounter}`,
+      id: `xml-tuplet-${measureIndex + 1}-${stateKey}-${eventCounter}`,
       index: 0,
     };
   }
@@ -489,9 +531,9 @@ function getMusicXmlTupletInfo({
   };
 
   if (boundary === 'stop' || nextState.index >= spec.actualNotes) {
-    states.delete(staffId);
+    states.delete(stateKey);
   } else {
-    states.set(staffId, nextState);
+    states.set(stateKey, nextState);
   }
 
   return tuplet;
@@ -544,6 +586,127 @@ function parseMusicXmlPitch(note: Element): Pitch | null {
     octave: Number.isFinite(octave) ? octave : 4,
     step,
   };
+}
+
+const MUSIC_XML_ARTICULATION_BY_NAME: Partial<Record<string, ArticulationKind>> = {
+  accent: 'accent',
+  'breath-mark': 'breath',
+  caesura: 'caesura',
+  staccatissimo: 'staccatissimo',
+  staccato: 'staccato',
+  'strong-accent': 'marcato',
+  tenuto: 'tenuto',
+};
+
+function getMusicXmlVoiceLabel(note: Element) {
+  return getDirectChildText(note, 'voice') || '1';
+}
+
+function getMusicXmlArticulations(note: Element) {
+  const articulations = note.querySelector('notations > articulations');
+
+  if (!articulations) {
+    return undefined;
+  }
+
+  const kinds = [...articulations.children].flatMap((child) => {
+    const kind = MUSIC_XML_ARTICULATION_BY_NAME[child.localName];
+
+    return kind ? [kind] : [];
+  });
+
+  return kinds.length > 0 ? [...new Set(kinds)] : undefined;
+}
+
+function getMusicXmlBoundaryType(element: Element) {
+  const type = element.getAttribute('type');
+
+  if (type === 'start' || type === 'stop') {
+    return [type] as const;
+  }
+
+  if (type === 'continue') {
+    return ['stop', 'start'] as const;
+  }
+
+  return [] as const;
+}
+
+function getMusicXmlNoteMarks(note: Element): MusicXmlNoteMarks {
+  const slurs = [...note.querySelectorAll('notations slur')].flatMap((slur) =>
+    getMusicXmlBoundaryType(slur).map((type) => ({
+      id: slur.getAttribute('number') || '1',
+      type,
+    })),
+  );
+  const ties = [
+    ...getDirectChildren(note, 'tie'),
+    ...note.querySelectorAll('notations tied'),
+  ].flatMap((tie) => [...getMusicXmlBoundaryType(tie)]);
+
+  return {
+    arpeggio: Boolean(note.querySelector('notations arpeggiate')),
+    articulations: getMusicXmlArticulations(note),
+    fermata: Boolean(note.querySelector('notations fermata')),
+    slurs,
+    ties: [...new Set(ties)],
+  };
+}
+
+function getMusicXmlPitchConnectionKey(
+  staffId: StaffId,
+  voiceIndex: number,
+  pitch: Pitch,
+) {
+  return `${staffId}:${voiceIndex}:${pitch.step}:${pitch.accidental ?? ''}:${pitch.octave}`;
+}
+
+function appendTieMark(event: ScoreEvent, tie: TieMark) {
+  event.ties = [...(event.ties ?? []), tie];
+}
+
+function appendSlurMark(event: ScoreEvent, slur: SlurMark) {
+  event.slurs = [...(event.slurs ?? []), slur];
+}
+
+function mergeMusicXmlMarksIntoEvent(event: ScoreEvent, marks: MusicXmlNoteMarks) {
+  if (marks.arpeggio) {
+    event.arpeggio = true;
+  }
+
+  if (marks.fermata) {
+    event.fermata = true;
+  }
+
+  if (marks.articulations?.length) {
+    event.articulations = [
+      ...new Set([...(event.articulations ?? []), ...marks.articulations]),
+    ];
+  }
+}
+
+function parseMusicXmlClef(clef: Element): Clef | null {
+  const sign = getDirectChildText(clef, 'sign');
+
+  if (sign === 'G') {
+    return 'treble';
+  }
+
+  if (sign === 'F') {
+    return 'bass';
+  }
+
+  return null;
+}
+
+function parseMusicXmlClefStaffId(clef: Element, fallback: StaffId): StaffId {
+  const number = clef.getAttribute('number') ?? '';
+
+  if (number === '1') {
+    return 'treble';
+  }
+
+  return number === '2' ? 'bass' : fallback;
 }
 
 function getMusicXmlLyric(note: Element) {
@@ -714,8 +877,9 @@ function applyMusicXmlDirectionMarks(
   marks: readonly MusicXmlDirectionMark[],
 ) {
   marks.forEach((mark) => {
-    const key = `${mark.staffId}:${measureIndex}`;
-    const events = eventsByMeasure.get(key) ?? [];
+    const events = [...eventsByMeasure.entries()]
+      .filter(([key]) => key.startsWith(`${mark.staffId}:${measureIndex}:`))
+      .flatMap(([, measureEvents]) => measureEvents);
     const target = findDirectionTargetEvent(events, mark.beat);
 
     if (!target) {
@@ -865,14 +1029,228 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
   });
   const scoreWithKey = setMeasureKeySignature(baseScore, 0, key);
   const eventsByMeasure = new Map<string, ScoreEvent[]>();
+  const clefChangesByMeasure = new Map<string, ClefChange[]>();
+  const eventById = new Map<string, ScoreEvent>();
+  const pendingSlurByKey = new Map<string, { eventId: string }>();
+  const pendingTieByPitch = new Map<string, MusicXmlConnectionSource>();
+  const voiceIndexesByStaff = new Map<StaffId, Map<string, number>>();
+  const activeClefByStaff = new Map<StaffId, Clef>([
+    ['bass', 'bass'],
+    ['treble', 'treble'],
+  ]);
   let eventCounter = 1;
 
-  function getMeasureEvents(staffId: StaffId, measureIndex: number) {
-    const key = `${staffId}:${measureIndex}`;
+  function getMusicXmlVoiceIndex(staffId: StaffId, note: Element) {
+    const voiceLabel = getMusicXmlVoiceLabel(note);
+    const indexesByLabel = voiceIndexesByStaff.get(staffId) ?? new Map<string, number>();
+
+    if (!voiceIndexesByStaff.has(staffId)) {
+      voiceIndexesByStaff.set(staffId, indexesByLabel);
+    }
+
+    if (!indexesByLabel.has(voiceLabel)) {
+      indexesByLabel.set(voiceLabel, indexesByLabel.size);
+    }
+
+    return indexesByLabel.get(voiceLabel) ?? 0;
+  }
+
+  function getMeasureVoiceKey(
+    staffId: StaffId,
+    measureIndex: number,
+    voiceIndex: number,
+  ) {
+    return `${staffId}:${measureIndex}:${voiceIndex}`;
+  }
+
+  function getMeasureEvents(
+    staffId: StaffId,
+    measureIndex: number,
+    voiceIndex: number,
+  ) {
+    const key = getMeasureVoiceKey(staffId, measureIndex, voiceIndex);
     const events = eventsByMeasure.get(key) ?? [];
 
     eventsByMeasure.set(key, events);
     return events;
+  }
+
+  function registerEvent(event: ScoreEvent) {
+    eventById.set(event.id, event);
+  }
+
+  function addClefChange(
+    staffId: StaffId,
+    measureIndex: number,
+    beat: number,
+    clef: Clef,
+    clefIndex: number,
+  ) {
+    if (activeClefByStaff.get(staffId) === clef) {
+      return;
+    }
+
+    activeClefByStaff.set(staffId, clef);
+    const key = `${staffId}:${measureIndex}`;
+    const changes = clefChangesByMeasure.get(key) ?? [];
+
+    changes.push({
+      beat,
+      clef,
+      id: `xml-clef-${staffId}-${measureIndex + 1}-${beat.toFixed(4)}-${clefIndex}-${clef}`,
+    });
+    clefChangesByMeasure.set(key, changes);
+  }
+
+  function applyMusicXmlAttributeClefChanges(
+    attributes: Element,
+    measureIndex: number,
+    cursorUnits: number,
+    divisions: number,
+    fallbackStaffId: StaffId,
+  ) {
+    getDirectChildren(attributes, 'clef').forEach((clefElement, clefIndex) => {
+      const nextClef = parseMusicXmlClef(clefElement);
+
+      if (!nextClef) {
+        return;
+      }
+
+      const staffId = parseMusicXmlClefStaffId(clefElement, fallbackStaffId);
+      const beat = cursorUnits / ABC_UNITS_PER_QUARTER;
+
+      addClefChange(staffId, measureIndex, beat, nextClef, clefIndex);
+    });
+  }
+
+  function applyMusicXmlNoteConnections({
+    event,
+    marks,
+    pitch,
+    pitchIndex,
+    staffId,
+    voiceIndex,
+  }: {
+    event: ScoreEvent;
+    marks: MusicXmlNoteMarks;
+    pitch: Pitch;
+    pitchIndex: number;
+    staffId: StaffId;
+    voiceIndex: number;
+  }) {
+    const pitchConnectionKey = getMusicXmlPitchConnectionKey(
+      staffId,
+      voiceIndex,
+      pitch,
+    );
+
+    if (marks.ties.includes('stop')) {
+      const source = pendingTieByPitch.get(pitchConnectionKey);
+      const sourceEvent = source ? eventById.get(source.eventId) : null;
+
+      if (source && sourceEvent && sourceEvent.id !== event.id) {
+        appendTieMark(sourceEvent, {
+          pitchIndex: source.pitchIndex,
+          targetEventId: event.id,
+          targetPitchIndex: pitchIndex,
+        });
+      }
+      pendingTieByPitch.delete(pitchConnectionKey);
+    }
+
+    if (marks.ties.includes('start')) {
+      pendingTieByPitch.set(pitchConnectionKey, {
+        eventId: event.id,
+        pitchIndex,
+      });
+    }
+
+    marks.slurs.forEach((slur) => {
+      const slurKey = `${staffId}:${voiceIndex}:${slur.id}`;
+
+      if (slur.type === 'stop') {
+        const source = pendingSlurByKey.get(slurKey);
+        const sourceEvent = source ? eventById.get(source.eventId) : null;
+
+        if (source && sourceEvent && sourceEvent.id !== event.id) {
+          appendSlurMark(sourceEvent, {
+            id: `xml-slur-${source.eventId}-${event.id}-${slur.id}`,
+            targetEventId: event.id,
+          });
+        }
+        pendingSlurByKey.delete(slurKey);
+        return;
+      }
+
+      pendingSlurByKey.set(slurKey, { eventId: event.id });
+    });
+  }
+
+  function applyMusicXmlNoteMarks({
+    event,
+    note,
+    pitch,
+    pitchIndex,
+    staffId,
+    voiceIndex,
+  }: {
+    event: ScoreEvent;
+    note: Element;
+    pitch: Pitch | null;
+    pitchIndex: number;
+    staffId: StaffId;
+    voiceIndex: number;
+  }) {
+    const marks = getMusicXmlNoteMarks(note);
+
+    mergeMusicXmlMarksIntoEvent(event, marks);
+
+    if (!pitch) {
+      return;
+    }
+
+    applyMusicXmlNoteConnections({
+      event,
+      marks,
+      pitch,
+      pitchIndex,
+      staffId,
+      voiceIndex,
+    });
+  }
+
+  function getImportedMeasureVoices(
+    staffId: StaffId,
+    measureIndex: number,
+    existingVoices: Score['parts'][number]['staves'][number]['measures'][number]['voices'],
+  ) {
+    const voiceEntries = [...eventsByMeasure.entries()]
+      .flatMap(([key, events]) => {
+        const [keyStaffId, keyMeasureIndex, keyVoiceIndex] = key.split(':');
+
+        return keyStaffId === staffId && Number(keyMeasureIndex) === measureIndex
+          ? [
+              {
+                events,
+                voiceIndex: Number(keyVoiceIndex),
+              },
+            ]
+          : [];
+      })
+      .filter(({ voiceIndex }) => Number.isInteger(voiceIndex) && voiceIndex >= 0)
+      .sort((first, second) => first.voiceIndex - second.voiceIndex);
+    const maxVoiceIndex = Math.max(0, ...voiceEntries.map(({ voiceIndex }) => voiceIndex));
+    const eventsByVoiceIndex = new Map(
+      voiceEntries.map(({ events, voiceIndex }) => [voiceIndex, events]),
+    );
+
+    return Array.from({ length: maxVoiceIndex + 1 }, (_, voiceIndex) => ({
+      ...(existingVoices[voiceIndex] ??
+        createEmptyVoice(staffId, measureIndex, voiceIndex)),
+      events: [...(eventsByVoiceIndex.get(voiceIndex) ?? [])].sort(
+        (first, second) => first.beat - second.beat,
+      ),
+    }));
   }
 
   function parsePart(
@@ -888,9 +1266,9 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
     [...part.querySelectorAll(':scope > measure')].forEach((measure, measureIndex) => {
       let cursorUnits = 0;
       const directionMarks: MusicXmlDirectionMark[] = [];
-      const lastEventByStaff = new Map<StaffId, ScoreEvent>();
-      const pendingGraceNotesByStaff = new Map<StaffId, GraceNoteAttachment[]>();
-      const tupletStatesByStaff = new Map<StaffId, MusicXmlTupletState>();
+      const lastEventByStaff = new Map<string, ScoreEvent>();
+      const pendingGraceNotesByStaff = new Map<string, GraceNoteAttachment[]>();
+      const tupletStatesByStaff = new Map<string, MusicXmlTupletState>();
 
       [...measure.children].forEach((child) => {
         if (child.localName === 'attributes') {
@@ -899,6 +1277,13 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
           if (Number.isFinite(nextDivisions) && nextDivisions > 0) {
             divisions = nextDivisions;
           }
+          applyMusicXmlAttributeClefChanges(
+            child,
+            measureIndex,
+            cursorUnits,
+            divisions,
+            forcedStaffId ?? 'treble',
+          );
           return;
         }
 
@@ -939,7 +1324,9 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
         const pitch = parseMusicXmlPitch(child);
         const staffId = forcedStaffId ??
           parseMusicXmlStaffId(child, scoreType === 'grand' ? 'treble' : 'treble');
-        const events = getMeasureEvents(staffId, measureIndex);
+        const voiceIndex = getMusicXmlVoiceIndex(staffId, child);
+        const voiceKey = `${staffId}:${voiceIndex}`;
+        const events = getMeasureEvents(staffId, measureIndex, voiceIndex);
         const lyric = getMusicXmlLyric(child);
 
         if (isGrace) {
@@ -947,14 +1334,14 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
             return;
           }
 
-          const pendingGraceNotes = pendingGraceNotesByStaff.get(staffId) ?? [];
+          const pendingGraceNotes = pendingGraceNotesByStaff.get(voiceKey) ?? [];
 
           if (isChord && pendingGraceNotes.length > 0) {
             pendingGraceNotes[pendingGraceNotes.length - 1]?.pitches.push(pitch);
           } else {
             pendingGraceNotes.push(createMusicXmlGraceNote(child, pitch));
           }
-          pendingGraceNotesByStaff.set(staffId, pendingGraceNotes);
+          pendingGraceNotesByStaff.set(voiceKey, pendingGraceNotes);
           return;
         }
 
@@ -962,19 +1349,29 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
         const duration = getMusicXmlEventDuration(child, durationUnits, warnings);
 
         if (isChord && pitch) {
-          const previousEvent = lastEventByStaff.get(staffId);
+          const previousEvent = lastEventByStaff.get(voiceKey);
           const previousIndex = previousEvent
             ? events.findIndex((event) => event.id === previousEvent.id)
             : -1;
 
           if (previousEvent && previousIndex >= 0) {
             const nextEvent = appendPitchToMusicXmlEvent(previousEvent, pitch);
+            const pitchIndex = Math.max(0, getEventPitches(nextEvent).length - 1);
 
             if (lyric && !nextEvent.lyric) {
               nextEvent.lyric = lyric;
             }
             events[previousIndex] = nextEvent;
-            lastEventByStaff.set(staffId, nextEvent);
+            registerEvent(nextEvent);
+            applyMusicXmlNoteMarks({
+              event: nextEvent,
+              note: child,
+              pitch,
+              pitchIndex,
+              staffId,
+              voiceIndex,
+            });
+            lastEventByStaff.set(voiceKey, nextEvent);
           }
           return;
         }
@@ -984,6 +1381,7 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
           measureIndex,
           note: child,
           staffId,
+          stateKey: voiceKey,
           states: tupletStatesByStaff,
         });
 
@@ -991,7 +1389,7 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
           beat: cursorUnits / ABC_UNITS_PER_QUARTER,
           duration,
           eventCounter,
-          graceNotes: pendingGraceNotesByStaff.get(staffId),
+          graceNotes: pendingGraceNotesByStaff.get(voiceKey),
           isRest,
           lyric,
           pitch,
@@ -1000,10 +1398,19 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
 
         eventCounter += 1;
         events.push(event);
-        pendingGraceNotesByStaff.delete(staffId);
+        registerEvent(event);
+        pendingGraceNotesByStaff.delete(voiceKey);
+        applyMusicXmlNoteMarks({
+          event,
+          note: child,
+          pitch,
+          pitchIndex: 0,
+          staffId,
+          voiceIndex,
+        });
 
         if (event.kind !== 'rest') {
-          lastEventByStaff.set(staffId, event);
+          lastEventByStaff.set(voiceKey, event);
         }
 
         cursorUnits += durationUnits;
@@ -1029,15 +1436,17 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
           ...staff,
           measures: staff.measures.map((measure) => ({
             ...measure,
-            voices: measure.voices.map((voice, voiceIndex) =>
-              voiceIndex === 0
-                ? {
-                    ...voice,
-                    events: [
-                      ...(eventsByMeasure.get(`${staff.id}:${measure.index}`) ?? []),
-                    ].sort((first, second) => first.beat - second.beat),
-                  }
-                : voice,
+            ...(clefChangesByMeasure.get(`${staff.id}:${measure.index}`)?.length
+              ? {
+                  clefChanges: clefChangesByMeasure.get(
+                    `${staff.id}:${measure.index}`,
+                  ),
+                }
+              : {}),
+            voices: getImportedMeasureVoices(
+              staff.id,
+              measure.index,
+              measure.voices,
             ),
           })),
         })),

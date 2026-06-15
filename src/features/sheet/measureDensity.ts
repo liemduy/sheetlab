@@ -129,7 +129,9 @@ function getEventReadableInkWidthBonus(event: ScoreEvent) {
     Math.max(0, pitches.length - 1) * ADDITIONAL_CHORD_PITCH_WIDTH_BONUS;
   const dotBonus = getEventDots(event) * DOT_READABLE_WIDTH_BONUS;
   const shortFlagBonus =
-    event.duration === 'sixteenth' || event.duration === 'thirtySecond'
+    event.duration === 'sixteenth' ||
+    event.duration === 'thirtySecond' ||
+    event.duration === 'sixtyFourth'
       ? SHORT_FLAG_READABLE_WIDTH_BONUS
       : 0;
   const tupletBonus = event.tuplet ? TUPLET_READABLE_WIDTH_BONUS : 0;

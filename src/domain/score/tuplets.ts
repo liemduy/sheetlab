@@ -11,6 +11,7 @@ const TUPLET_SLOT_DURATION_OPTIONS: DurationValue[] = [
   'eighth',
   'sixteenth',
   'thirtySecond',
+  'sixtyFourth',
 ];
 
 export const DEFAULT_TUPLET_NORMAL_NOTES = 2;

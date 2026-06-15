@@ -53,7 +53,8 @@ export type DurationValue =
   | 'quarter'
   | 'eighth'
   | 'sixteenth'
-  | 'thirtySecond';
+  | 'thirtySecond'
+  | 'sixtyFourth';
 
 export type PedalMark = 'start' | 'release' | 'start-release';
 
@@ -211,6 +212,7 @@ export interface BaseScoreEvent {
   id: string;
   duration: DurationValue;
   beat: number;
+  arpeggio?: boolean;
   articulations?: ArticulationKind[];
   dots?: number;
   stemDirection?: StemDirection;

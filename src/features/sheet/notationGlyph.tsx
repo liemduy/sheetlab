@@ -196,7 +196,8 @@ function getRestPath(duration: DurationValue, x: number, y: number) {
   if (
     duration === 'eighth' ||
     duration === 'sixteenth' ||
-    duration === 'thirtySecond'
+    duration === 'thirtySecond' ||
+    duration === 'sixtyFourth'
   ) {
     return [
       `M ${x - 2} ${y - 17}`,

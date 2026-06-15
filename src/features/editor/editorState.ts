@@ -46,6 +46,7 @@ export const DURATION_OPTIONS: DurationValue[] = [
   'eighth',
   'sixteenth',
   'thirtySecond',
+  'sixtyFourth',
 ];
 
 export const VOICE_OPTIONS: EditableVoiceIndex[] = [0, 1];
@@ -75,6 +76,7 @@ export const DURATION_LABEL: Record<DurationValue, string> = {
   eighth: 'Eighth',
   sixteenth: 'Sixteenth',
   thirtySecond: 'Thirty-second',
+  sixtyFourth: 'Sixty-fourth',
 };
 
 export const DURATION_SYMBOL: Record<DurationValue, string> = {
@@ -84,6 +86,7 @@ export const DURATION_SYMBOL: Record<DurationValue, string> = {
   eighth: '\u266a',
   sixteenth: String.fromCodePoint(0x1d161),
   thirtySecond: String.fromCodePoint(0x1d162),
+  sixtyFourth: String.fromCodePoint(0x1d163),
 };
 
 export const SCORE_TYPE_LABEL: Record<ScoreType, string> = {

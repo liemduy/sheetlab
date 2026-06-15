@@ -19,7 +19,7 @@ import {
   normalizeArticulations,
 } from './articulations';
 import { getEventDots, getEventPitches } from './events';
-import { getDurationBeats } from './durations';
+import { getDurationBeats, getDurationDotMultiplier } from './durations';
 import { getEventDurationBeats } from './eventDuration';
 import { getMeasureBeats, getTimeSignatureId } from './timeSignatures';
 import { getActiveKeySignatureSelection, isKeySignature } from './keySignatures';
@@ -39,6 +39,15 @@ const DEFAULT_TIME_SIGNATURE: TimeSignature = {
   beats: 4,
   beatUnit: 4,
 };
+const DURATION_ORDER: DurationValue[] = [
+  'whole',
+  'half',
+  'quarter',
+  'eighth',
+  'sixteenth',
+  'thirtySecond',
+  'sixtyFourth',
+];
 const DURATION_UNITS = {
   whole: 32,
   half: 16,
@@ -46,20 +55,15 @@ const DURATION_UNITS = {
   eighth: 4,
   sixteenth: 2,
   thirtySecond: 1,
+  sixtyFourth: 0.5,
 } satisfies Record<DurationValue, number>;
-const SUPPORTED_DURATION_BEATS = [
-  { duration: 'whole', dots: 0, beats: 4 },
-  { duration: 'half', dots: 1, beats: 3 },
-  { duration: 'half', dots: 0, beats: 2 },
-  { duration: 'quarter', dots: 1, beats: 1.5 },
-  { duration: 'quarter', dots: 0, beats: 1 },
-  { duration: 'eighth', dots: 1, beats: 0.75 },
-  { duration: 'eighth', dots: 0, beats: 0.5 },
-  { duration: 'sixteenth', dots: 1, beats: 0.375 },
-  { duration: 'sixteenth', dots: 0, beats: 0.25 },
-  { duration: 'thirtySecond', dots: 1, beats: 0.1875 },
-  { duration: 'thirtySecond', dots: 0, beats: 0.125 },
-] satisfies Array<{ beats: number; dots: number; duration: DurationValue }>;
+const SUPPORTED_DURATION_BEATS = DURATION_ORDER.flatMap((duration) =>
+  [0, 1, 2, 3].map((dots) => ({
+    beats: getDurationBeats(duration, dots),
+    dots,
+    duration,
+  })),
+);
 const STEP_ORDER: NoteStep[] = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 const ABC_DECORATION_BY_ARTICULATION = {
   accent: 'accent',
@@ -110,15 +114,41 @@ function getAbcBaseName(score: Score) {
 }
 
 function getEventUnits(event: ScoreEvent) {
-  return Math.round(
-    DURATION_UNITS[event.duration] * (event.dots ? 1.5 : 1),
-  );
+  return DURATION_UNITS[event.duration] *
+    getDurationDotMultiplier(event.dots ?? 0);
+}
+
+function getGreatestCommonDivisor(firstValue: number, secondValue: number): number {
+  const first = Math.abs(firstValue);
+  const second = Math.abs(secondValue);
+
+  return second === 0
+    ? first
+    : getGreatestCommonDivisor(second, first % second);
+}
+
+function formatAbcDurationUnits(units: number) {
+  if (Math.abs(units - 1) < 0.0001) {
+    return '';
+  }
+
+  if (Math.abs(units - Math.round(units)) < 0.0001) {
+    return String(Math.round(units));
+  }
+
+  const denominator = 16;
+  const numerator = Math.round(units * denominator);
+  const divisor = getGreatestCommonDivisor(numerator, denominator);
+  const simplifiedNumerator = numerator / divisor;
+  const simplifiedDenominator = denominator / divisor;
+
+  return simplifiedNumerator === 1
+    ? `/${simplifiedDenominator}`
+    : `${simplifiedNumerator}/${simplifiedDenominator}`;
 }
 
 function getAbcDurationSuffix(event: ScoreEvent) {
-  const units = getEventUnits(event);
-
-  return units === 1 ? '' : String(units);
+  return formatAbcDurationUnits(getEventUnits(event));
 }
 
 function escapeAbcAnnotation(value: string) {

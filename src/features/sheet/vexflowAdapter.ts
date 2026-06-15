@@ -31,6 +31,7 @@ const VEXFLOW_DURATION: Record<DurationValue, string> = {
   eighth: '8',
   sixteenth: '16',
   thirtySecond: '32',
+  sixtyFourth: '64',
 };
 
 const REST_KEY_BY_CLEF: Record<Clef, string> = {
@@ -45,6 +46,7 @@ const DURATION_BY_BEATS: Array<{ duration: DurationValue; beats: number }> = [
   { duration: 'eighth', beats: 0.5 },
   { duration: 'sixteenth', beats: 0.25 },
   { duration: 'thirtySecond', beats: 0.125 },
+  { duration: 'sixtyFourth', beats: 0.0625 },
 ];
 
 const BEAT_EPSILON = 0.001;

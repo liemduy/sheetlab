@@ -22,6 +22,7 @@ const BEAMABLE_DURATIONS = new Set<ScoreEvent['duration']>([
   'eighth',
   'sixteenth',
   'thirtySecond',
+  'sixtyFourth',
 ]);
 const STEMMED_DURATIONS = new Set<ScoreEvent['duration']>([
   'half',
@@ -29,6 +30,7 @@ const STEMMED_DURATIONS = new Set<ScoreEvent['duration']>([
   'eighth',
   'sixteenth',
   'thirtySecond',
+  'sixtyFourth',
 ]);
 
 export function isStemDirection(value: unknown): value is StemDirection {

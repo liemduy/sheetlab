@@ -119,6 +119,7 @@ export interface UpdateScoreEventRequest {
   pitchIndex?: number;
   staffId?: StaffId;
   dots?: number;
+  arpeggio?: boolean;
   articulations?: ArticulationKind[] | null;
   stemDirection?: StemDirection | null;
   voiceIndex?: number;
@@ -220,6 +221,7 @@ function clampScoreEventToStaffRange(
         beat: event.beat,
         annotationPlacements: event.annotationPlacements,
         annotationOffsets: event.annotationOffsets,
+        arpeggio: event.arpeggio,
         articulations: event.articulations,
         chordSymbol: event.chordSymbol,
         dynamic: event.dynamic,
@@ -289,6 +291,7 @@ function mergePitchedEventWithNote(
     kind: 'chord',
     beat: noteEvent.beat,
     chordSymbol: existingEvent.chordSymbol,
+    arpeggio: existingEvent.arpeggio,
     articulations: existingEvent.articulations,
     dynamic: existingEvent.dynamic,
     duration: noteEvent.duration,
@@ -411,6 +414,8 @@ function createUpdatedEventBase(
     beat,
     duration,
     dots: update.dots ?? event.dots,
+    arpeggio:
+      update.arpeggio === undefined ? event.arpeggio : update.arpeggio || undefined,
     articulations:
       articulations === undefined ? event.articulations : articulations ?? undefined,
     stemDirection:
@@ -457,6 +462,7 @@ function createUpdatedScoreEvent(
   if (event.kind === 'rest') {
     const {
       articulations: _articulations,
+      arpeggio: _arpeggio,
       graceNotes: _graceNotes,
       hairpin: _hairpin,
       slurs: _slurs,

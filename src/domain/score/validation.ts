@@ -47,6 +47,7 @@ const DURATIONS = new Set<DurationValue>([
   'eighth',
   'sixteenth',
   'thirtySecond',
+  'sixtyFourth',
 ]);
 const PEDAL_MARKS = new Set<PedalMark>([
   'start',
@@ -234,6 +235,7 @@ function isScoreEvent(value: unknown): value is ScoreEvent {
     isString(value.id) &&
     DURATIONS.has(value.duration as DurationValue) &&
     isNumber(value.beat) &&
+    (value.arpeggio === undefined || typeof value.arpeggio === 'boolean') &&
     (value.articulations === undefined ||
       isArticulations(value.articulations)) &&
     (value.stemDirection === undefined ||
@@ -260,7 +262,7 @@ function isScoreEvent(value: unknown): value is ScoreEvent {
       (Array.isArray(value.ties) && value.ties.every(isTieMark))) &&
     (value.tuplet === undefined || isTupletInfo(value.tuplet)) &&
     (value.dots === undefined ||
-      (isNumber(value.dots) && value.dots >= 0 && value.dots <= 1));
+      (isNumber(value.dots) && value.dots >= 0 && value.dots <= 3));
 
   if (!baseIsValid) {
     return false;
@@ -269,6 +271,7 @@ function isScoreEvent(value: unknown): value is ScoreEvent {
   if (value.kind === 'rest') {
     return (
       value.articulations === undefined &&
+      value.arpeggio === undefined &&
       value.graceNotes === undefined &&
       value.hairpin === undefined &&
       value.stemDirection === undefined &&

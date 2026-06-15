@@ -11,6 +11,7 @@ const DURATION_VALUES_DESC: DurationValue[] = [
   'eighth',
   'sixteenth',
   'thirtySecond',
+  'sixtyFourth',
 ];
 
 export function getDurationTicks(duration: DurationValue, dots = 0) {

@@ -283,6 +283,160 @@ describe('externalScoreImport', () => {
     expect(getScoreRhythmIssues(result.score)).toEqual([]);
   });
 
+  it('imports MusicXML double-dotted durations without rhythm overlap', () => {
+    const result = importScoreFromMusicXml(`
+      <score-partwise version="3.1">
+        <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+        <part id="P1">
+          <measure number="1">
+            <attributes>
+              <divisions>16</divisions>
+              <time><beats>4</beats><beat-type>4</beat-type></time>
+            </attributes>
+            <note>
+              <pitch><step>C</step><octave>4</octave></pitch>
+              <duration>28</duration>
+              <type>quarter</type>
+              <dot/>
+              <dot/>
+            </note>
+            <note>
+              <rest/>
+              <duration>7</duration>
+              <type>16th</type>
+              <dot/>
+              <dot/>
+            </note>
+            <note>
+              <pitch><step>E</step><octave>4</octave></pitch>
+              <duration>1</duration>
+              <type>64th</type>
+            </note>
+            <note>
+              <pitch><step>D</step><octave>4</octave></pitch>
+              <duration>16</duration>
+              <type>quarter</type>
+            </note>
+          </measure>
+        </part>
+      </score-partwise>
+    `);
+    const trebleEvents = getStaffEvents(result, 'treble');
+
+    expect(result.warnings).toEqual([]);
+    expect(trebleEvents.map((event) => event.beat)).toEqual([
+      0,
+      1.75,
+      2.1875,
+      2.25,
+    ]);
+    expect(trebleEvents.map((event) => event.duration)).toEqual([
+      'quarter',
+      'sixteenth',
+      'sixtyFourth',
+      'quarter',
+    ]);
+    expect(trebleEvents.map((event) => event.dots ?? 0)).toEqual([2, 2, 0, 0]);
+    expect(getScoreRhythmIssues(result.score)).toEqual([]);
+  });
+
+  it('imports MusicXML voices, connections, articulations, arpeggios, and clef changes', () => {
+    const result = importScoreFromMusicXml(`
+      <score-partwise version="3.1">
+        <work><work-title>Voice XML</work-title></work>
+        <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+        <part id="P1">
+          <measure number="1">
+            <attributes>
+              <divisions>1</divisions>
+              <time><beats>4</beats><beat-type>4</beat-type></time>
+              <staves>2</staves>
+            </attributes>
+            <note>
+              <pitch><step>C</step><octave>5</octave></pitch>
+              <duration>2</duration>
+              <voice>1</voice>
+              <type>half</type>
+              <staff>1</staff>
+              <tie type="start"/>
+              <notations>
+                <tied type="start"/>
+                <slur type="start" number="1"/>
+                <arpeggiate/>
+                <fermata/>
+                <articulations>
+                  <accent/>
+                  <staccato/>
+                </articulations>
+              </notations>
+            </note>
+            <backup><duration>2</duration></backup>
+            <note>
+              <pitch><step>E</step><octave>4</octave></pitch>
+              <duration>1</duration>
+              <voice>2</voice>
+              <type>quarter</type>
+              <staff>1</staff>
+            </note>
+          </measure>
+          <measure number="2">
+            <attributes>
+              <clef number="1"><sign>F</sign><line>4</line></clef>
+            </attributes>
+            <note>
+              <pitch><step>C</step><octave>5</octave></pitch>
+              <duration>2</duration>
+              <voice>1</voice>
+              <type>half</type>
+              <staff>1</staff>
+              <tie type="stop"/>
+              <notations>
+                <tied type="stop"/>
+                <slur type="stop" number="1"/>
+              </notations>
+            </note>
+          </measure>
+        </part>
+      </score-partwise>
+    `);
+    const trebleMeasures = result.score.parts[0]?.staves.find(
+      (staff) => staff.id === 'treble',
+    )?.measures;
+    const firstVoiceEvent = trebleMeasures?.[0]?.voices[0]?.events[0];
+    const secondVoiceEvent = trebleMeasures?.[0]?.voices[1]?.events[0];
+    const tieTarget = trebleMeasures?.[1]?.voices[0]?.events[0];
+
+    expect(trebleMeasures?.[0]?.voices).toHaveLength(2);
+    expect(firstVoiceEvent).toMatchObject({
+      arpeggio: true,
+      articulations: ['accent', 'staccato'],
+      fermata: true,
+      kind: 'note',
+    });
+    expect(secondVoiceEvent).toMatchObject({
+      beat: 0,
+      kind: 'note',
+      pitch: { octave: 4, step: 'E' },
+    });
+    expect(firstVoiceEvent?.ties).toEqual([
+      {
+        pitchIndex: 0,
+        targetEventId: tieTarget?.id,
+        targetPitchIndex: 0,
+      },
+    ]);
+    expect(firstVoiceEvent?.slurs?.[0]).toMatchObject({
+      targetEventId: tieTarget?.id,
+    });
+    expect(trebleMeasures?.[1]?.clefChanges).toEqual([
+      expect.objectContaining({
+        beat: 0,
+        clef: 'bass',
+      }),
+    ]);
+    expect(getScoreRhythmIssues(result.score)).toEqual([]);
+  });
+
   it('imports a minimal MIDI note track', () => {
     const header = bytes(
       0x4d, 0x54, 0x68, 0x64,

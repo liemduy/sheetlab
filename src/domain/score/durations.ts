@@ -7,6 +7,7 @@ export const DURATION_BEATS: Record<DurationValue, number> = {
   eighth: 0.5,
   sixteenth: 0.25,
   thirtySecond: 0.125,
+  sixtyFourth: 0.0625,
 };
 
 export function getDurationDotMultiplier(dots = 0) {

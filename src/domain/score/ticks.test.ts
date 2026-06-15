@@ -17,6 +17,7 @@ describe('score ticks', () => {
     expect(getDurationTicks('eighth')).toBe(5040);
     expect(getDurationTicks('sixteenth')).toBe(2520);
     expect(getDurationTicks('thirtySecond')).toBe(1260);
+    expect(getDurationTicks('sixtyFourth')).toBe(630);
     expect(getDurationTicks('quarter', 1)).toBe(15120);
   });
 
@@ -29,11 +30,16 @@ describe('score ticks', () => {
     expect(beatToTick(2.5)).toBe(25200);
     expect(tickToBeat(25200)).toBe(2.5);
     expect(tickToBeat(1260)).toBe(0.125);
+    expect(tickToBeat(630)).toBe(0.0625);
   });
 
   it('splits tick ranges into supported duration values', () => {
     expect(splitTicksIntoDurations(30240)).toEqual(['half', 'quarter']);
     expect(splitTicksIntoDurations(6300)).toEqual(['eighth', 'thirtySecond']);
+    expect(splitTicksIntoDurations(5670)).toEqual([
+      'eighth',
+      'sixtyFourth',
+    ]);
     expect(() => splitTicksIntoDurations(1259)).toThrow(
       'Cannot represent 1259 ticks with supported durations',
     );

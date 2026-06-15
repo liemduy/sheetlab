@@ -2963,7 +2963,7 @@ describe('StaffRenderer', () => {
     expect(Math.abs(y2 - y1)).toBeLessThanOrEqual(STAFF_LINE_SPACING * 3);
   });
 
-  it('renders dynamic, fermata, pedal, and glissando event markings', async () => {
+  it('renders dynamic, fermata, pedal, arpeggio, and glissando event markings', async () => {
     const firstNoteScore = placeScoreEvent(createEmptyScore('treble'), {
       eventId: 'marked-note-1',
       staffId: 'treble',
@@ -2983,6 +2983,7 @@ describe('StaffRenderer', () => {
       pitch: { step: 'G', octave: 4 },
     });
     const markedStartScore = tryUpdateScoreEvent(secondNoteScore, 'marked-note-1', {
+      arpeggio: true,
       dynamic: 'mf',
       fermata: true,
       glissando: true,
@@ -3004,6 +3005,10 @@ describe('StaffRenderer', () => {
         'marked-note-1',
       );
       expect(screen.getByTestId('rendered-glissando')).toBeInTheDocument();
+      expect(screen.getByTestId('rendered-arpeggio')).toHaveAttribute(
+        'data-event-id',
+        'marked-note-1',
+      );
       expect(screen.getByTestId('rendered-hairpin')).toHaveAttribute(
         'data-hairpin',
         'crescendo',
