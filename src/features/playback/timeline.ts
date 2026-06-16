@@ -32,6 +32,7 @@ export interface PlaybackTimelineEvent {
   staffId: StaffId;
   voiceIndex: number;
   measureIndex: number;
+  arpeggio?: boolean;
   beat: number;
   startBeat: number;
   playbackStartBeat: number;
@@ -1010,6 +1011,7 @@ export function buildPlaybackTimeline(score: Score): PlaybackTimelineEvent[] {
                         kind: event.kind,
                         pitch: pitches[0],
                         pitches,
+                        arpeggio: event.arpeggio || undefined,
                         articulations:
                           articulations.length > 0 ? [...articulations] : undefined,
                         dynamic: event.dynamic,

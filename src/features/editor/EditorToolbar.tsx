@@ -220,6 +220,7 @@ interface EditorToolbarProps {
   importExternalScoreInputRef: RefObject<HTMLInputElement | null>;
   importInputRef: RefObject<HTMLInputElement | null>;
   importReferenceInputRef: RefObject<HTMLInputElement | null>;
+  isPlaybackLooping: boolean;
   isPlaybackPaused: boolean;
   isPlaying: boolean;
   openPalette: ToolbarPalette;
@@ -264,6 +265,8 @@ interface EditorToolbarProps {
   onMeasureNumbersToggle: (show: boolean) => void;
   onOpenPaletteChange: (palette: ToolbarPalette) => void;
   onPlacementModeChange: (placementMode: PlacementMode) => void;
+  onPlaybackLoopToggle: () => void;
+  onPlaybackRewind: () => void;
   onPlaybackStop: () => void;
   onPlaybackToggle: () => void | Promise<void>;
   onPracticeOpen: () => void;
@@ -293,6 +296,7 @@ export function EditorToolbar({
   importExternalScoreInputRef,
   importInputRef,
   importReferenceInputRef,
+  isPlaybackLooping,
   isPlaybackPaused,
   isPlaying,
   openPalette,
@@ -332,6 +336,8 @@ export function EditorToolbar({
   onMeasureNumbersToggle,
   onOpenPaletteChange,
   onPlacementModeChange,
+  onPlaybackLoopToggle,
+  onPlaybackRewind,
   onPlaybackStop,
   onPlaybackToggle,
   onPracticeOpen,
@@ -807,6 +813,27 @@ export function EditorToolbar({
       </div>
       <div className="toolbar-group" aria-label="Transport and history">
         <span className="toolbar-group-label">Transport</span>
+        <button
+          type="button"
+          aria-label="Back to start"
+          className="tool-button"
+          title="Return playback to the beginning"
+          onClick={() => onPlaybackRewind()}
+        >
+          <span className="tool-symbol" aria-hidden="true">
+            {'\u23ee'}
+          </span>
+        </button>
+        <button
+          type="button"
+          aria-label="Repeat playback"
+          aria-pressed={isPlaybackLooping}
+          className={`tool-button${isPlaybackLooping ? ' is-active' : ''}`}
+          title="Repeat playback from the beginning when it reaches the end"
+          onClick={() => onPlaybackLoopToggle()}
+        >
+          Loop
+        </button>
         <button
           type="button"
           aria-label={playbackButtonLabel}

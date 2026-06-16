@@ -25,6 +25,8 @@ const PLAYBACK_SCHEDULE_LEAD_SECONDS = 0.08;
 const PLAYBACK_LOOKAHEAD_SECONDS = 2.5;
 const PLAYBACK_SCHEDULER_INTERVAL_MS = 100;
 const AUDIO_SCHEDULE_PAST_TOLERANCE_SECONDS = 0.02;
+const ARPEGGIO_STEP_SECONDS = 0.045;
+const ARPEGGIO_MIN_NOTE_SECONDS = 0.12;
 let toneImportPromise: Promise<typeof import('tone')> | null = null;
 
 function getAudioContextConstructor() {
@@ -93,34 +95,45 @@ function isAccentBeat(beatIndex: number, beatsPerMeasure: number) {
 
 function createPianoLikeSynth(Tone: typeof import('tone')) {
   const compressor = new Tone.Compressor({
-    attack: 0.003,
-    ratio: 3,
-    release: 0.25,
-    threshold: -18,
+    attack: 0.006,
+    ratio: 2.2,
+    release: 0.34,
+    threshold: -16,
   }).toDestination();
   const reverb = new Tone.Reverb({
-    decay: 1.45,
-    preDelay: 0.015,
-    wet: 0.16,
+    decay: 1.8,
+    preDelay: 0.018,
+    wet: 0.19,
   }).connect(compressor);
   const eq = new Tone.EQ3({
-    high: 1.5,
+    high: -0.5,
     highFrequency: 2800,
-    low: -1.5,
+    low: -2.5,
     lowFrequency: 180,
-    mid: 0,
+    mid: -0.5,
   }).connect(reverb);
-  const synth = new Tone.PolySynth(Tone.Synth, {
+  const synth = new Tone.PolySynth(Tone.FMSynth, {
     envelope: {
-      attack: 0.004,
-      decay: 0.24,
-      release: 1.1,
-      sustain: 0.12,
+      attack: 0.012,
+      decay: 0.42,
+      release: 1.35,
+      sustain: 0.08,
+    },
+    harmonicity: 1.48,
+    modulationIndex: 5.8,
+    modulation: {
+      type: 'sine',
+    },
+    modulationEnvelope: {
+      attack: 0.006,
+      decay: 0.18,
+      release: 0.08,
+      sustain: 0,
     },
     oscillator: {
-      type: 'triangle8',
+      type: 'sine',
     },
-    volume: -5,
+    volume: -8,
   }).connect(eq);
 
   return {
@@ -133,6 +146,42 @@ function createPianoLikeSynth(Tone: typeof import('tone')) {
     },
     synth,
   };
+}
+
+function schedulePianoEvent(
+  synth: ReturnType<typeof createPianoLikeSynth>['synth'],
+  Tone: typeof import('tone'),
+  event: PlaybackTimelineEvent,
+  startAudioSeconds: number,
+) {
+  const toneStartSeconds = Math.max(Tone.now(), startAudioSeconds);
+
+  if (!event.arpeggio || event.pitches.length <= 1) {
+    synth.triggerAttackRelease(
+      event.pitches.map(pitchToToneNote),
+      event.soundDurationSeconds,
+      toneStartSeconds,
+      event.velocity,
+    );
+    return;
+  }
+
+  event.pitches.forEach((pitch, pitchIndex) => {
+    const noteStartSeconds = toneStartSeconds + pitchIndex * ARPEGGIO_STEP_SECONDS;
+    const remainingSeconds =
+      event.soundDurationSeconds - pitchIndex * ARPEGGIO_STEP_SECONDS;
+    const noteDurationSeconds = Math.max(
+      ARPEGGIO_MIN_NOTE_SECONDS,
+      remainingSeconds,
+    );
+
+    synth.triggerAttackRelease(
+      pitchToToneNote(pitch),
+      noteDurationSeconds,
+      noteStartSeconds,
+      event.velocity,
+    );
+  });
 }
 
 export async function warmUpPlaybackAudio() {
@@ -267,11 +316,11 @@ export async function playTimelineAudio(
           continue;
         }
 
-        pianoSynth.synth.triggerAttackRelease(
-          event.pitches.map(pitchToToneNote),
-          event.soundDurationSeconds,
-          Math.max(Tone.now(), eventStartAudioSeconds),
-          event.velocity,
+        schedulePianoEvent(
+          pianoSynth.synth,
+          Tone,
+          event,
+          eventStartAudioSeconds,
         );
       }
     };

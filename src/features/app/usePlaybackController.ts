@@ -33,11 +33,13 @@ export function usePlaybackController({
 }: UsePlaybackControllerOptions) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [isLooping, setIsLooping] = useState(false);
   const [playbackElapsedSeconds, setPlaybackElapsedSeconds] = useState(0);
   const [playbackStartOffsetSeconds, setPlaybackStartOffsetSeconds] =
     useState(0);
   const playbackController = useRef<PlaybackController | null>(null);
   const playbackAnimationFrame = useRef<number | null>(null);
+  const playbackLooping = useRef(false);
   const playbackRunId = useRef(0);
   const playbackTimeline = useMemo(() => buildPlaybackTimeline(score), [score]);
 
@@ -59,6 +61,20 @@ export function usePlaybackController({
     setPlaybackElapsedSeconds(0);
     setPlaybackStartOffsetSeconds(0);
     setEditorMessage(message);
+  }
+
+  function rewindPlayback() {
+    stopPlayback('Playback returned to start');
+  }
+
+  function togglePlaybackLoop() {
+    const nextLooping = !playbackLooping.current;
+
+    playbackLooping.current = nextLooping;
+    setIsLooping(nextLooping);
+    setEditorMessage(
+      nextLooping ? 'Playback repeat enabled' : 'Playback repeat disabled',
+    );
   }
 
   function pausePlayback(message = 'Playback paused') {
@@ -140,6 +156,15 @@ export function usePlaybackController({
         playbackController.current?.stop();
         playbackController.current = null;
         clearPlaybackAnimationFrame();
+
+        if (playbackLooping.current) {
+          void startPlayback(timeline, 0, {
+            started: 'Playback repeated from start',
+            starting: 'Playback repeating',
+          });
+          return;
+        }
+
         setIsPlaying(false);
         setIsPaused(false);
         setPlaybackElapsedSeconds(0);
@@ -240,9 +265,12 @@ export function usePlaybackController({
       ),
     ],
     handlePlaybackFromSelectedEvent,
+    handlePlaybackLoopToggle: togglePlaybackLoop,
+    handlePlaybackRewind: rewindPlayback,
     handlePlaybackStop: stopPlayback,
     handlePlaybackToggle,
     isPlaybackPaused: isPaused,
+    isPlaybackLooping: isLooping,
     isPlaying,
     playbackBeat,
   };

@@ -2754,6 +2754,13 @@ describe('App editor state', () => {
       clientX: STAFF_LEFT,
       clientY: getPitchY({ step: 'E', octave: 4 }, 'treble', 0),
     });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Repeat playback' }));
+    expect(screen.getByRole('button', { name: 'Repeat playback' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
     fireEvent.click(screen.getByRole('button', { name: 'Play' }));
 
     expect(await screen.findByRole('button', { name: 'Pause' })).toBeInTheDocument();
@@ -2766,6 +2773,15 @@ describe('App editor state', () => {
     expect(screen.getByRole('button', { name: 'Resume' })).toBeInTheDocument();
     expect(screen.getByTestId('score-event')).toHaveClass('is-playing');
     expect(screen.getByTestId('playhead')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to start' }));
+
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();
+    expect(screen.getByTestId('score-event')).not.toHaveClass('is-playing');
+    expect(screen.queryByTestId('playhead')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+    expect(await screen.findByRole('button', { name: 'Pause' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
 

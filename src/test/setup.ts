@@ -17,3 +17,10 @@ if (typeof HTMLCanvasElement !== 'undefined') {
     return contextId === '2d' ? canvasContext : null;
   } as HTMLCanvasElement['getContext'];
 }
+
+if (
+  typeof Element !== 'undefined' &&
+  typeof Element.prototype.scrollIntoView !== 'function'
+) {
+  Element.prototype.scrollIntoView = () => undefined;
+}

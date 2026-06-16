@@ -251,6 +251,43 @@ describe('playback timeline', () => {
     });
   });
 
+  it('marks arpeggiated chords for rolled audio playback', () => {
+    const chordScore = [
+      { step: 'C' as const, octave: 4 },
+      { step: 'E' as const, octave: 4 },
+      { step: 'G' as const, octave: 4 },
+    ].reduce(
+      (currentScore, pitch) =>
+        placeScoreEvent(currentScore, {
+          eventId: `arpeggio-playback-${pitch.step}`,
+          staffId: 'treble',
+          measureIndex: 0,
+          beat: 0,
+          duration: 'quarter',
+          entryMode: 'note',
+          pitch,
+        }),
+      createEmptyScore('treble', { tempo: 120 }),
+    );
+    const chordEventId =
+      chordScore.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events[0]?.id ??
+      'arpeggio-playback';
+    const score = tryUpdateScoreEvent(chordScore, chordEventId, {
+      arpeggio: true,
+    }).score;
+    const timelineEvent = buildPlaybackTimeline(score)[0];
+
+    expect(timelineEvent).toMatchObject({
+      arpeggio: true,
+      id: chordEventId,
+      pitches: [
+        { octave: 4, step: 'C' },
+        { octave: 4, step: 'E' },
+        { octave: 4, step: 'G' },
+      ],
+    });
+  });
+
   it('keeps standard dynamics active until a later dynamic changes playback velocity', () => {
     const score = ['soft', 'still-soft', 'loud'].reduce(
       (currentScore, eventId, index) =>

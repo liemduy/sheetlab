@@ -928,8 +928,11 @@ function SheetLabApp() {
     activePlaybackEvent,
     activePlaybackEventIds,
     handlePlaybackFromSelectedEvent,
+    handlePlaybackLoopToggle,
+    handlePlaybackRewind,
     handlePlaybackStop,
     handlePlaybackToggle,
+    isPlaybackLooping,
     isPlaybackPaused,
     isPlaying,
     playbackBeat,
@@ -1325,6 +1328,18 @@ function SheetLabApp() {
       shortcut: 'Space',
     },
     {
+      group: 'Transport',
+      id: 'playback-rewind',
+      label: 'Back to start',
+      run: handlePlaybackRewind,
+    },
+    {
+      group: 'Transport',
+      id: 'playback-loop-toggle',
+      label: isPlaybackLooping ? 'Disable playback repeat' : 'Enable playback repeat',
+      run: handlePlaybackLoopToggle,
+    },
+    {
       disabled: isPlaying || isPlaybackPaused || !selectedEventId,
       group: 'Transport',
       id: 'playback-from-selected',
@@ -1454,6 +1469,7 @@ function SheetLabApp() {
           importExternalScoreInputRef={importExternalScoreInputRef}
           importInputRef={importInputRef}
           importReferenceInputRef={referenceInputRef}
+          isPlaybackLooping={isPlaybackLooping}
           isPlaybackPaused={isPlaybackPaused}
           isPlaying={isPlaying}
           openPalette={openPalette}
@@ -1502,6 +1518,8 @@ function SheetLabApp() {
           }
           onOpenPaletteChange={setOpenPalette}
           onPlacementModeChange={handlePlacementModeChange}
+          onPlaybackLoopToggle={handlePlaybackLoopToggle}
+          onPlaybackRewind={handlePlaybackRewind}
           onPlaybackStop={handlePlaybackStop}
           onPlaybackToggle={handlePlaybackToggle}
           onPracticeOpen={handlePracticeOpen}
