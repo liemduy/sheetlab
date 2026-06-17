@@ -22,6 +22,10 @@ import {
   type SavedProjectRecord,
   saveProjectToStorage,
 } from '../persistence/projectStorage';
+import {
+  createMusicXmlBlob,
+  getMusicXmlFileName,
+} from '../../domain/score/musicXmlExport';
 
 interface LoadedScoreOptions {
   closePalette?: boolean;
@@ -243,6 +247,13 @@ export function useProjectActions({
     setEditorMessage(`ABC downloaded: ${fileName}`);
   }
 
+  function handleDownloadMusicXml() {
+    const fileName = getMusicXmlFileName(score);
+
+    downloadBlob(createMusicXmlBlob(score), fileName);
+    setEditorMessage(`MusicXML downloaded: ${fileName}`);
+  }
+
   async function handleExportPdf() {
     setEditorMessage('Exporting PDF...');
 
@@ -270,6 +281,7 @@ export function useProjectActions({
 
   return {
     handleDownloadAbc,
+    handleDownloadMusicXml,
     handleDownloadProject,
     handleExportPdf,
     handleImportAbcFile,

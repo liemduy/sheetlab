@@ -58,6 +58,7 @@ import {
   isStemmedScoreEvent,
 } from './stemDirection';
 import { getActiveClef } from './clefChanges';
+import { normalizeGraceNotes } from './graceNotes';
 import { ensureMeasureVoiceCount, normalizeVoiceIndex } from './voices';
 
 export {
@@ -228,6 +229,7 @@ function clampScoreEventToStaffRange(
         duration: event.duration,
         dots: event.dots,
         fermata: event.fermata,
+        graceNotes: event.graceNotes,
         glissando: event.glissando,
         hairpin: event.hairpin,
         lyric: event.lyric,
@@ -299,6 +301,7 @@ function mergePitchedEventWithNote(
     stemDirection: existingEvent.stemDirection,
     tuplet: noteEvent.tuplet ?? existingEvent.tuplet,
     fermata: existingEvent.fermata,
+    graceNotes: existingEvent.graceNotes,
     glissando: existingEvent.glissando,
     hairpin: existingEvent.hairpin,
     annotationPlacements: existingEvent.annotationPlacements,
@@ -432,7 +435,7 @@ function createUpdatedEventBase(
     graceNotes:
       update.graceNotes === undefined
         ? event.graceNotes
-        : update.graceNotes ?? undefined,
+        : normalizeGraceNotes(update.graceNotes, eventId),
     glissando:
       update.glissando === undefined
         ? event.glissando

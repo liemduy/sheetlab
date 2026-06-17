@@ -409,20 +409,63 @@ describe('playback timeline', () => {
       'grace-main',
     ]);
     expect(timeline[0]).toMatchObject({
-      durationSeconds: 0.075,
+      durationSeconds: 0.065,
       pitches: [{ step: 'D', octave: 4 }],
       sustainedEventIds: ['grace-main'],
     });
-    expect(timeline[0]?.startSeconds).toBeCloseTo(0.425, 4);
+    expect(timeline[0]?.startSeconds).toBeCloseTo(0.435, 4);
     expect(timeline[1]).toMatchObject({
       durationSeconds: 0.5,
       pitches: [{ step: 'E', octave: 4 }],
       startSeconds: 0.5,
     });
     expect(findPlaybackStartSecondsForEventId(timeline, 'grace-main')).toBeCloseTo(
-      0.425,
+      0.435,
       4,
     );
+  });
+
+  it('plays appoggiaturas on the beat by borrowing time from the main note', () => {
+    const score = placeScoreEvent(createEmptyScore('treble', { tempo: 120 }), {
+      eventId: 'appoggiatura-main',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 1,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+    const markedScore = tryUpdateScoreEvent(score, 'appoggiatura-main', {
+      graceNotes: [
+        {
+          displayDuration: 'eighth',
+          kind: 'appoggiatura',
+          playback: {
+            durationRatio: 0.5,
+            stealTimeFrom: 'main',
+            timing: 'onBeat',
+          },
+          pitches: [{ step: 'D', octave: 4 }],
+          slash: false,
+        },
+      ],
+    }).score;
+    const timeline = buildPlaybackTimeline(markedScore);
+
+    expect(timeline.map((event) => event.id)).toEqual([
+      'appoggiatura-main:grace:0',
+      'appoggiatura-main',
+    ]);
+    expect(timeline[0]).toMatchObject({
+      durationSeconds: 0.25,
+      pitches: [{ step: 'D', octave: 4 }],
+      startSeconds: 0.5,
+    });
+    expect(timeline[1]).toMatchObject({
+      durationSeconds: 0.25,
+      pitches: [{ step: 'E', octave: 4 }],
+      startSeconds: 0.75,
+    });
   });
 
   it('applies short articulations and breath marks to sound length without changing notation duration', () => {

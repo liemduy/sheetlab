@@ -8,6 +8,10 @@ import type {
   ClefChange,
   DurationValue,
   GraceNoteAttachment,
+  GraceNoteKind,
+  GraceNotePlaybackPolicy,
+  GraceNotePlaybackTiming,
+  GraceNoteStealTime,
   HairpinMark,
   KeySignature,
   KeySignatureAccidental,
@@ -53,6 +57,19 @@ const PEDAL_MARKS = new Set<PedalMark>([
   'start',
   'release',
   'start-release',
+]);
+const GRACE_NOTE_KINDS = new Set<GraceNoteKind>([
+  'acciaccatura',
+  'appoggiatura',
+]);
+const GRACE_NOTE_PLAYBACK_TIMINGS = new Set<GraceNotePlaybackTiming>([
+  'beforeBeat',
+  'onBeat',
+]);
+const GRACE_NOTE_STEAL_TIME_OPTIONS = new Set<GraceNoteStealTime>([
+  'main',
+  'none',
+  'previous',
 ]);
 const HAIRPIN_MARKS = new Set<HairpinMark>(['crescendo', 'diminuendo']);
 const ANNOTATION_KINDS = new Set<AnnotationKind>([
@@ -215,14 +232,41 @@ function isSlurMark(value: unknown): value is SlurMark {
   );
 }
 
+function isGraceNotePlaybackPolicy(
+  value: unknown,
+): value is GraceNotePlaybackPolicy {
+  return (
+    isRecord(value) &&
+    (value.timing === undefined ||
+      GRACE_NOTE_PLAYBACK_TIMINGS.has(value.timing as GraceNotePlaybackTiming)) &&
+    (value.stealTimeFrom === undefined ||
+      GRACE_NOTE_STEAL_TIME_OPTIONS.has(
+        value.stealTimeFrom as GraceNoteStealTime,
+      )) &&
+    (value.durationRatio === undefined ||
+      (isNumber(value.durationRatio) &&
+        value.durationRatio > 0 &&
+        value.durationRatio <= 1)) &&
+    (value.fixedMs === undefined ||
+      (isNumber(value.fixedMs) && value.fixedMs > 0 && value.fixedMs <= 500))
+  );
+}
+
 function isGraceNoteAttachment(value: unknown): value is GraceNoteAttachment {
   return (
     isRecord(value) &&
-    DURATIONS.has(value.duration as DurationValue) &&
+    (value.id === undefined || isString(value.id)) &&
+    (value.kind === undefined ||
+      GRACE_NOTE_KINDS.has(value.kind as GraceNoteKind)) &&
+    (DURATIONS.has(value.duration as DurationValue) ||
+      DURATIONS.has(value.displayDuration as DurationValue)) &&
     Array.isArray(value.pitches) &&
     value.pitches.length > 0 &&
     value.pitches.every(isPitch) &&
-    (value.slash === undefined || typeof value.slash === 'boolean')
+    (value.playback === undefined ||
+      isGraceNotePlaybackPolicy(value.playback)) &&
+    (value.slash === undefined || typeof value.slash === 'boolean') &&
+    (value.slurToMain === undefined || typeof value.slurToMain === 'boolean')
   );
 }
 

@@ -6,6 +6,10 @@ import { unzipSync } from 'fflate';
 import { createEmptyScore } from './factories';
 import { setMeasureKeySignature } from './editing';
 import { getEventPitches } from './events';
+import {
+  createGraceNoteAttachment,
+  normalizeGraceNotes,
+} from './graceNotes';
 import { createEmptyVoice } from './voices';
 import type {
   Accidental,
@@ -114,6 +118,14 @@ interface MidiStaffLineResult {
   line: string;
   overlappedNoteCount: number;
   trimmedNoteCount: number;
+}
+
+interface MidiGraceNoteCandidate {
+  graceNote: GraceNoteAttachment;
+  sourceKey: string;
+  staffId: StaffId;
+  targetBeat: number;
+  targetMeasureIndex: number;
 }
 
 interface MusicXmlDuration {
@@ -260,6 +272,18 @@ function encodeMidiPitch(midiNote: number) {
     STEP_BY_MIDI_INDEX[pitchIndex],
     octave,
   )}`;
+}
+
+function midiNoteToPitch(midiNote: number): Pitch {
+  const pitchIndex = ((midiNote % 12) + 12) % 12;
+  const accidental =
+    ACCIDENTAL_BY_MIDI_INDEX[pitchIndex] === '^' ? 'sharp' : undefined;
+
+  return {
+    accidental,
+    octave: Math.floor(midiNote / 12) - 1,
+    step: STEP_BY_MIDI_INDEX[pitchIndex] as NoteStep,
+  };
 }
 
 function getMidiKeySignature(keySignatures: readonly MidiKeySignatureEvent[]) {
@@ -543,15 +567,53 @@ function isMusicXmlGraceNote(note: Element) {
   return Boolean(getDirectChild(note, 'grace'));
 }
 
+function parseMusicXmlPercentAttribute(element: Element, attribute: string) {
+  const value = Number(element.getAttribute(attribute));
+
+  return Number.isFinite(value) && value > 0 ? value / 100 : undefined;
+}
+
+function musicXmlGraceNoteHasSlurToMain(note: Element) {
+  return [...note.querySelectorAll('notations slur')].some(
+    (slur) => slur.getAttribute('type') === 'start',
+  );
+}
+
 function createMusicXmlGraceNote(note: Element, pitch: Pitch): GraceNoteAttachment {
   const grace = getDirectChild(note, 'grace');
   const slash = grace?.getAttribute('slash') === 'yes';
+  const stealTimeFromPrevious = grace
+    ? parseMusicXmlPercentAttribute(grace, 'steal-time-previous')
+    : undefined;
+  const stealTimeFromFollowing = grace
+    ? parseMusicXmlPercentAttribute(grace, 'steal-time-following')
+    : undefined;
+  const makeTime = grace
+    ? parseMusicXmlPercentAttribute(grace, 'make-time')
+    : undefined;
+  const kind = slash ? 'acciaccatura' : 'appoggiatura';
 
-  return {
-    duration: getMusicXmlGraceDuration(note),
+  return createGraceNoteAttachment({
+    displayDuration: getMusicXmlGraceDuration(note),
+    kind,
+    playback: {
+      durationRatio: stealTimeFromFollowing ?? makeTime,
+      stealTimeFrom: stealTimeFromFollowing
+        ? 'main'
+        : stealTimeFromPrevious
+          ? 'previous'
+          : kind === 'appoggiatura'
+            ? 'main'
+            : 'none',
+      timing:
+        kind === 'appoggiatura' || stealTimeFromFollowing
+          ? 'onBeat'
+          : 'beforeBeat',
+    },
     pitches: [pitch],
-    ...(slash ? { slash } : {}),
-  };
+    slash,
+    slurToMain: musicXmlGraceNoteHasSlurToMain(note),
+  });
 }
 
 function parseMusicXmlStaffId(element: Element, fallback: StaffId): StaffId {
@@ -780,7 +842,7 @@ function createMusicXmlEvent({
 
   return {
     ...base,
-    graceNotes,
+    graceNotes: normalizeGraceNotes(graceNotes, base.id),
     kind: 'note',
     pitch,
   };
@@ -2064,6 +2126,152 @@ function getPedalTransitionMarks(
   return marks;
 }
 
+function getMidiNoteKey(note: MidiNoteEvent) {
+  return `${note.trackIndex}:${note.channel}:${note.startTicks}:${note.midiNote}`;
+}
+
+function detectMidiGraceNoteCandidates({
+  measureUnits,
+  notes,
+  ppq,
+  trackStaffByIndex,
+}: {
+  measureUnits: number;
+  notes: readonly MidiNoteEvent[];
+  ppq: number;
+  trackStaffByIndex: Map<number, StaffId> | null;
+}) {
+  const maxGraceDurationTicks = Math.max(1, ppq / 8);
+  const maxGraceGapTicks = Math.max(1, ppq / 10);
+  const candidates: MidiGraceNoteCandidate[] = [];
+
+  (['treble', 'bass'] as const).forEach((staffId) => {
+    const staffNotes = notes
+      .filter((note) => getStaffIdForNote(note, trackStaffByIndex) === staffId)
+      .sort(
+        (first, second) =>
+          first.startTicks - second.startTicks ||
+          first.midiNote - second.midiNote,
+      );
+
+    staffNotes.forEach((note, index) => {
+      if (note.durationTicks > maxGraceDurationTicks) {
+        return;
+      }
+
+      const targetNote = staffNotes
+        .slice(index + 1, index + 5)
+        .find((candidate) => {
+          const gapTicks =
+            candidate.startTicks - (note.startTicks + note.durationTicks);
+
+          return (
+            gapTicks >= 0 &&
+            gapTicks <= maxGraceGapTicks &&
+            candidate.durationTicks > note.durationTicks * 1.5
+          );
+        });
+
+      if (!targetNote) {
+        return;
+      }
+
+      const absoluteUnits = Math.round(
+        (targetNote.startTicks / ppq) * ABC_UNITS_PER_QUARTER,
+      );
+      const targetMeasureIndex = Math.floor(absoluteUnits / measureUnits);
+      const targetBeat =
+        (absoluteUnits - targetMeasureIndex * measureUnits) /
+        ABC_UNITS_PER_QUARTER;
+
+      candidates.push({
+        graceNote: createGraceNoteAttachment({
+          displayDuration: 'sixteenth',
+          id: `midi-grace-${getMidiNoteKey(note)}`,
+          kind: 'acciaccatura',
+          pitches: [midiNoteToPitch(note.midiNote)],
+          slash: true,
+          slurToMain: true,
+        }),
+        sourceKey: getMidiNoteKey(note),
+        staffId,
+        targetBeat,
+        targetMeasureIndex,
+      });
+    });
+  });
+
+  return candidates;
+}
+
+function applyMidiGraceNoteCandidates(
+  score: Score,
+  candidates: readonly MidiGraceNoteCandidate[],
+) {
+  if (candidates.length === 0) {
+    return score;
+  }
+
+  const candidatesByTarget = new Map<string, MidiGraceNoteCandidate[]>();
+
+  candidates.forEach((candidate) => {
+    const key = `${candidate.staffId}:${candidate.targetMeasureIndex}`;
+    const targetCandidates = candidatesByTarget.get(key) ?? [];
+
+    targetCandidates.push(candidate);
+    candidatesByTarget.set(key, targetCandidates);
+  });
+
+  return {
+    ...score,
+    parts: score.parts.map((part) => ({
+      ...part,
+      staves: part.staves.map((staff) => ({
+        ...staff,
+        measures: staff.measures.map((measure) => {
+          const measureCandidates =
+            candidatesByTarget.get(`${staff.id}:${measure.index}`) ?? [];
+
+          if (measureCandidates.length === 0) {
+            return measure;
+          }
+
+          return {
+            ...measure,
+            voices: measure.voices.map((voice) => ({
+              ...voice,
+              events: voice.events.map((event) => {
+                if (event.kind === 'rest') {
+                  return event;
+                }
+
+                const attachedCandidates = measureCandidates.filter(
+                  (candidate) => Math.abs(candidate.targetBeat - event.beat) <= 0.08,
+                );
+
+                if (attachedCandidates.length === 0) {
+                  return event;
+                }
+
+                return {
+                  ...event,
+                  graceNotes: normalizeGraceNotes(
+                    [
+                      ...(normalizeGraceNotes(event.graceNotes, event.id) ?? []),
+                      ...attachedCandidates.map((candidate) => candidate.graceNote),
+                    ],
+                    event.id,
+                  ),
+                };
+              }),
+            })),
+          };
+        }),
+      })),
+    })),
+  };
+}
+
 function mergePedalMark(existing: PedalMark | undefined, next: PedalMark) {
   if (!existing || existing === next) {
     return next;
@@ -2202,11 +2410,24 @@ export function importScoreFromMidi(
     ),
   );
   const trackStaffByIndex = getTrackStaffMap(notes);
+  const midiGraceCandidates = detectMidiGraceNoteCandidates({
+    measureUnits,
+    notes,
+    ppq,
+    trackStaffByIndex,
+  });
+  const midiGraceSourceKeys = new Set(
+    midiGraceCandidates.map((candidate) => candidate.sourceKey),
+  );
   const trebleNotes = notes.filter(
-    (note) => getStaffIdForNote(note, trackStaffByIndex) === 'treble',
+    (note) =>
+      !midiGraceSourceKeys.has(getMidiNoteKey(note)) &&
+      getStaffIdForNote(note, trackStaffByIndex) === 'treble',
   );
   const bassNotes = notes.filter(
-    (note) => getStaffIdForNote(note, trackStaffByIndex) === 'bass',
+    (note) =>
+      !midiGraceSourceKeys.has(getMidiNoteKey(note)) &&
+      getStaffIdForNote(note, trackStaffByIndex) === 'bass',
   );
   const trebleLine = buildMidiStaffLine({
     id: 'T',
@@ -2240,7 +2461,7 @@ export function importScoreFromMidi(
     controlChanges,
     measureUnits,
     ppq,
-    score: result.score,
+    score: applyMidiGraceNoteCandidates(result.score, midiGraceCandidates),
   });
   const overlappedNoteCount =
     trebleLine.overlappedNoteCount + bassLine.overlappedNoteCount;
@@ -2268,6 +2489,11 @@ export function importScoreFromMidi(
         ? `MIDI import mapped ${appliedPedalMarkCount} sustain pedal mark${
             appliedPedalMarkCount === 1 ? '' : 's'
           }`
+        : null,
+      midiGraceCandidates.length > 0
+        ? `MIDI import inferred ${midiGraceCandidates.length} grace note${
+            midiGraceCandidates.length === 1 ? '' : 's'
+          } from very short pickup notes`
         : null,
       ...result.warnings,
     ].filter(Boolean) as string[],

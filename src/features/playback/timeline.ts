@@ -19,6 +19,10 @@ import {
   getKeySignatureSymbolsAccidentalMap,
 } from '../../domain/score/keySignatures';
 import {
+  getGraceNotePlayback,
+  normalizeGraceNotes,
+} from '../../domain/score/graceNotes';
+import {
   OTTAVA_OCTAVE_SHIFT,
   applyOttavaToPitch,
   getOttavaMarks,
@@ -53,6 +57,7 @@ export interface PlaybackTimelineEvent {
 
 const DEFAULT_PLAYBACK_VELOCITY = 0.82;
 const GRACE_NOTE_SOUND_SECONDS = 0.075;
+const GRACE_NOTE_MIN_MAIN_SECONDS = 0.08;
 const GRACE_NOTE_VELOCITY = 0.58;
 const HAIRPIN_VELOCITY_STEP = 0.12;
 const STANDARD_DYNAMIC_VELOCITY: Record<string, number> = {
@@ -79,12 +84,151 @@ interface EventPlaybackPerformance {
   pedalReleaseTick?: number;
 }
 
+interface GracePlaybackPlanItem {
+  durationSeconds: number;
+  graceNote: NonNullable<ScoreEvent['graceNotes']>[number];
+  index: number;
+  startSeconds: number;
+}
+
+interface GracePlaybackPlan {
+  items: GracePlaybackPlanItem[];
+  mainDelaySeconds: number;
+}
+
 export function getSecondsPerBeat(tempo: number) {
   return 60 / tempo;
 }
 
 function clampVelocity(velocity: number) {
   return Math.min(1, Math.max(0.1, Number(velocity.toFixed(3))));
+}
+
+function getGraceNotePlaybackDurationSeconds(
+  graceNote: NonNullable<ScoreEvent['graceNotes']>[number],
+  mainDurationSeconds: number,
+) {
+  const playback = getGraceNotePlayback(graceNote);
+
+  if (playback.fixedMs !== undefined) {
+    return playback.fixedMs / 1000;
+  }
+
+  if (playback.durationRatio !== undefined) {
+    return mainDurationSeconds * playback.durationRatio;
+  }
+
+  return GRACE_NOTE_SOUND_SECONDS;
+}
+
+function scaleGraceDurations(
+  items: Array<{
+    durationSeconds: number;
+    graceNote: NonNullable<ScoreEvent['graceNotes']>[number];
+    index: number;
+  }>,
+  maxWindowSeconds: number,
+) {
+  const totalSeconds = items.reduce(
+    (sum, item) => sum + item.durationSeconds,
+    0,
+  );
+
+  if (totalSeconds <= 0 || totalSeconds <= maxWindowSeconds) {
+    return items;
+  }
+
+  const scale = maxWindowSeconds / totalSeconds;
+
+  return items.map((item) => ({
+    ...item,
+    durationSeconds: Math.max(0.015, item.durationSeconds * scale),
+  }));
+}
+
+function createGracePlaybackPlan({
+  graceNotes,
+  mainDurationSeconds,
+  mainStartSeconds,
+}: {
+  graceNotes: readonly NonNullable<ScoreEvent['graceNotes']>[number][];
+  mainDurationSeconds: number;
+  mainStartSeconds: number;
+}): GracePlaybackPlan {
+  const beforeBeatItems: Array<{
+    durationSeconds: number;
+    graceNote: NonNullable<ScoreEvent['graceNotes']>[number];
+    index: number;
+  }> = [];
+  const onBeatItems: Array<{
+    durationSeconds: number;
+    graceNote: NonNullable<ScoreEvent['graceNotes']>[number];
+    index: number;
+  }> = [];
+
+  graceNotes.forEach((graceNote, index) => {
+    const playback = getGraceNotePlayback(graceNote);
+    const targetItems =
+      playback.timing === 'onBeat' || playback.stealTimeFrom === 'main'
+        ? onBeatItems
+        : beforeBeatItems;
+
+    targetItems.push({
+      durationSeconds: getGraceNotePlaybackDurationSeconds(
+        graceNote,
+        mainDurationSeconds,
+      ),
+      graceNote,
+      index,
+    });
+  });
+
+  const scaledBeforeBeatItems = scaleGraceDurations(
+    beforeBeatItems,
+    Math.max(0, mainStartSeconds),
+  );
+  const maxOnBeatWindowSeconds = Math.max(
+    0,
+    mainDurationSeconds - GRACE_NOTE_MIN_MAIN_SECONDS,
+  );
+  const scaledOnBeatItems = scaleGraceDurations(
+    onBeatItems,
+    maxOnBeatWindowSeconds,
+  );
+  const beforeBeatWindowSeconds = scaledBeforeBeatItems.reduce(
+    (sum, item) => sum + item.durationSeconds,
+    0,
+  );
+  let cursorSeconds = mainStartSeconds - beforeBeatWindowSeconds;
+  const beforeBeatPlanItems = scaledBeforeBeatItems.map((item) => {
+    const planItem = {
+      ...item,
+      startSeconds: cursorSeconds,
+    };
+
+    cursorSeconds += item.durationSeconds;
+    return planItem;
+  });
+
+  cursorSeconds = mainStartSeconds;
+  const onBeatPlanItems = scaledOnBeatItems.map((item) => {
+    const planItem = {
+      ...item,
+      startSeconds: cursorSeconds,
+    };
+
+    cursorSeconds += item.durationSeconds;
+    return planItem;
+  });
+  const mainDelaySeconds = scaledOnBeatItems.reduce(
+    (sum, item) => sum + item.durationSeconds,
+    0,
+  );
+
+  return {
+    items: [...beforeBeatPlanItems, ...onBeatPlanItems],
+    mainDelaySeconds,
+  };
 }
 
 function getStandardDynamicVelocity(dynamic: string | undefined) {
@@ -876,9 +1020,20 @@ export function buildPlaybackTimeline(score: Score): PlaybackTimelineEvent[] {
                   measure.index,
                   event.beat,
                 );
+                const normalizedGraceNotes =
+                  normalizeGraceNotes(event.graceNotes, event.id) ?? [];
+                const mainStartSeconds = playbackStartBeat * secondsPerBeat;
+                const mainNotationDurationSeconds =
+                  getEventDurationBeats(event) * secondsPerBeat;
+                const gracePlaybackPlan = createGracePlaybackPlan({
+                  graceNotes: normalizedGraceNotes,
+                  mainDurationSeconds: mainNotationDurationSeconds,
+                  mainStartSeconds,
+                });
                 const graceTimelineEvents =
-                  sourcePitches.length > 0 && event.graceNotes?.length
-                    ? event.graceNotes.flatMap((graceNote, graceNoteIndex) => {
+                  sourcePitches.length > 0 && gracePlaybackPlan.items.length
+                    ? gracePlaybackPlan.items.flatMap((gracePlanItem) => {
+                        const { graceNote, index: graceNoteIndex } = gracePlanItem;
                         const gracePitches = graceNote.pitches.map((pitch) =>
                           applyOttavaToPitch(
                             applyKeySignatureMapToPitch(pitch, keySignatureMap),
@@ -890,27 +1045,6 @@ export function buildPlaybackTimeline(score: Score): PlaybackTimelineEvent[] {
                           return [];
                         }
 
-                        const mainStartSeconds = playbackStartBeat * secondsPerBeat;
-                        const graceNoteCount = event.graceNotes?.length ?? 1;
-                        const graceWindowSeconds = Math.min(
-                          mainStartSeconds,
-                          GRACE_NOTE_SOUND_SECONDS * graceNoteCount,
-                        );
-                        const graceStepSeconds =
-                          graceWindowSeconds > 0
-                            ? graceWindowSeconds / graceNoteCount
-                            : 0;
-                        const graceStartSeconds =
-                          graceWindowSeconds > 0
-                            ? mainStartSeconds -
-                              graceWindowSeconds +
-                              graceStepSeconds * graceNoteIndex
-                            : mainStartSeconds;
-                        const durationSeconds =
-                          graceStepSeconds > 0
-                            ? Math.min(GRACE_NOTE_SOUND_SECONDS, graceStepSeconds)
-                            : GRACE_NOTE_SOUND_SECONDS;
-
                         return [
                           {
                             id: `${event.id}:grace:${graceNoteIndex}`,
@@ -920,10 +1054,11 @@ export function buildPlaybackTimeline(score: Score): PlaybackTimelineEvent[] {
                             beat: event.beat,
                             startBeat,
                             playbackStartBeat,
-                            durationBeats: durationSeconds / secondsPerBeat,
-                            startSeconds: graceStartSeconds,
-                            durationSeconds,
-                            soundDurationSeconds: durationSeconds,
+                            durationBeats:
+                              gracePlanItem.durationSeconds / secondsPerBeat,
+                            startSeconds: gracePlanItem.startSeconds,
+                            durationSeconds: gracePlanItem.durationSeconds,
+                            soundDurationSeconds: gracePlanItem.durationSeconds,
                             velocity: clampVelocity(
                               GRACE_NOTE_VELOCITY *
                                 (performance.baseVelocity /
@@ -951,7 +1086,11 @@ export function buildPlaybackTimeline(score: Score): PlaybackTimelineEvent[] {
                   eventContextById,
                 )
                   .flatMap(({ durationBeats, indexes, sustainedEventIds }) => {
-                    const durationSeconds = durationBeats * secondsPerBeat;
+                    const notationDurationSeconds = durationBeats * secondsPerBeat;
+                    const durationSeconds = Math.max(
+                      GRACE_NOTE_MIN_MAIN_SECONDS,
+                      notationDurationSeconds - gracePlaybackPlan.mainDelaySeconds,
+                    );
                     const eventStartTick = getAbsoluteEventStartTick(score, {
                       event,
                       measureIndex: measure.index,
@@ -1000,8 +1139,10 @@ export function buildPlaybackTimeline(score: Score): PlaybackTimelineEvent[] {
                         beat: event.beat,
                         startBeat,
                         playbackStartBeat,
-                        durationBeats,
-                        startSeconds: playbackStartBeat * secondsPerBeat,
+                        durationBeats: durationSeconds / secondsPerBeat,
+                        startSeconds:
+                          playbackStartBeat * secondsPerBeat +
+                          gracePlaybackPlan.mainDelaySeconds,
                         durationSeconds,
                         soundDurationSeconds,
                         velocity: getArticulationVelocity(

@@ -148,9 +148,11 @@ describe('practice timeline', () => {
         },
       ],
     }).score;
-    const targets = buildPracticeTargets(graceScore);
+    const guideTargets = buildPracticeTargets(graceScore);
+    const targets = buildPracticeTargets(graceScore, { ornamentMode: 'strict' });
     const graceTarget = targets.find((target) => target.isGrace);
 
+    expect(guideTargets.some((target) => target.isGrace)).toBe(false);
     expect(graceTarget).toMatchObject({
       attackMidiNotes: [60],
       eventIds: ['main-note'],

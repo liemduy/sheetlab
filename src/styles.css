@@ -50,8 +50,7 @@ button {
 }
 
 .topbar {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 5;
   display: flex;
   align-items: center;
@@ -540,7 +539,7 @@ button {
 
 .left-panel {
   position: sticky;
-  top: 6.25rem;
+  top: 1rem;
   align-self: start;
   min-height: calc(100vh - 6rem);
   border-radius: 1.25rem;
@@ -662,6 +661,87 @@ button {
   margin-block: 0.9rem;
   color: var(--muted);
   font-size: 0.88rem;
+}
+
+.grace-note-editor {
+  display: grid;
+  gap: 0.55rem;
+  margin-block: 0.85rem;
+  border-top: 1px solid rgb(36 31 26 / 12%);
+  padding-top: 0.85rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.grace-note-editor-header,
+.grace-note-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.grace-note-editor-header > div,
+.grace-note-card-header > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.grace-note-editor button,
+.grace-note-card button {
+  min-height: 1.8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.45rem;
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.grace-note-editor button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.grace-note-card {
+  display: grid;
+  gap: 0.55rem;
+  border: 1px solid rgb(36 31 26 / 12%);
+  border-radius: 0.5rem;
+  padding: 0.6rem;
+  background: rgb(255 255 255 / 52%);
+}
+
+.grace-note-card strong {
+  color: var(--ink);
+  font-size: 0.78rem;
+}
+
+.grace-note-grid,
+.grace-pitch-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.grace-note-grid label,
+.grace-pitch-row label {
+  min-width: 0;
+}
+
+.grace-note-grid input,
+.grace-note-grid select,
+.grace-pitch-row input,
+.grace-pitch-row select {
+  width: 100%;
+  min-width: 0;
+}
+
+.grace-pitch-list {
+  display: grid;
+  gap: 0.45rem;
 }
 
 .articulation-toggle-group {

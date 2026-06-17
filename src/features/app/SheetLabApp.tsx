@@ -894,6 +894,7 @@ function SheetLabApp() {
 
   const {
     handleDownloadAbc,
+    handleDownloadMusicXml,
     handleDownloadProject,
     handleExportPdf,
     handleImportAbcFile,
@@ -1492,6 +1493,7 @@ function SheetLabApp() {
           onDeleteSelected={handleDeleteCurrentSelection}
           onDottedChange={handleDottedChange}
           onDownloadAbc={handleDownloadAbc}
+          onDownloadMusicXml={handleDownloadMusicXml}
           onDownloadProject={handleDownloadProject}
           onDurationChange={handleDurationChange}
           onDemoScoreLoad={handleDemoScoreLoad}

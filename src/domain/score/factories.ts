@@ -11,6 +11,7 @@ import type {
   TimeSignature,
 } from './types';
 import { assertScore } from './validation';
+import { normalizeScoreGraceNotes } from './graceNotes';
 import { createVoiceId } from './voices';
 
 const DEFAULT_TIME_SIGNATURE: TimeSignature = {
@@ -98,5 +99,8 @@ export function deserializeScore(serializedScore: string): Score {
 
   assertScore(scoreWithDefaults);
 
-  return scoreWithDefaults;
+  const normalizedScore = normalizeScoreGraceNotes(scoreWithDefaults);
+  assertScore(normalizedScore);
+
+  return normalizedScore;
 }

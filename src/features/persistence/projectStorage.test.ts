@@ -72,6 +72,82 @@ describe('project storage', () => {
     expect(loadProjectFromStorage(storageLike)).toEqual(score);
   });
 
+  it('migrates legacy grace notes from project JSON', () => {
+    const storage = new Map<string, string>();
+    const storageLike = {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        storage.set(key, value);
+      },
+    };
+    const scoreWithNote = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'stored-grace-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'E', octave: 4 },
+    });
+    const legacyScore = tryUpdateScoreEvent(scoreWithNote, 'stored-grace-note', {
+      graceNotes: [
+        {
+          duration: 'sixteenth',
+          pitches: [{ step: 'D', octave: 4 }],
+          slash: true,
+        },
+      ],
+    }).score;
+    const serializedLegacyScore = JSON.stringify({
+      ...legacyScore,
+      parts: legacyScore.parts.map((part) => ({
+        ...part,
+        staves: part.staves.map((staff) => ({
+          ...staff,
+          measures: staff.measures.map((measure) => ({
+            ...measure,
+            voices: measure.voices.map((voice) => ({
+              ...voice,
+              events: voice.events.map((event) =>
+                event.id === 'stored-grace-note'
+                  ? {
+                      ...event,
+                      graceNotes: [
+                        {
+                          duration: 'sixteenth',
+                          pitches: [{ step: 'D', octave: 4 }],
+                          slash: true,
+                        },
+                      ],
+                    }
+                  : event,
+              ),
+            })),
+          })),
+        })),
+      })),
+    });
+
+    storageLike.setItem(SHEETLAB_PROJECT_KEY, serializedLegacyScore);
+
+    expect(loadProjectFromStorage(storageLike)?.parts[0]?.staves[0]?.measures[0]
+      ?.voices[0]?.events[0]).toMatchObject({
+        graceNotes: [
+          {
+            displayDuration: 'sixteenth',
+            kind: 'acciaccatura',
+            playback: {
+              fixedMs: 65,
+              stealTimeFrom: 'none',
+              timing: 'beforeBeat',
+            },
+            slash: true,
+            slurToMain: true,
+          },
+        ],
+      });
+  });
+
   it('maintains a local project library with metadata', () => {
     const storage = new Map<string, string>();
     const storageLike = {

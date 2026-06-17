@@ -247,6 +247,7 @@ interface EditorToolbarProps {
   onDemoScoreLoad: (fixtureId: string) => void;
   onDottedChange: (dotted: boolean) => void;
   onDownloadAbc: () => void;
+  onDownloadMusicXml: () => void;
   onDownloadProject: () => void;
   onDurationChange: (duration: DurationValue) => void;
   onEntryModeChange: (entryMode: EntryMode) => void;
@@ -318,6 +319,7 @@ export function EditorToolbar({
   onDemoScoreLoad,
   onDottedChange,
   onDownloadAbc,
+  onDownloadMusicXml,
   onDownloadProject,
   onDurationChange,
   onEntryModeChange,
@@ -1044,6 +1046,13 @@ export function EditorToolbar({
         />
         <button type="button" className="tool-button" onClick={onDownloadAbc}>
           Download ABC
+        </button>
+        <button
+          type="button"
+          className="tool-button"
+          onClick={onDownloadMusicXml}
+        >
+          Download MusicXML
         </button>
         <button
           type="button"

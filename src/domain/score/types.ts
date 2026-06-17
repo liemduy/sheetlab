@@ -114,9 +114,27 @@ export interface SlurMark {
 }
 
 export interface GraceNoteAttachment {
-  duration: DurationValue;
+  id?: string;
+  kind?: GraceNoteKind;
+  displayDuration?: DurationValue;
+  duration?: DurationValue;
+  playback?: GraceNotePlaybackPolicy;
   pitches: Pitch[];
+  slurToMain?: boolean;
   slash?: boolean;
+}
+
+export type GraceNoteKind = 'acciaccatura' | 'appoggiatura';
+
+export type GraceNotePlaybackTiming = 'beforeBeat' | 'onBeat';
+
+export type GraceNoteStealTime = 'main' | 'none' | 'previous';
+
+export interface GraceNotePlaybackPolicy {
+  durationRatio?: number;
+  fixedMs?: number;
+  stealTimeFrom?: GraceNoteStealTime;
+  timing?: GraceNotePlaybackTiming;
 }
 
 export interface ScorePosition {

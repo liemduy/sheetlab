@@ -1,8 +1,10 @@
 import { countScoreEvents, findScoreEvent } from '../../domain/score/editing';
 import { findClefChange } from '../../domain/score/clefChanges';
 import type {
+  Accidental,
   ArticulationKind,
   GraceNoteAttachment,
+  GraceNoteKind,
   HairpinMark,
   NoteStep,
   OttavaKind,
@@ -12,6 +14,15 @@ import type {
   ScoreType,
   StaffId,
 } from '../../domain/score/types';
+import {
+  createGraceNoteAttachment,
+  getDefaultGraceNotePlayback,
+  getGraceNoteDisplayDuration,
+  getGraceNoteKind,
+  getGraceNotePlayback,
+  getGraceNoteSlash,
+  normalizeGraceNotes,
+} from '../../domain/score/graceNotes';
 import {
   ARTICULATION_KINDS,
   ARTICULATION_LABEL,
@@ -86,6 +97,18 @@ const DYNAMIC_MARK_GROUPS = [
 ];
 
 const NOTE_STEPS: NoteStep[] = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+const GRACE_DURATION_OPTIONS = [
+  'eighth',
+  'sixteenth',
+  'thirtySecond',
+  'sixtyFourth',
+] as const;
+const GRACE_ACCIDENTAL_OPTIONS: Array<Accidental | 'none'> = [
+  'none',
+  'natural',
+  'sharp',
+  'flat',
+];
 
 type GracePreset = 'none' | 'lower' | 'upper' | 'turn';
 
@@ -180,24 +203,38 @@ function createGraceNotesFromPreset(
 
   if (preset === 'turn') {
     return [
-      {
-        duration: 'sixteenth',
+      createGraceNoteAttachment({
+        displayDuration: 'sixteenth',
+        kind: 'acciaccatura',
         pitches: [stepPitch(anchorPitch, 1)],
-      },
-      {
-        duration: 'sixteenth',
+        slash: false,
+      }),
+      createGraceNoteAttachment({
+        displayDuration: 'sixteenth',
+        kind: 'acciaccatura',
         pitches: [stepPitch(anchorPitch, -1)],
-      },
+        slash: false,
+      }),
     ];
   }
 
   return [
-    {
-      duration: 'sixteenth',
+    createGraceNoteAttachment({
+      displayDuration: 'sixteenth',
+      kind: 'acciaccatura',
       pitches: [stepPitch(anchorPitch, preset === 'upper' ? 1 : -1)],
       slash: true,
-    },
+    }),
   ];
+}
+
+function getGraceNoteLabel(graceNote: GraceNoteAttachment, index: number) {
+  const kind = getGraceNoteKind(graceNote);
+  const pitches = graceNote.pitches.map(formatPitch).join(' ');
+
+  return `${index + 1}. ${
+    kind === 'acciaccatura' ? 'Acciaccatura' : 'Appoggiatura'
+  } ${pitches}`;
 }
 
 function getPolyphonySummary(score: Score) {
@@ -432,6 +469,151 @@ export function ScoreSettingsPanel({
     selectedMeasure,
     toolState,
   });
+  const selectedGraceNotes =
+    selectedEvent && isPitchedScoreEvent(selectedEvent.event)
+      ? normalizeGraceNotes(
+          selectedEvent.event.graceNotes,
+          selectedEvent.event.id,
+        ) ?? []
+      : [];
+
+  function commitGraceNotes(graceNotes: GraceNoteAttachment[]) {
+    onGraceNotesChange(graceNotes.length > 0 ? graceNotes : null);
+  }
+
+  function createDefaultGraceNote(kind: GraceNoteKind = 'acciaccatura') {
+    const anchorPitch = getSelectedEventAnchorPitch(
+      selectedEvent,
+      selectedPitchIndex,
+    );
+
+    if (!anchorPitch) {
+      return null;
+    }
+
+    return createGraceNoteAttachment({
+      displayDuration: 'sixteenth',
+      id: `grace-${selectedEvent?.event.id ?? 'event'}-${
+        selectedGraceNotes.length + 1
+      }`,
+      kind,
+      pitches: [stepPitch(anchorPitch, kind === 'acciaccatura' ? 1 : -1)],
+      slash: kind === 'acciaccatura',
+      slurToMain: true,
+    });
+  }
+
+  function handleAddGraceNote(kind: GraceNoteKind = 'acciaccatura') {
+    const graceNote = createDefaultGraceNote(kind);
+
+    if (!graceNote) {
+      return;
+    }
+
+    commitGraceNotes([...selectedGraceNotes, graceNote]);
+  }
+
+  function updateGraceNoteAt(
+    graceNoteIndex: number,
+    updater: (graceNote: GraceNoteAttachment) => GraceNoteAttachment,
+  ) {
+    commitGraceNotes(
+      selectedGraceNotes.map((graceNote, index) =>
+        index === graceNoteIndex ? updater(graceNote) : graceNote,
+      ),
+    );
+  }
+
+  function handleGraceKindChange(graceNoteIndex: number, kind: GraceNoteKind) {
+    updateGraceNoteAt(graceNoteIndex, (graceNote) => ({
+      ...graceNote,
+      kind,
+      playback: getDefaultGraceNotePlayback(kind),
+      slash: kind === 'acciaccatura',
+    }));
+  }
+
+  function handleGracePlaybackChange(
+    graceNoteIndex: number,
+    playbackPatch: NonNullable<GraceNoteAttachment['playback']>,
+  ) {
+    updateGraceNoteAt(graceNoteIndex, (graceNote) => ({
+      ...graceNote,
+      playback: {
+        ...getGraceNotePlayback(graceNote),
+        ...playbackPatch,
+      },
+    }));
+  }
+
+  function handleGracePitchChange(
+    graceNoteIndex: number,
+    pitchIndex: number,
+    pitchPatch: Partial<NonNullable<GraceNoteAttachment['pitches'][number]>>,
+  ) {
+    updateGraceNoteAt(graceNoteIndex, (graceNote) => ({
+      ...graceNote,
+      pitches: graceNote.pitches.map((pitch, index) =>
+        index === pitchIndex ? { ...pitch, ...pitchPatch } : pitch,
+      ),
+    }));
+  }
+
+  function handleGracePitchAccidentalChange(
+    graceNoteIndex: number,
+    pitchIndex: number,
+    accidental: Accidental | 'none',
+  ) {
+    handleGracePitchChange(graceNoteIndex, pitchIndex, {
+      accidental: accidental === 'none' ? undefined : accidental,
+    });
+  }
+
+  function handleAddGracePitch(graceNoteIndex: number) {
+    const anchorPitch = getSelectedEventAnchorPitch(
+      selectedEvent,
+      selectedPitchIndex,
+    );
+
+    updateGraceNoteAt(graceNoteIndex, (graceNote) => ({
+      ...graceNote,
+      pitches: [
+        ...graceNote.pitches,
+        anchorPitch ?? graceNote.pitches[graceNote.pitches.length - 1],
+      ].filter(Boolean) as GraceNoteAttachment['pitches'],
+    }));
+  }
+
+  function handleRemoveGracePitch(graceNoteIndex: number, pitchIndex: number) {
+    updateGraceNoteAt(graceNoteIndex, (graceNote) => ({
+      ...graceNote,
+      pitches: graceNote.pitches.filter((_, index) => index !== pitchIndex),
+    }));
+  }
+
+  function handleRemoveGraceNote(graceNoteIndex: number) {
+    commitGraceNotes(
+      selectedGraceNotes.filter((_, index) => index !== graceNoteIndex),
+    );
+  }
+
+  function handleMoveGraceNote(graceNoteIndex: number, direction: -1 | 1) {
+    const nextIndex = graceNoteIndex + direction;
+
+    if (nextIndex < 0 || nextIndex >= selectedGraceNotes.length) {
+      return;
+    }
+
+    const nextGraceNotes = [...selectedGraceNotes];
+    const [graceNote] = nextGraceNotes.splice(graceNoteIndex, 1);
+
+    if (!graceNote) {
+      return;
+    }
+
+    nextGraceNotes.splice(nextIndex, 0, graceNote);
+    commitGraceNotes(nextGraceNotes);
+  }
 
   function normalizeNullableInput(value: string) {
     const trimmed = value.trim();
@@ -667,6 +849,290 @@ export function ScoreSettingsPanel({
             ) : null}
           </select>
         </label>
+        <div className="grace-note-editor" aria-label="Grace note editor">
+          <div className="grace-note-editor-header">
+            <span>Grace notes</span>
+            <div>
+              <button
+                type="button"
+                disabled={!canEditArticulations}
+                onClick={() => handleAddGraceNote('acciaccatura')}
+              >
+                Add slash
+              </button>
+              <button
+                type="button"
+                disabled={!canEditArticulations}
+                onClick={() => handleAddGraceNote('appoggiatura')}
+              >
+                Add no slash
+              </button>
+            </div>
+          </div>
+          {selectedGraceNotes.length === 0 ? (
+            <small>No grace notes on selected note</small>
+          ) : (
+            selectedGraceNotes.map((graceNote, graceNoteIndex) => {
+              const graceKind = getGraceNoteKind(graceNote);
+              const gracePlayback = getGraceNotePlayback(graceNote);
+
+              return (
+                <div
+                  key={graceNote.id ?? `${selectedEventId}-grace-${graceNoteIndex}`}
+                  className="grace-note-card"
+                >
+                  <div className="grace-note-card-header">
+                    <strong>{getGraceNoteLabel(graceNote, graceNoteIndex)}</strong>
+                    <div>
+                      <button
+                        type="button"
+                        aria-label={`Move grace note ${graceNoteIndex + 1} earlier`}
+                        disabled={graceNoteIndex === 0}
+                        onClick={() => handleMoveGraceNote(graceNoteIndex, -1)}
+                      >
+                        Up
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Move grace note ${graceNoteIndex + 1} later`}
+                        disabled={graceNoteIndex === selectedGraceNotes.length - 1}
+                        onClick={() => handleMoveGraceNote(graceNoteIndex, 1)}
+                      >
+                        Down
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Remove grace note ${graceNoteIndex + 1}`}
+                        onClick={() => handleRemoveGraceNote(graceNoteIndex)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grace-note-grid">
+                    <label>
+                      Type
+                      <select
+                        aria-label={`Grace note ${graceNoteIndex + 1} type`}
+                        value={graceKind}
+                        onChange={(event) =>
+                          handleGraceKindChange(
+                            graceNoteIndex,
+                            event.target.value as GraceNoteKind,
+                          )
+                        }
+                      >
+                        <option value="acciaccatura">Acciaccatura</option>
+                        <option value="appoggiatura">Appoggiatura</option>
+                      </select>
+                    </label>
+                    <label>
+                      Display
+                      <select
+                        aria-label={`Grace note ${graceNoteIndex + 1} duration`}
+                        value={getGraceNoteDisplayDuration(graceNote)}
+                        onChange={(event) =>
+                          updateGraceNoteAt(graceNoteIndex, (current) => ({
+                            ...current,
+                            displayDuration:
+                              event.target
+                                .value as GraceNoteAttachment['displayDuration'],
+                          }))
+                        }
+                      >
+                        {GRACE_DURATION_OPTIONS.map((duration) => (
+                          <option key={duration} value={duration}>
+                            {DURATION_LABEL[duration]}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Timing
+                      <select
+                        aria-label={`Grace note ${graceNoteIndex + 1} timing`}
+                        value={gracePlayback.timing}
+                        onChange={(event) =>
+                          handleGracePlaybackChange(graceNoteIndex, {
+                            timing: event.target.value as NonNullable<
+                              GraceNoteAttachment['playback']
+                            >['timing'],
+                          })
+                        }
+                      >
+                        <option value="beforeBeat">Before beat</option>
+                        <option value="onBeat">On beat</option>
+                      </select>
+                    </label>
+                    <label>
+                      Steal
+                      <select
+                        aria-label={`Grace note ${graceNoteIndex + 1} steal time`}
+                        value={gracePlayback.stealTimeFrom}
+                        onChange={(event) =>
+                          handleGracePlaybackChange(graceNoteIndex, {
+                            stealTimeFrom: event.target.value as NonNullable<
+                              GraceNoteAttachment['playback']
+                            >['stealTimeFrom'],
+                          })
+                        }
+                      >
+                        <option value="none">None</option>
+                        <option value="main">Main note</option>
+                        <option value="previous">Previous</option>
+                      </select>
+                    </label>
+                    <label>
+                      Fixed ms
+                      <input
+                        aria-label={`Grace note ${graceNoteIndex + 1} fixed milliseconds`}
+                        type="number"
+                        min={12}
+                        max={500}
+                        step={5}
+                        value={gracePlayback.fixedMs ?? ''}
+                        onChange={(event) =>
+                          handleGracePlaybackChange(graceNoteIndex, {
+                            fixedMs: event.target.value
+                              ? Number(event.target.value)
+                              : undefined,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Ratio
+                      <input
+                        aria-label={`Grace note ${graceNoteIndex + 1} duration ratio`}
+                        type="number"
+                        min={0.05}
+                        max={1}
+                        step={0.05}
+                        value={gracePlayback.durationRatio ?? ''}
+                        onChange={(event) =>
+                          handleGracePlaybackChange(graceNoteIndex, {
+                            durationRatio: event.target.value
+                              ? Number(event.target.value)
+                              : undefined,
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={getGraceNoteSlash(graceNote)}
+                        onChange={(event) =>
+                          updateGraceNoteAt(graceNoteIndex, (current) => ({
+                            ...current,
+                            slash: event.target.checked,
+                          }))
+                        }
+                      />
+                      Slash
+                    </label>
+                    <label className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={graceNote.slurToMain ?? true}
+                        onChange={(event) =>
+                          updateGraceNoteAt(graceNoteIndex, (current) => ({
+                            ...current,
+                            slurToMain: event.target.checked,
+                          }))
+                        }
+                      />
+                      Slur
+                    </label>
+                  </div>
+                  <div className="grace-pitch-list">
+                    {graceNote.pitches.map((pitch, pitchIndex) => (
+                      <div
+                        key={`${graceNote.id ?? graceNoteIndex}-pitch-${pitchIndex}`}
+                        className="grace-pitch-row"
+                      >
+                        <label>
+                          Step
+                          <select
+                            aria-label={`Grace note ${graceNoteIndex + 1} pitch ${
+                              pitchIndex + 1
+                            } step`}
+                            value={pitch.step}
+                            onChange={(event) =>
+                              handleGracePitchChange(graceNoteIndex, pitchIndex, {
+                                step: event.target.value as NoteStep,
+                              })
+                            }
+                          >
+                            {NOTE_STEPS.map((step) => (
+                              <option key={step} value={step}>
+                                {step}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          Oct
+                          <input
+                            aria-label={`Grace note ${graceNoteIndex + 1} pitch ${
+                              pitchIndex + 1
+                            } octave`}
+                            type="number"
+                            min={0}
+                            max={8}
+                            value={pitch.octave}
+                            onChange={(event) =>
+                              handleGracePitchChange(graceNoteIndex, pitchIndex, {
+                                octave: Number(event.target.value),
+                              })
+                            }
+                          />
+                        </label>
+                        <label>
+                          Acc
+                          <select
+                            aria-label={`Grace note ${graceNoteIndex + 1} pitch ${
+                              pitchIndex + 1
+                            } accidental`}
+                            value={pitch.accidental ?? 'none'}
+                            onChange={(event) =>
+                              handleGracePitchAccidentalChange(
+                                graceNoteIndex,
+                                pitchIndex,
+                                event.target.value as Accidental | 'none',
+                              )
+                            }
+                          >
+                            {GRACE_ACCIDENTAL_OPTIONS.map((accidental) => (
+                              <option key={accidental} value={accidental}>
+                                {accidental === 'none' ? 'None' : accidental}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <button
+                          type="button"
+                          disabled={graceNote.pitches.length <= 1}
+                          onClick={() =>
+                            handleRemoveGracePitch(graceNoteIndex, pitchIndex)
+                          }
+                        >
+                          Remove pitch
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => handleAddGracePitch(graceNoteIndex)}
+                    >
+                      Add pitch
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
         <div
           className="articulation-editor"
           aria-label="Articulation editor"

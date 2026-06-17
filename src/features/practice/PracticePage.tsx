@@ -34,6 +34,7 @@ import {
   formatPracticeTargetVoiceLabel,
   getNextUnfinishedTargetIndex,
   type PracticeHandMode,
+  type PracticeOrnamentMode,
   type PracticeTarget,
 } from './practiceTimeline';
 import {
@@ -269,6 +270,18 @@ function getPedalModeLabel(mode: PedalPracticeMode) {
 
   if (mode === 'score') {
     return 'Score';
+  }
+
+  return 'Guide';
+}
+
+function getOrnamentModeLabel(mode: PracticeOrnamentMode) {
+  if (mode === 'strict') {
+    return 'Strict';
+  }
+
+  if (mode === 'ignore') {
+    return 'Ignore';
   }
 
   return 'Guide';
@@ -576,6 +589,8 @@ export function PracticePage({
   const [isExpressionFeedbackEnabled, setIsExpressionFeedbackEnabled] =
     useState(true);
   const [pedalMode, setPedalMode] = useState<PedalPracticeMode>('guide');
+  const [ornamentMode, setOrnamentMode] =
+    useState<PracticeOrnamentMode>('guide');
   const [countInMeasures, setCountInMeasures] = useState(1);
   const [referenceMute, setReferenceMute] =
     useState<PracticeReferenceMute>('none');
@@ -641,7 +656,7 @@ export function PracticePage({
   const normalizedMeasureStart = Math.min(measureStart, measureEnd) - 1;
   const normalizedMeasureEnd = Math.max(measureStart, measureEnd) - 1;
   const rangeSelectableTargets = useMemo(
-    () => buildPracticeTargets(score, { handMode }),
+    () => buildPracticeTargets(score, { handMode, ornamentMode: 'strict' }),
     [handMode, score],
   );
   const measureFilteredRawTargets = useMemo(
@@ -650,8 +665,9 @@ export function PracticePage({
         handMode,
         measureEnd: normalizedMeasureEnd,
         measureStart: normalizedMeasureStart,
+        ornamentMode,
       }),
-    [handMode, normalizedMeasureEnd, normalizedMeasureStart, score],
+    [handMode, normalizedMeasureEnd, normalizedMeasureStart, ornamentMode, score],
   );
   const rawTargets = useMemo(
     () => getTargetSliceByEventRange(measureFilteredRawTargets, directRange),
@@ -2111,7 +2127,9 @@ export function PracticePage({
     : getTargetLabel(currentTarget);
   const practiceContextLabel = `M${normalizedMeasureStart + 1}-${
     normalizedMeasureEnd + 1
-  } ${handMode} ${timingLevel} pedal ${getPedalModeLabel(pedalMode)}`;
+  } ${handMode} ${timingLevel} pedal ${getPedalModeLabel(
+    pedalMode,
+  )} ornaments ${getOrnamentModeLabel(ornamentMode)}`;
 
   return (
     <main className="app-shell practice-shell" data-testid="practice-page">
@@ -2377,6 +2395,20 @@ export function PracticePage({
                 <option value="guide">Guide</option>
                 <option value="score">Score</option>
                 <option value="off">Off</option>
+              </select>
+            </label>
+            <label className="practice-field">
+              Ornaments
+              <select
+                data-testid="practice-ornament-mode"
+                value={ornamentMode}
+                onChange={(event) =>
+                  setOrnamentMode(event.target.value as PracticeOrnamentMode)
+                }
+              >
+                <option value="guide">Guide</option>
+                <option value="strict">Strict</option>
+                <option value="ignore">Ignore</option>
               </select>
             </label>
           </div>

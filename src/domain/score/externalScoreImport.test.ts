@@ -171,6 +171,7 @@ describe('externalScoreImport', () => {
               <voice>1</voice>
               <type>16th</type>
               <staff>1</staff>
+              <notations><slur type="start" number="1"/></notations>
             </note>
             <note>
               <pitch><step>E</step><octave>4</octave></pitch>
@@ -195,9 +196,16 @@ describe('externalScoreImport', () => {
       duration: 'quarter',
       graceNotes: [
         {
-          duration: 'sixteenth',
+          displayDuration: 'sixteenth',
+          kind: 'acciaccatura',
+          playback: {
+            fixedMs: 65,
+            stealTimeFrom: 'none',
+            timing: 'beforeBeat',
+          },
           pitches: [{ octave: 4, step: 'D' }],
           slash: true,
+          slurToMain: true,
         },
       ],
       lyric: 'main',

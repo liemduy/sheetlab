@@ -3,6 +3,7 @@ import { pitchToMidi } from '../playback/pitch';
 import { buildPlaybackTimeline } from '../playback/timeline';
 
 export type PracticeHandMode = 'both' | 'left' | 'right';
+export type PracticeOrnamentMode = 'guide' | 'ignore' | 'strict';
 
 export interface PracticeTargetVoiceRef {
   staffId: StaffId;
@@ -80,10 +81,12 @@ export function buildPracticeTargets(
     handMode = 'both',
     measureEnd,
     measureStart = 0,
+    ornamentMode = 'guide',
   }: {
     handMode?: PracticeHandMode;
     measureEnd?: number;
     measureStart?: number;
+    ornamentMode?: PracticeOrnamentMode;
   } = {},
 ): PracticeTarget[] {
   const measureEndIndex = measureEnd ?? Number.POSITIVE_INFINITY;
@@ -155,7 +158,10 @@ export function buildPracticeTargets(
         voiceRefs,
       };
     })
-    .filter((target) => target.midiNotes.length > 0);
+    .filter((target) => target.midiNotes.length > 0)
+    .filter((target) =>
+      target.isGrace ? ornamentMode === 'strict' : true,
+    );
 }
 
 export function getPracticeTargetAtSeconds(

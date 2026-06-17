@@ -17,6 +17,10 @@ import type {
 } from '../../domain/score/types';
 import { getDurationBeats } from '../../domain/score/durations';
 import {
+  getGraceNoteDisplayDuration,
+  getGraceNoteSlash,
+} from '../../domain/score/graceNotes';
+import {
   getEventDots,
   getEventPitches,
   isGeneratedRestEvent,
@@ -61,9 +65,9 @@ function createVexFlowGraceNote(
   const pitches = graceNote.pitches.map((pitch) => clampPitchToClefRange(pitch, clef));
   const vexFlowGraceNote = new VexFlowGraceNote({
     clef,
-    duration: durationToVexFlowDuration(graceNote.duration),
+    duration: durationToVexFlowDuration(getGraceNoteDisplayDuration(graceNote)),
     keys: pitches.map(pitchToVexFlowKey),
-    slash: graceNote.slash,
+    slash: getGraceNoteSlash(graceNote),
   });
 
   pitches.forEach((pitch, pitchIndex) => {
@@ -149,6 +153,7 @@ export function createVexFlowNote(
         event.graceNotes.map((graceNote) =>
           createVexFlowGraceNote(graceNote, clef),
         ),
+        event.graceNotes.some((graceNote) => graceNote.slurToMain ?? true),
       ).beamNotes();
 
       staveNote.addModifier(graceNoteGroup, 0);
