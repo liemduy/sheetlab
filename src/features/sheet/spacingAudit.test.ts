@@ -118,6 +118,57 @@ function createImportedChromaticChordPressureScore(): Score {
   };
 }
 
+function createOverwideManualMeasureScore(): Score {
+  const denseEvents = Array.from({ length: 40 }, (_, index) => ({
+    beat: index * 0.25,
+    duration: 'sixteenth' as const,
+    id: `manual-dense-${index}`,
+    kind: 'note' as const,
+    pitch: {
+      accidental: index % 2 === 0 ? ('sharp' as const) : ('flat' as const),
+      octave: 5,
+      step: index % 2 === 0 ? ('F' as const) : ('B' as const),
+    },
+  }));
+
+  return {
+    composer: '',
+    id: 'manual-overwide-measure',
+    pageSize: 'a4',
+    parts: [
+      {
+        id: 'P1',
+        name: 'Piano',
+        staves: [
+          {
+            clef: 'treble',
+            id: 'treble',
+            measures: [
+              {
+                id: 'm-0',
+                index: 0,
+                voices: [
+                  {
+                    id: 'v-0',
+                    events: denseEvents,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    tempo: 100,
+    timeSignature: {
+      beatUnit: 4,
+      beats: 4,
+    },
+    title: 'Manual overwide measure',
+    type: 'treble',
+  };
+}
+
 describe('score spacing audit', () => {
   it('treats imported system breaks as preferred and reflows before a dense system overfills', () => {
     const { score } = importScoreFromMusicXml(denseImportedSystemXml(4));
@@ -179,6 +230,49 @@ describe('score spacing audit', () => {
     );
 
     expect(firstMeasureMinWidth).toBeGreaterThanOrEqual(820);
+    expect(getScoreSystemMeasureIndexes(score, 0)).toEqual([0]);
+    expect(auditScoreSpacing(score)).toEqual([]);
+  });
+
+  it('reports a manual measure that is still too dense after system fitting', () => {
+    const score = createOverwideManualMeasureScore();
+    const issues = auditScoreSpacing(score);
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'measure-under-readable-minimum',
+          measureIndex: 0,
+          systemIndex: 0,
+        }),
+      ]),
+    );
+    expect(
+      issues.find((issue) => issue.kind === 'measure-under-readable-minimum')
+      ?.overflow,
+    ).toBeGreaterThan(0);
+  });
+
+  it('does not flag an imported single-measure system after giving it the full line', () => {
+    const score = {
+      ...createOverwideManualMeasureScore(),
+      importedLayout: {
+        measureLayouts: [
+          {
+            measureIndex: 0,
+            systemBreakBefore: true,
+            xmlWidth: 120,
+          },
+          {
+            measureIndex: 1,
+            systemBreakBefore: true,
+            xmlWidth: 120,
+          },
+        ],
+        source: 'musicxml' as const,
+      },
+    };
+
     expect(getScoreSystemMeasureIndexes(score, 0)).toEqual([0]);
     expect(auditScoreSpacing(score)).toEqual([]);
   });

@@ -32,7 +32,7 @@ import type {
   MeasureTarget,
 } from './selectionTypes';
 
-const PAGE_OBSERVER_DELAY_MS = 160;
+const PAGE_VIEWPORT_SYNC_DELAY_MS = 80;
 
 interface ImportedCreditHeading {
   composerLines: string[];
@@ -254,64 +254,70 @@ export function SheetSurface({
       return;
     }
 
-    if (typeof IntersectionObserver === 'undefined') {
-      setRenderedPageIndexes(
-        new Set(pageViewports.map((pageViewport) => pageViewport.index)),
-      );
-      return;
-    }
-
-    let observer: IntersectionObserver | null = null;
-    const observerDelay = window.setTimeout(() => {
+    let animationFrame: number | null = null;
+    const updateCurrentPageFromViewport = () => {
       const pageElements =
         stageRef.current?.querySelectorAll<HTMLElement>('.paper-page') ?? [];
+      const viewportAnchorY = window.innerHeight / 2;
+      let bestDistance = Number.POSITIVE_INFINITY;
+      let bestPageIndex: number | null = null;
 
-      observer = new IntersectionObserver(
-        (entries) => {
-          const visiblePage = entries.reduce<{
-            index: number;
-            ratio: number;
-          } | null>((bestPage, entry) => {
-            if (!entry.isIntersecting) {
-              return bestPage;
-            }
+      pageElements.forEach((pageElement) => {
+        const pageIndex = Number(pageElement.dataset.pageIndex);
 
-            const pageIndex = Number(
-              (entry.target as HTMLElement).dataset.pageIndex,
-            );
+        if (!Number.isFinite(pageIndex)) {
+          return;
+        }
 
-            if (!Number.isFinite(pageIndex)) {
-              return bestPage;
-            }
+        const bounds = pageElement.getBoundingClientRect();
+        const distance =
+          bounds.top <= viewportAnchorY && bounds.bottom >= viewportAnchorY
+            ? 0
+            : Math.min(
+                Math.abs(bounds.top - viewportAnchorY),
+                Math.abs(bounds.bottom - viewportAnchorY),
+              );
 
-            if (!bestPage || entry.intersectionRatio > bestPage.ratio) {
-              return { index: pageIndex, ratio: entry.intersectionRatio };
-            }
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestPageIndex = pageIndex;
+        }
+      });
 
-            return bestPage;
-          }, null);
+      if (bestPageIndex === null) {
+        return;
+      }
 
-          if (!visiblePage) {
-            return;
-          }
-
-          setCurrentPageIndex(visiblePage.index);
-          setRenderedPageIndexes(
-            getNearbyScorePageIndexes(visiblePage.index, pageViewports.length),
-          );
-        },
-        {
-          root: null,
-          rootMargin: '360px 0px',
-        },
+      setCurrentPageIndex(bestPageIndex);
+      setRenderedPageIndexes(
+        getNearbyScorePageIndexes(bestPageIndex, pageViewports.length),
       );
+    };
+    const scheduleViewportSync = () => {
+      if (animationFrame !== null) {
+        window.cancelAnimationFrame(animationFrame);
+      }
 
-      pageElements.forEach((pageElement) => observer?.observe(pageElement));
-    }, PAGE_OBSERVER_DELAY_MS);
+      animationFrame = window.requestAnimationFrame(() => {
+        animationFrame = null;
+        updateCurrentPageFromViewport();
+      });
+    };
+    const observerDelay = window.setTimeout(
+      updateCurrentPageFromViewport,
+      PAGE_VIEWPORT_SYNC_DELAY_MS,
+    );
+
+    window.addEventListener('scroll', scheduleViewportSync, {
+      passive: true,
+    });
 
     return () => {
       window.clearTimeout(observerDelay);
-      observer?.disconnect();
+      window.removeEventListener('scroll', scheduleViewportSync);
+      if (animationFrame !== null) {
+        window.cancelAnimationFrame(animationFrame);
+      }
     };
   }, [isPdfExportMode, pageViewports.length]);
 

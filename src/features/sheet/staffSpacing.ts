@@ -20,7 +20,6 @@ import {
 } from '../../domain/score/pitchRange';
 import { getMeasureBeats } from '../../domain/score/timeSignatures';
 import {
-  BELOW_STAFF_NOTE_INK_ESTIMATE,
   FIRST_MEASURE_LEFT_PADDING,
   MEASURE_LEFT_PADDING,
   MEASURE_RIGHT_PADDING,
@@ -44,53 +43,13 @@ import {
   moveAnnotationBounds,
   placeAnnotationInRows,
 } from './annotationLayoutPolicy';
+import {
+  getEstimatedEventBottomInkPadding,
+  getEstimatedEventTopInkPadding,
+} from './eventInkMetrics';
 
 const STEM_INK_ESTIMATE = STAFF_LINE_SPACING * 2;
 const INTER_STAFF_MIN_CLEARANCE = 22;
-const ESTIMATED_ACCIDENTAL_TOP_INK_PADDING = 30;
-const ESTIMATED_ACCIDENTAL_BOTTOM_INK_PADDING = 16;
-const ESTIMATED_GRACE_INK_PADDING = 18;
-const ESTIMATED_ARTICULATION_INK_PADDING = 14;
-const ESTIMATED_SHORT_BEAM_BOTTOM_PADDING = 18;
-const ESTIMATED_ARPEGGIO_INK_PADDING = 12;
-
-function isShortBeamedDuration(event: ScoreEvent) {
-  return (
-    event.duration === 'eighth' ||
-    event.duration === 'sixteenth' ||
-    event.duration === 'thirtySecond' ||
-    event.duration === 'sixtyFourth'
-  );
-}
-
-function getEstimatedEventTopInkPadding(event: ScoreEvent) {
-  const pitches = getEventPitches(event);
-
-  return Math.max(
-    NOTEHEAD_ANNOTATION_INK_PADDING,
-    pitches.some((pitch) => Boolean(pitch.accidental))
-      ? ESTIMATED_ACCIDENTAL_TOP_INK_PADDING
-      : 0,
-    event.graceNotes?.length ? ESTIMATED_GRACE_INK_PADDING : 0,
-    event.articulations?.length ? ESTIMATED_ARTICULATION_INK_PADDING : 0,
-    event.arpeggio ? ESTIMATED_ARPEGGIO_INK_PADDING : 0,
-  );
-}
-
-function getEstimatedEventBottomInkPadding(event: ScoreEvent) {
-  const pitches = getEventPitches(event);
-
-  return Math.max(
-    BELOW_STAFF_NOTE_INK_ESTIMATE,
-    pitches.some((pitch) => Boolean(pitch.accidental))
-      ? ESTIMATED_ACCIDENTAL_BOTTOM_INK_PADDING
-      : 0,
-    isShortBeamedDuration(event) ? ESTIMATED_SHORT_BEAM_BOTTOM_PADDING : 0,
-    event.graceNotes?.length ? ESTIMATED_GRACE_INK_PADDING : 0,
-    event.articulations?.length ? ESTIMATED_ARTICULATION_INK_PADDING : 0,
-    event.arpeggio ? ESTIMATED_ARPEGGIO_INK_PADDING : 0,
-  );
-}
 
 function getPitchYRelativeToStaffTop(pitch: Pitch, clef: Clef) {
   const topLineValue = pitchToDiatonicValue(TOP_LINE_BY_CLEF[clef]);

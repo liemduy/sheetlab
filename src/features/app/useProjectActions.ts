@@ -26,6 +26,7 @@ import {
   createMusicXmlBlob,
   getMusicXmlFileName,
 } from '../../domain/score/musicXmlExport';
+import { auditScoreSpacing } from '../sheet/spacingAudit';
 
 interface LoadedScoreOptions {
   closePalette?: boolean;
@@ -201,13 +202,20 @@ export function useProjectActions({
       const result = midiBuffer
         ? importScoreFromMidi(midiBuffer, file.name)
         : importScoreFromMusicXml(musicXmlText ?? '');
+      const layoutIssueCount = auditScoreSpacing(result.score).length;
       const midiSummary = midiAnalysis
         ? `: ${midiAnalysis.noteCount} notes, ${midiAnalysis.measureEstimate} bars, ${midiAnalysis.pedalEventCount} pedal events, ${midiAnalysis.splitMode} split`
         : '';
       const musicXmlSummary = musicXmlAnalysis
         ? `: ${musicXmlAnalysis.measureCount} bars, ${musicXmlAnalysis.noteCount} notes, ${musicXmlAnalysis.staffCount} staves, ${musicXmlAnalysis.lyricCount} lyrics, ${musicXmlAnalysis.pedalCount} pedal marks`
         : '';
-      const importSummary = midiSummary || musicXmlSummary;
+      const layoutSummary =
+        layoutIssueCount > 0
+          ? `, ${layoutIssueCount} layout issue${
+              layoutIssueCount === 1 ? '' : 's'
+            }`
+          : ', layout OK';
+      const importSummary = `${midiSummary || musicXmlSummary}${layoutSummary}`;
 
       onScoreLoaded(
         result.score,

@@ -113,6 +113,10 @@ import {
   DISABLED_CLOUD_SYNC_CONFIG,
   getCloudSyncStatusLabel,
 } from '../cloud/cloudSync';
+import {
+  auditScoreSpacing,
+  type ScoreSpacingAuditIssue,
+} from '../sheet/spacingAudit';
 
 function getExportPreflightMessage(issues: RhythmIssue[]) {
   const issueCount = issues.length;
@@ -138,6 +142,18 @@ function getMusicIssuePreflightMessage(issues: ScoreMusicIssue[]) {
   }
 
   return `Export blocked: fix ${issueCount} music ${issueLabel} before PDF (first: ${firstIssue.message})`;
+}
+
+function getSpacingIssuePreflightMessage(issue: ScoreSpacingAuditIssue) {
+  if (issue.kind === 'measure-under-readable-minimum') {
+    return `Review layout: measure ${(issue.measureIndex ?? 0) + 1} needs ${Math.ceil(
+      issue.readableMinWidth ?? 0,
+    )}px but has ${Math.floor(issue.actualWidth ?? 0)}px`;
+  }
+
+  return `Review layout: system ${issue.systemIndex + 1} is ${Math.ceil(
+    issue.overflow,
+  )}px too dense`;
 }
 
 function cloneDemoScore(score: Score): Score {
@@ -967,12 +983,19 @@ function SheetLabApp() {
           ? await extractMusicXmlFromMxl(await response.arrayBuffer())
           : await response.text();
         const result = importScoreFromMusicXml(musicXmlText);
+        const layoutIssueCount = auditScoreSpacing(result.score).length;
+        const layoutSummary =
+          layoutIssueCount > 0
+            ? `, ${layoutIssueCount} layout issue${
+                layoutIssueCount === 1 ? '' : 's'
+              }`
+            : ', layout OK';
 
         handleLoadedScoreFromFile(
           result.score,
           result.warnings.length > 0
-            ? `QA imported ${importUrl}: ${result.warnings.length} warnings`
-            : `QA imported ${importUrl}`,
+            ? `QA imported ${importUrl}${layoutSummary}: ${result.warnings.length} warnings`
+            : `QA imported ${importUrl}${layoutSummary}`,
           { closePalette: true },
         );
       } catch {
@@ -1015,6 +1038,7 @@ function SheetLabApp() {
     () => getScoreMusicIssues(score, rhythmIssues),
     [rhythmIssues, score],
   );
+  const layoutIssues = useMemo(() => auditScoreSpacing(score), [score]);
   const blockingMusicIssues = musicIssues.filter(
     (issue) => issue.severity === 'error',
   );
@@ -1037,6 +1061,20 @@ function SheetLabApp() {
           ? [getMeasureKey(issue.staffId, issue.measureIndex)]
           : [],
       ),
+      ...layoutIssues.flatMap((issue) => {
+        const measureIndexes =
+          issue.measureIndex !== undefined
+            ? [issue.measureIndex]
+            : issue.measureIndexes ?? [];
+
+        return score.parts.flatMap((part) =>
+          part.staves.flatMap((staff) =>
+            measureIndexes.map((measureIndex) =>
+              getMeasureKey(staff.id, measureIndex),
+            ),
+          ),
+        );
+      }),
     ]),
   ];
 
@@ -1110,6 +1148,27 @@ function SheetLabApp() {
     setInvalidMeasureKeys(activeInvalidMeasureKeys);
     scrollNotationIntoView();
     setEditorMessage(`Review music issue: ${firstIssue.message}`);
+  }
+
+  function handleReviewFirstLayoutIssue() {
+    const firstIssue = layoutIssues[0];
+    const firstStaffId = score.parts[0]?.staves[0]?.id;
+
+    if (!firstIssue || !firstStaffId) {
+      setEditorMessage('Layout spacing OK');
+      return;
+    }
+
+    const measureIndex =
+      firstIssue.measureIndex ?? firstIssue.measureIndexes?.[0] ?? 0;
+
+    selectMeasure({
+      measureIndex,
+      staffId: firstStaffId,
+    });
+    setInvalidMeasureKeys(activeInvalidMeasureKeys);
+    scrollNotationIntoView();
+    setEditorMessage(getSpacingIssuePreflightMessage(firstIssue));
   }
 
   function handleExportPdfWithPreflight() {
@@ -1622,6 +1681,7 @@ function SheetLabApp() {
           inputCursor={inputCursor}
           pastScoreCount={pastScores.length}
           musicIssueCount={musicIssues.length}
+          layoutIssueCount={layoutIssues.length}
           rhythmIssueCount={rhythmIssues.length}
           score={score}
           selectedEventId={selectedEventId}
@@ -1704,6 +1764,7 @@ function SheetLabApp() {
             )
           }
           onReviewMusicIssue={handleReviewFirstMusicIssue}
+          onReviewLayoutIssue={handleReviewFirstLayoutIssue}
           onReviewRhythmIssue={handleReviewFirstRhythmIssue}
           onScoreTypeChange={handleScoreTypeChange}
           onSectionMarkerChange={handleSectionMarkerChange}

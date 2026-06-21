@@ -7,8 +7,6 @@ import type {
 import { hasImportedSystemLayout } from '../../domain/score/importedLayout';
 import { getEventDurationBeats } from '../../domain/score/eventDuration';
 import {
-  getEventDots,
-  getEventPitches,
   isGeneratedRestEvent,
 } from '../../domain/score/events';
 import { getKeySignatureAccidentalCount } from '../../domain/score/keySignatures';
@@ -31,21 +29,15 @@ import {
   getMeasureReadableInkWidthBonus,
   getMeasureReadableSlotWeight,
 } from './measureDensity';
+import {
+  getEventCoreInkWidth,
+  getEventInkProfile,
+} from './eventInkMetrics';
 import { getPedalMarkFromText, getPedalMarkMetrics } from './pedalMarks';
 
 const KEY_SIGNATURE_SYMBOL_READABLE_WIDTH = 14;
 const FIRST_SYSTEM_TIME_SIGNATURE_READABLE_WIDTH = 20;
 const RHYTHM_SLOT_GAP = 6;
-const REST_EVENT_WIDTH = 16;
-const NOTEHEAD_EVENT_WIDTH = 18;
-const ACCIDENTAL_EVENT_WIDTH = 9;
-const ADDITIONAL_CHORD_PITCH_WIDTH = 6;
-const DOT_EVENT_WIDTH = 4;
-const SHORT_DURATION_WIDTH = 4;
-const TUPLET_EVENT_WIDTH = 8;
-const GRACE_NOTE_WIDTH = 13;
-const ARPEGGIO_EVENT_WIDTH = 10;
-const ARTICULATION_EVENT_WIDTH = 4;
 const RANGE_MARK_WIDTH_BONUS = 12;
 const SECTION_MARKER_WIDTH_BONUS = 20;
 const ANNOTATION_SPACING_PROTRUSION_RATIO = 0.25;
@@ -170,51 +162,8 @@ function getEventAnnotationWidth(event: ScoreEvent) {
   }, 0);
 }
 
-function getEventCoreWidth(event: ScoreEvent) {
-  if (isGeneratedRestEvent(event)) {
-    return 0;
-  }
-
-  if (event.kind === 'rest') {
-    return REST_EVENT_WIDTH;
-  }
-
-  const pitches = getEventPitches(event);
-  const accidentalWidth =
-    pitches.filter((pitch) => Boolean(pitch.accidental)).length *
-    ACCIDENTAL_EVENT_WIDTH;
-  const chordWidth =
-    Math.max(0, pitches.length - 1) * ADDITIONAL_CHORD_PITCH_WIDTH;
-  const dotWidth = getEventDots(event) * DOT_EVENT_WIDTH;
-  const shortDurationWidth =
-    event.duration === 'sixteenth' ||
-    event.duration === 'thirtySecond' ||
-    event.duration === 'sixtyFourth'
-      ? SHORT_DURATION_WIDTH
-      : 0;
-  const tupletWidth = event.tuplet ? TUPLET_EVENT_WIDTH : 0;
-  const graceWidth =
-    (event.graceNotes?.length ?? 0) *
-    (GRACE_NOTE_WIDTH + (event.graceNotes?.some((note) => note.slash) ? 3 : 0));
-  const arpeggioWidth = event.arpeggio ? ARPEGGIO_EVENT_WIDTH : 0;
-  const articulationWidth =
-    (event.articulations?.length ?? 0) * ARTICULATION_EVENT_WIDTH;
-
-  return (
-    NOTEHEAD_EVENT_WIDTH +
-    accidentalWidth +
-    chordWidth +
-    dotWidth +
-    shortDurationWidth +
-    tupletWidth +
-    graceWidth +
-    arpeggioWidth +
-    articulationWidth
-  );
-}
-
 function getEventPreflightWidth(event: ScoreEvent) {
-  const coreWidth = getEventCoreWidth(event);
+  const coreWidth = getEventCoreInkWidth(event);
   const annotationWidth = getEventAnnotationWidth(event);
   const annotationProtrusion = Math.max(0, annotationWidth - coreWidth);
 
@@ -266,21 +215,15 @@ function addImportedInkPressureEvent(
     return;
   }
 
-  const pitches = getEventPitches(event);
+  const eventInkProfile = getEventInkProfile(event);
 
   profile.eventCount += 1;
-  profile.accidentalCount += pitches.filter((pitch) =>
-    Boolean(pitch.accidental),
-  ).length;
-  profile.chordExtraPitchCount += Math.max(0, pitches.length - 1);
-  profile.graceNoteCount += event.graceNotes?.length ?? 0;
-  profile.tupletCount += event.tuplet ? 1 : 0;
+  profile.accidentalCount += eventInkProfile.accidentalCount;
+  profile.chordExtraPitchCount += eventInkProfile.chordExtraPitchCount;
+  profile.graceNoteCount += eventInkProfile.graceNoteCount;
+  profile.tupletCount += eventInkProfile.tupletCount;
 
-  if (
-    event.duration === 'sixteenth' ||
-    event.duration === 'thirtySecond' ||
-    event.duration === 'sixtyFourth'
-  ) {
+  if (eventInkProfile.isShortBeamedDuration) {
     profile.shortEventCount += 1;
   }
 }

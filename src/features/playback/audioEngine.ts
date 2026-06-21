@@ -21,12 +21,12 @@ export interface PlaybackAudioOptions {
   startSeconds?: number;
 }
 
-const PLAYBACK_SCHEDULE_LEAD_SECONDS = 0.08;
-const PLAYBACK_LOOKAHEAD_SECONDS = 2.5;
-const PLAYBACK_SCHEDULER_INTERVAL_MS = 100;
-const AUDIO_SCHEDULE_PAST_TOLERANCE_SECONDS = 0.02;
-const ARPEGGIO_STEP_SECONDS = 0.045;
-const ARPEGGIO_MIN_NOTE_SECONDS = 0.12;
+const PLAYBACK_SCHEDULE_LEAD_SECONDS = 0.14;
+const PLAYBACK_LOOKAHEAD_SECONDS = 3;
+const PLAYBACK_SCHEDULER_INTERVAL_MS = 50;
+const AUDIO_SCHEDULE_PAST_TOLERANCE_SECONDS = 0.08;
+const ARPEGGIO_STEP_SECONDS = 0.032;
+const ARPEGGIO_MIN_NOTE_SECONDS = 0.16;
 let toneImportPromise: Promise<typeof import('tone')> | null = null;
 
 function getAudioContextConstructor() {
@@ -95,51 +95,57 @@ function isAccentBeat(beatIndex: number, beatsPerMeasure: number) {
 
 function createPianoLikeSynth(Tone: typeof import('tone')) {
   const compressor = new Tone.Compressor({
-    attack: 0.006,
-    ratio: 2.2,
-    release: 0.34,
-    threshold: -16,
+    attack: 0.01,
+    ratio: 1.8,
+    release: 0.42,
+    threshold: -18,
   }).toDestination();
   const reverb = new Tone.Reverb({
-    decay: 1.8,
-    preDelay: 0.018,
-    wet: 0.19,
+    decay: 2.2,
+    preDelay: 0.022,
+    wet: 0.18,
   }).connect(compressor);
   const eq = new Tone.EQ3({
-    high: -0.5,
-    highFrequency: 2800,
-    low: -2.5,
-    lowFrequency: 180,
-    mid: -0.5,
+    high: 0.8,
+    highFrequency: 3200,
+    low: -6,
+    lowFrequency: 160,
+    mid: -1.4,
   }).connect(reverb);
+  const highPass = new Tone.Filter({
+    frequency: 80,
+    rolloff: -12,
+    type: 'highpass',
+  }).connect(eq);
   const synth = new Tone.PolySynth(Tone.FMSynth, {
     envelope: {
-      attack: 0.012,
-      decay: 0.42,
-      release: 1.35,
-      sustain: 0.08,
+      attack: 0.009,
+      decay: 0.62,
+      release: 1.55,
+      sustain: 0.12,
     },
-    harmonicity: 1.48,
-    modulationIndex: 5.8,
+    harmonicity: 1.62,
+    modulationIndex: 3.6,
     modulation: {
       type: 'sine',
     },
     modulationEnvelope: {
-      attack: 0.006,
-      decay: 0.18,
-      release: 0.08,
+      attack: 0.008,
+      decay: 0.24,
+      release: 0.12,
       sustain: 0,
     },
     oscillator: {
       type: 'sine',
     },
-    volume: -8,
-  }).connect(eq);
+    volume: -9,
+  }).connect(highPass);
 
   return {
     dispose: () => {
       synth.releaseAll();
       synth.dispose();
+      highPass.dispose();
       eq.dispose();
       reverb.dispose();
       compressor.dispose();

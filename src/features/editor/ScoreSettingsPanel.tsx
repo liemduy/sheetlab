@@ -275,6 +275,7 @@ function getPolyphonySummary(score: Score) {
 function getComposerAction({
   eventCount,
   inputCursor,
+  layoutIssueCount,
   musicIssueCount,
   rhythmIssueCount,
   selectedClefChange,
@@ -284,6 +285,7 @@ function getComposerAction({
 }: {
   eventCount: number;
   inputCursor: InputCursor | null;
+  layoutIssueCount: number;
   musicIssueCount: number;
   rhythmIssueCount: number;
   selectedClefChange: ClefChangeTarget | null;
@@ -293,6 +295,10 @@ function getComposerAction({
 }) {
   if (musicIssueCount > 0) {
     return 'Review music validation';
+  }
+
+  if (layoutIssueCount > 0) {
+    return 'Review layout spacing';
   }
 
   if (rhythmIssueCount > 0) {
@@ -334,6 +340,7 @@ interface ScoreSettingsPanelProps {
   futureScoreCount: number;
   hoverPosition: MusicPosition | null;
   inputCursor: InputCursor | null;
+  layoutIssueCount: number;
   musicIssueCount: number;
   pastScoreCount: number;
   rhythmIssueCount: number;
@@ -360,6 +367,7 @@ interface ScoreSettingsPanelProps {
   onOttavaToggle: (ottava: OttavaKind) => void;
   onPageSizeChange: (pageSize: PageSize) => void;
   onPedalChange: (pedal: PedalMark | null) => void;
+  onReviewLayoutIssue: () => void;
   onReviewMusicIssue: () => void;
   onReviewRhythmIssue: () => void;
   onSectionMarkerChange: (sectionMarker: string | null) => void;
@@ -376,6 +384,7 @@ export function ScoreSettingsPanel({
   futureScoreCount,
   hoverPosition,
   inputCursor,
+  layoutIssueCount,
   musicIssueCount,
   pastScoreCount,
   rhythmIssueCount,
@@ -399,6 +408,7 @@ export function ScoreSettingsPanel({
   onOttavaToggle,
   onPageSizeChange,
   onPedalChange,
+  onReviewLayoutIssue,
   onReviewMusicIssue,
   onReviewRhythmIssue,
   onSectionMarkerChange,
@@ -462,6 +472,7 @@ export function ScoreSettingsPanel({
   const composerAction = getComposerAction({
     eventCount,
     inputCursor,
+    layoutIssueCount,
     musicIssueCount,
     rhythmIssueCount,
     selectedClefChange,
@@ -1379,6 +1390,25 @@ export function ScoreSettingsPanel({
               >
                 {`${rhythmIssueCount} issue${
                   rhythmIssueCount === 1 ? '' : 's'
+                }`}
+              </button>
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>Layout</dt>
+          <dd>
+            {layoutIssueCount === 0 ? (
+              'OK'
+            ) : (
+              <button
+                type="button"
+                aria-label="Review first layout issue"
+                className="state-action"
+                onClick={onReviewLayoutIssue}
+              >
+                {`${layoutIssueCount} issue${
+                  layoutIssueCount === 1 ? '' : 's'
                 }`}
               </button>
             )}

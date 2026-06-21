@@ -10,47 +10,17 @@ import {
   STAFF_LINE_SPACING,
   getScoreStaffTop,
 } from './layout';
-import { NOTEHEAD_ANNOTATION_INK_PADDING } from './annotationLayoutPolicy';
 import { getBeatX, getPitchYForScore } from './notationGeometry';
 import type { RenderedEventLayout } from './renderedEventLayout';
 import type { RenderedNoteRef } from './vexflowConnectionRenderer';
 import { getVexFlowEventClasses } from './vexflowNoteFactory';
 import { getRenderedNoteBounds } from './vexflowSvgTagging';
+import {
+  getEstimatedEventBottomInkPadding,
+  getEstimatedEventTopInkPadding,
+} from './eventInkMetrics';
 
 const STEM_RENDERED_INK_ESTIMATE = STAFF_LINE_SPACING * 3;
-const ACCIDENTAL_RENDERED_TOP_INK_PADDING = 30;
-const ACCIDENTAL_RENDERED_BOTTOM_INK_PADDING = 16;
-const ARTICULATION_RENDERED_INK_PADDING = 14;
-const GRACE_RENDERED_INK_PADDING = 18;
-const ARPEGGIO_RENDERED_INK_PADDING = 12;
-
-function getEventRenderedTopInkPadding(event: ScoreEvent) {
-  const pitches = getEventPitches(event);
-
-  return Math.max(
-    NOTEHEAD_ANNOTATION_INK_PADDING,
-    pitches.some((pitch) => Boolean(pitch.accidental))
-      ? ACCIDENTAL_RENDERED_TOP_INK_PADDING
-      : 0,
-    event.articulations?.length ? ARTICULATION_RENDERED_INK_PADDING : 0,
-    event.graceNotes?.length ? GRACE_RENDERED_INK_PADDING : 0,
-    event.arpeggio ? ARPEGGIO_RENDERED_INK_PADDING : 0,
-  );
-}
-
-function getEventRenderedBottomInkPadding(event: ScoreEvent) {
-  const pitches = getEventPitches(event);
-
-  return Math.max(
-    NOTEHEAD_ANNOTATION_INK_PADDING,
-    pitches.some((pitch) => Boolean(pitch.accidental))
-      ? ACCIDENTAL_RENDERED_BOTTOM_INK_PADDING
-      : 0,
-    event.articulations?.length ? ARTICULATION_RENDERED_INK_PADDING : 0,
-    event.graceNotes?.length ? GRACE_RENDERED_INK_PADDING : 0,
-    event.arpeggio ? ARPEGGIO_RENDERED_INK_PADDING : 0,
-  );
-}
 
 export interface RenderedVexFlowVoice {
   events: ScoreEvent[];
@@ -198,11 +168,11 @@ export function collectRenderedMeasureEventLayouts({
       const minY =
         stemDirection === Stem.UP
           ? minPitchY - STEM_RENDERED_INK_ESTIMATE
-          : minPitchY - getEventRenderedTopInkPadding(event);
+          : minPitchY - getEstimatedEventTopInkPadding(event);
       const maxY =
         stemDirection === Stem.DOWN
           ? maxPitchY + STEM_RENDERED_INK_ESTIMATE
-          : maxPitchY + getEventRenderedBottomInkPadding(event);
+          : maxPitchY + getEstimatedEventBottomInkPadding(event);
 
       eventLayouts[event.id] = {
         beat: event.beat,

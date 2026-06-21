@@ -13,19 +13,24 @@ enabled and policies use `auth.uid()`.
 
 ## Database Setup
 
-Run this migration in the Supabase SQL editor or through the Supabase CLI:
+Run these migrations in order in the Supabase SQL editor or through the Supabase
+CLI:
 
 ```txt
 supabase/migrations/202606140001_auth_scores_practice.sql
+supabase/migrations/202606210001_score_versions_share_links.sql
 ```
 
-It creates:
+They create:
 
 - `profiles`
 - `scores`
 - `practice_attempts`
+- `score_versions`
+- `score_share_links`
 
-It also enables RLS and adds owner-scoped policies for signed-in users.
+They also enable RLS, add owner-scoped policies for signed-in users, and prepare
+the database for version history plus future public share links.
 
 ## Optional Environment Override
 
