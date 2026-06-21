@@ -1,5 +1,6 @@
 import type {
   AnnotationKind,
+  PedalMark,
   Score,
   Staff,
 } from '../../domain/score/types';
@@ -8,6 +9,7 @@ import { isGeneratedRestEvent } from '../../domain/score/events';
 import { getLyricMapEventIds } from '../../domain/score/lyricMapping';
 import {
   getMeasureContentLeft,
+  getMeasureX,
   getScoreStaffTop,
   getScoreSystemMeasureIndexes,
   getSystemIndex,
@@ -37,6 +39,12 @@ import {
   getRenderedEventInkBounds,
   getRenderedSystemStaffSymbolInkBounds,
 } from './renderedVoiceZones';
+import {
+  getPedalGlyphParts,
+  getPedalMarkLabel,
+} from './pedalMarks';
+
+const TEMPO_QUARTER_NOTE_SYMBOL = String.fromCodePoint(0x1d15f);
 
 function appendSvgText({
   className,
@@ -72,18 +80,72 @@ function appendSvgText({
   return textElement;
 }
 
+function appendSvgPedalMark({
+  dataset,
+  mark,
+  svg,
+  x,
+  y,
+}: {
+  dataset?: Record<string, string>;
+  mark: PedalMark;
+  svg: SVGSVGElement;
+  x: number;
+  y: number;
+}) {
+  const textElement = document.createElementNS(
+    'http://www.w3.org/2000/svg',
+    'text',
+  );
+
+  textElement.classList.add('sheetlab-pedal');
+  textElement.setAttribute('aria-label', getPedalMarkLabel(mark));
+  textElement.setAttribute('data-pedal-mark', mark);
+  textElement.setAttribute('x', x.toFixed(2));
+  textElement.setAttribute('y', y.toFixed(2));
+
+  Object.entries(dataset ?? {}).forEach(([key, value]) => {
+    textElement.setAttribute(key, value);
+  });
+
+  getPedalGlyphParts(mark).forEach((part) => {
+    const tspan = document.createElementNS(
+      'http://www.w3.org/2000/svg',
+      'tspan',
+    );
+
+    tspan.classList.add('sheetlab-pedal-glyph', `sheetlab-pedal-${part.part}`);
+    tspan.setAttribute('x', (x + part.xOffset).toFixed(2));
+    tspan.setAttribute('y', y.toFixed(2));
+    tspan.textContent = part.glyph;
+    textElement.appendChild(tspan);
+  });
+
+  svg.appendChild(textElement);
+
+  return textElement;
+}
+
 function getRenderedEventAnnotationAnchorBounds(
   layout: RenderedEventLayout,
 ): { maxY: number; minY: number } {
+  const renderedInkBounds = getRenderedEventInkBounds(layout);
+
   if (layout.pitchLayouts.length === 0) {
-    return getRenderedEventInkBounds(layout);
+    return renderedInkBounds;
   }
 
   const pitchYs = layout.pitchLayouts.map((pitchLayout) => pitchLayout.y);
 
   return {
-    maxY: Math.max(...pitchYs) + NOTEHEAD_ANNOTATION_INK_PADDING,
-    minY: Math.min(...pitchYs) - NOTEHEAD_ANNOTATION_INK_PADDING,
+    maxY: Math.max(
+      renderedInkBounds.maxY,
+      Math.max(...pitchYs) + NOTEHEAD_ANNOTATION_INK_PADDING,
+    ),
+    minY: Math.min(
+      renderedInkBounds.minY,
+      Math.min(...pitchYs) - NOTEHEAD_ANNOTATION_INK_PADDING,
+    ),
   };
 }
 
@@ -254,11 +316,18 @@ function getSectionMarkerDesiredY({
   return isSystemFirstMeasure ? staffTop - 56 : staffTop - 42;
 }
 
+function getScoreTempoMarkText(score: Score) {
+  return score.importedLayout
+    ? `${TEMPO_QUARTER_NOTE_SYMBOL}=${Math.round(score.tempo)}`
+    : `Moderato \u2669 = ${Math.round(score.tempo)}`;
+}
+
 export function drawTextAnnotations(
   container: HTMLDivElement,
   score: Score,
   eventLayouts: Record<string, RenderedEventLayout>,
   visibleMeasureIndexes?: ReadonlySet<number> | null,
+  showMeasureNumbers = false,
 ) {
   const svg = container.querySelector('svg');
   const annotationLayouts: RenderedAnnotationLayout[] = [];
@@ -276,6 +345,7 @@ export function drawTextAnnotations(
         '.sheetlab-tempo-mark',
         '.sheetlab-dynamic',
         '.sheetlab-fermata',
+        '.sheetlab-measure-number',
         '.sheetlab-pedal',
       ].join(', '),
     )
@@ -348,11 +418,12 @@ export function drawTextAnnotations(
       if (staffIndex === 0 && systemIndex === 0) {
         const tempoX = getMeasureContentLeft(systemFirstMeasureIndex, score) + 12;
         const tempoY = staffTop - 78;
+        const tempoText = getScoreTempoMarkText(score);
 
         systemAnnotationPlacements.push({
           ...getAnnotationBounds({
             kind: 'sectionMarker',
-            text: `Moderato ${Math.round(score.tempo)}`,
+            text: tempoText,
             x: tempoX + 34,
             y: tempoY,
           }),
@@ -362,12 +433,31 @@ export function drawTextAnnotations(
         appendSvgText({
           className: 'sheetlab-tempo-mark',
           dataset: {
+            ...(score.importedLayout ? { 'data-imported-tempo': 'true' } : {}),
             'data-testid': 'rendered-tempo-mark',
           },
           svg,
-          text: `Moderato \u2669 = ${Math.round(score.tempo)}`,
+          text: tempoText,
           x: tempoX,
           y: tempoY,
+        });
+      }
+
+      if (
+        staffIndex === 0 &&
+        showMeasureNumbers &&
+        systemFirstMeasureIndex > 0
+      ) {
+        appendSvgText({
+          className: 'sheetlab-measure-number',
+          dataset: {
+            'data-measure-index': String(systemFirstMeasureIndex),
+            'data-testid': 'measure-number',
+          },
+          svg,
+          text: String(systemFirstMeasureIndex + 1),
+          x: getMeasureX(systemFirstMeasureIndex, score) - 24,
+          y: staffTop - 18,
         });
       }
 
@@ -519,18 +609,31 @@ export function drawTextAnnotations(
               });
 
               annotationLayouts.push(renderedAnnotationLayout);
+              const dataset = {
+                'data-annotation-kind': kind,
+                'data-annotation-offset-x': String(offset.x),
+                'data-annotation-offset-y': String(offset.y),
+                'data-annotation-row': String(shiftedPlacement.row),
+                'data-annotation-side': side,
+                'data-event-id': event.id,
+                'data-testid': testId,
+                'data-voice-index': String(voiceIndex),
+              };
+
+              if (kind === 'pedal' && event.pedal) {
+                appendSvgPedalMark({
+                  dataset,
+                  mark: event.pedal,
+                  svg,
+                  x: annotationX + offset.x,
+                  y: renderedAnnotationLayout.y,
+                });
+                return;
+              }
+
               appendSvgText({
                 className,
-                dataset: {
-                  'data-annotation-kind': kind,
-                  'data-annotation-offset-x': String(offset.x),
-                  'data-annotation-offset-y': String(offset.y),
-                  'data-annotation-row': String(shiftedPlacement.row),
-                  'data-annotation-side': side,
-                  'data-event-id': event.id,
-                  'data-testid': testId,
-                  'data-voice-index': String(voiceIndex),
-                },
+                dataset,
                 svg,
                 text,
                 x: annotationX + offset.x,

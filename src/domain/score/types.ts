@@ -156,7 +156,7 @@ export type NoteNotationMarkKind =
   | 'lyric'
   | 'pedal';
 
-export type RangeNotationMarkKind = 'ottava' | 'slur' | 'tie';
+export type RangeNotationMarkKind = 'hairpin' | 'ottava' | 'slur' | 'tie';
 
 export type MeasureNotationMarkKind = 'repeatJump' | 'sectionMarker';
 
@@ -172,6 +172,7 @@ export interface NoteNotationMark {
 
 export interface RangeNotationMark {
   end: ScorePosition;
+  hairpin?: HairpinMark;
   id: string;
   kind: RangeNotationMarkKind;
   ottava?: OttavaKind;
@@ -245,6 +246,7 @@ export interface BaseScoreEvent {
   lyric?: string;
   lyricMap?: LyricMap;
   pedal?: PedalMark;
+  pedalLine?: boolean;
   slurs?: SlurMark[];
   ties?: TieMark[];
   tuplet?: TupletInfo;
@@ -269,6 +271,34 @@ export type ScoreEvent = NoteEvent | ChordEvent | RestEvent;
 export interface Voice {
   id: string;
   events: ScoreEvent[];
+}
+
+export interface ImportedMeasureLayout {
+  measureIndex: number;
+  pageBreakBefore?: boolean;
+  staffDistance?: number;
+  systemBreakBefore?: boolean;
+  systemDistance?: number;
+  topSystemDistance?: number;
+  xmlWidth?: number;
+}
+
+export interface ImportedCreditLayout {
+  fontFamily?: string;
+  fontSize?: number;
+  fontStyle?: string;
+  fontWeight?: string;
+  justify?: string;
+  lines: string[];
+  page: number;
+  type: string;
+  valign?: string;
+}
+
+export interface ImportedScoreLayout {
+  credits?: ImportedCreditLayout[];
+  measureLayouts: ImportedMeasureLayout[];
+  source: 'musicxml';
 }
 
 export interface Measure {
@@ -302,6 +332,7 @@ export interface Score {
   pageSize: PageSize;
   tempo: number;
   timeSignature: TimeSignature;
+  importedLayout?: ImportedScoreLayout;
   marks?: NotationMark[];
   parts: ScorePart[];
 }

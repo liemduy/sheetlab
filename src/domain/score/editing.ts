@@ -141,6 +141,7 @@ export interface UpdateScoreEventRequest {
   lyric?: string | null;
   lyricMap?: LyricMap | null;
   pedal?: PedalMark | null;
+  pedalLine?: boolean | null;
   slurs?: SlurMark[] | null;
   ties?: TieMark[] | null;
   tuplet?: TupletInfo | null;
@@ -448,6 +449,10 @@ function createUpdatedEventBase(
     lyricMap:
       update.lyricMap === undefined ? event.lyricMap : update.lyricMap ?? undefined,
     pedal: update.pedal === undefined ? event.pedal : update.pedal ?? undefined,
+    pedalLine:
+      update.pedalLine === undefined
+        ? event.pedalLine
+        : update.pedalLine ?? undefined,
     slurs: update.slurs === undefined ? event.slurs : update.slurs ?? undefined,
     ties: update.ties === undefined ? event.ties : update.ties ?? undefined,
     tuplet:

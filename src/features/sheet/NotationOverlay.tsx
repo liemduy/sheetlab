@@ -105,7 +105,6 @@ interface NotationOverlayProps {
   invalidMeasureKeys?: readonly string[];
   showLayoutZones?: boolean;
   showLyricMap?: boolean;
-  showMeasureNumbers?: boolean;
   onClearInteraction?: () => void;
   onHoverPositionChange?: (position: MusicPosition | null) => void;
   onPlaceAtPosition?: (position: MusicPosition) => void;
@@ -218,7 +217,6 @@ export function NotationOverlay({
   selectedPitchIndex,
   showLayoutZones = false,
   showLyricMap = false,
-  showMeasureNumbers = false,
   svgHeight,
   svgWidth = SVG_WIDTH,
   voiceZoneLayouts = [],
@@ -943,22 +941,6 @@ export function NotationOverlay({
                   STAFF_LINE_SPACING * 4
                 }
               />
-            ))
-        : null}
-      {showMeasureNumbers
-        ? (staves[0]?.measures ?? [])
-            .filter((measure) => isMeasureVisible(measure.index))
-            .filter((measure) => getLocalMeasureIndex(measure.index, score) === 0)
-            .map((measure) => (
-              <text
-                key={`measure-number-${measure.index}`}
-                className="measure-number"
-                data-testid="measure-number"
-                x={getMeasureX(measure.index, score) + 6}
-                y={getScoreStaffTop(score, 0, measure.index) - 18}
-              >
-                {measure.index + 1}
-              </text>
             ))
         : null}
       {displayHoverPosition ? (

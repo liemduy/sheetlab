@@ -229,7 +229,7 @@ describe('App editor state', () => {
     );
 
     expect(movedPedal).not.toBeNull();
-    expect(movedPedal).toHaveTextContent('Ped.');
+    expect(movedPedal).toHaveAttribute('data-pedal-mark', 'start');
   });
 
   it('keeps the cursor in select mode until a duration is chosen and clears write mode outside the staff', () => {
@@ -1348,7 +1348,10 @@ describe('App editor state', () => {
         'above',
       );
     });
-    expect(screen.getByTestId('rendered-pedal')).toHaveTextContent('Ped.');
+    expect(screen.getByTestId('rendered-pedal')).toHaveAttribute(
+      'data-pedal-mark',
+      'start',
+    );
   });
 
   it('drags a rendered annotation around its attached note', async () => {

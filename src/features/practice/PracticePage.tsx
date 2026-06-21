@@ -585,7 +585,9 @@ export function PracticePage({
   const [isLooping, setIsLooping] = useState(false);
   const [isReferenceEnabled, setIsReferenceEnabled] = useState(true);
   const [isMetronomeEnabled, setIsMetronomeEnabled] = useState(true);
-  const [showFingeringHints, setShowFingeringHints] = useState(true);
+  const [showFingeringHints, setShowFingeringHints] = useState(
+    () => !score.importedLayout,
+  );
   const [isExpressionFeedbackEnabled, setIsExpressionFeedbackEnabled] =
     useState(true);
   const [pedalMode, setPedalMode] = useState<PedalPracticeMode>('guide');

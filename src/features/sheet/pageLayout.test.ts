@@ -3,6 +3,11 @@ import {
   composerSketchFixture,
   duChoTanTheFullFixture,
 } from '../../domain/score/fixtures';
+import { importScoreFromMusicXml } from '../../domain/score/externalScoreImport';
+import {
+  getMeasureWidth,
+  getScoreSystemMeasureIndexes,
+} from './layout';
 import {
   getInitialScorePageIndexes,
   getNearbyScorePageIndexes,
@@ -41,5 +46,52 @@ describe('score page layout', () => {
     expect(getScorePageForMeasureIndex(pages, 85)?.index).toBe(
       pages.length - 1,
     );
+  });
+
+  it('honors imported MusicXML system breaks, page breaks, and measure widths', () => {
+    const result = importScoreFromMusicXml(`
+      <score-partwise version="3.1">
+        <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+        <part id="P1">
+          <measure number="1" width="300">
+            <print><system-layout><top-system-distance>70</top-system-distance></system-layout></print>
+            <attributes>
+              <divisions>1</divisions>
+              <time><beats>4</beats><beat-type>4</beat-type></time>
+            </attributes>
+            <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+          </measure>
+          <measure number="2" width="100">
+            <note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+          </measure>
+          <measure number="3" width="200">
+            <print new-system="yes"><system-layout><system-distance>100</system-distance></system-layout></print>
+            <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+          </measure>
+          <measure number="4" width="100">
+            <note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+          </measure>
+          <measure number="5" width="500">
+            <print new-page="yes"><system-layout><top-system-distance>70</top-system-distance></system-layout></print>
+            <note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+          </measure>
+          <measure number="6" width="500">
+            <note><pitch><step>A</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+          </measure>
+        </part>
+      </score-partwise>
+    `);
+    const score = result.score;
+    const pages = getScorePageViewports(score);
+
+    expect(score.importedLayout?.measureLayouts).toHaveLength(6);
+    expect(getScoreSystemMeasureIndexes(score, 0)).toEqual([0, 1]);
+    expect(getScoreSystemMeasureIndexes(score, 1)).toEqual([2, 3]);
+    expect(getScoreSystemMeasureIndexes(score, 2)).toEqual([4, 5]);
+    expect(pages.map((page) => page.measureIndexes)).toEqual([
+      [0, 1, 2, 3],
+      [4, 5],
+    ]);
+    expect(getMeasureWidth(0, score) / getMeasureWidth(1, score)).toBeCloseTo(3, 2);
   });
 });

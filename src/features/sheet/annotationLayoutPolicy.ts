@@ -3,6 +3,11 @@ import type {
   AnnotationPlacementSide,
   ScoreEvent,
 } from '../../domain/score/types';
+import {
+  getPedalMarkFromText,
+  getPedalMarkMetrics,
+  getPedalMarkText,
+} from './pedalMarks';
 
 export type TextAnnotationKind = AnnotationKind | 'sectionMarker';
 export type AnnotationSide = Exclude<AnnotationPlacementSide, 'auto'>;
@@ -20,11 +25,6 @@ export interface AnnotationPlacement extends AnnotationBounds {
 }
 
 export const FERMATA_SYMBOL = String.fromCodePoint(0x1d110);
-export const PEDAL_MARK_TEXT = {
-  release: '*',
-  start: 'Ped.',
-  'start-release': 'Ped. *',
-} as const;
 
 export const BELOW_STAFF_INK_GAP = 6;
 export const ANNOTATION_ROW_GAP = 26;
@@ -42,7 +42,7 @@ export const ANNOTATION_METRICS = {
   dynamic: { charWidth: 9, descent: 5, height: 21, minWidth: 18 },
   fermata: { charWidth: 14, descent: 36, height: 54, minWidth: 18 },
   lyric: { charWidth: 8.2, descent: 5, height: 18, minWidth: 18 },
-  pedal: { charWidth: 8.5, descent: 5, height: 19, minWidth: 20 },
+  pedal: { charWidth: 8.5, descent: 7, height: 26, minWidth: 20 },
   sectionMarker: { charWidth: 8, descent: 5, height: 20, minWidth: 34 },
 } satisfies Record<
   TextAnnotationKind,
@@ -77,15 +77,21 @@ export function getAnnotationBounds({
   y: number;
 }): AnnotationBounds {
   const metrics = ANNOTATION_METRICS[kind];
-  const width =
-    Math.max(metrics.minWidth, text.length * metrics.charWidth) +
-    ANNOTATION_HORIZONTAL_GAP * 2;
+  const pedalMark = kind === 'pedal' ? getPedalMarkFromText(text) : null;
+  const width = pedalMark
+    ? getPedalMarkMetrics(pedalMark).width + ANNOTATION_HORIZONTAL_GAP * 2
+    : Math.max(metrics.minWidth, text.length * metrics.charWidth) +
+      ANNOTATION_HORIZONTAL_GAP * 2;
+  const height = pedalMark ? getPedalMarkMetrics(pedalMark).height : metrics.height;
+  const descent = pedalMark
+    ? getPedalMarkMetrics(pedalMark).descent
+    : metrics.descent;
 
   return {
     maxX: x + width / 2,
-    maxY: y + metrics.descent,
+    maxY: y + descent,
     minX: x - width / 2,
-    minY: y - metrics.height,
+    minY: y - height,
   };
 }
 
@@ -275,7 +281,7 @@ export function getEventAnnotationText(event: ScoreEvent, kind: AnnotationKind) 
     return event.lyric ?? null;
   }
 
-  return event.pedal ? PEDAL_MARK_TEXT[event.pedal] : null;
+  return event.pedal ? getPedalMarkText(event.pedal) : null;
 }
 
 export function getEventAnnotationKinds(event: ScoreEvent) {

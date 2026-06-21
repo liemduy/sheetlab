@@ -2,6 +2,7 @@ import type {
   Clef,
   Pitch,
   Score,
+  ScoreEvent,
 } from '../../domain/score/types';
 import { getEventAnnotationOffset } from '../../domain/score/annotationOffsets';
 import {
@@ -46,6 +47,50 @@ import {
 
 const STEM_INK_ESTIMATE = STAFF_LINE_SPACING * 2;
 const INTER_STAFF_MIN_CLEARANCE = 22;
+const ESTIMATED_ACCIDENTAL_TOP_INK_PADDING = 30;
+const ESTIMATED_ACCIDENTAL_BOTTOM_INK_PADDING = 16;
+const ESTIMATED_GRACE_INK_PADDING = 18;
+const ESTIMATED_ARTICULATION_INK_PADDING = 14;
+const ESTIMATED_SHORT_BEAM_BOTTOM_PADDING = 18;
+const ESTIMATED_ARPEGGIO_INK_PADDING = 12;
+
+function isShortBeamedDuration(event: ScoreEvent) {
+  return (
+    event.duration === 'eighth' ||
+    event.duration === 'sixteenth' ||
+    event.duration === 'thirtySecond' ||
+    event.duration === 'sixtyFourth'
+  );
+}
+
+function getEstimatedEventTopInkPadding(event: ScoreEvent) {
+  const pitches = getEventPitches(event);
+
+  return Math.max(
+    NOTEHEAD_ANNOTATION_INK_PADDING,
+    pitches.some((pitch) => Boolean(pitch.accidental))
+      ? ESTIMATED_ACCIDENTAL_TOP_INK_PADDING
+      : 0,
+    event.graceNotes?.length ? ESTIMATED_GRACE_INK_PADDING : 0,
+    event.articulations?.length ? ESTIMATED_ARTICULATION_INK_PADDING : 0,
+    event.arpeggio ? ESTIMATED_ARPEGGIO_INK_PADDING : 0,
+  );
+}
+
+function getEstimatedEventBottomInkPadding(event: ScoreEvent) {
+  const pitches = getEventPitches(event);
+
+  return Math.max(
+    BELOW_STAFF_NOTE_INK_ESTIMATE,
+    pitches.some((pitch) => Boolean(pitch.accidental))
+      ? ESTIMATED_ACCIDENTAL_BOTTOM_INK_PADDING
+      : 0,
+    isShortBeamedDuration(event) ? ESTIMATED_SHORT_BEAM_BOTTOM_PADDING : 0,
+    event.graceNotes?.length ? ESTIMATED_GRACE_INK_PADDING : 0,
+    event.articulations?.length ? ESTIMATED_ARTICULATION_INK_PADDING : 0,
+    event.arpeggio ? ESTIMATED_ARPEGGIO_INK_PADDING : 0,
+  );
+}
 
 function getPitchYRelativeToStaffTop(pitch: Pitch, clef: Clef) {
   const topLineValue = pitchToDiatonicValue(TOP_LINE_BY_CLEF[clef]);
@@ -337,19 +382,20 @@ function getEventPitchBounds(
 
 function getEstimatedEventInkBounds({
   beat,
-  eventPitches,
+  event,
   measureIndex,
   score,
   staffIndex,
   x,
 }: {
   beat: number;
-  eventPitches: Pitch[];
+  event: ScoreEvent;
   measureIndex: number;
   score: Score;
   staffIndex: number;
   x: number;
 }) {
+  const eventPitches = getEventPitches(event);
   const eventPitchBounds = getEventPitchBounds(
     score,
     staffIndex,
@@ -360,9 +406,9 @@ function getEstimatedEventInkBounds({
 
   return {
     maxX: x + 24,
-    maxY: eventPitchBounds.maxY + BELOW_STAFF_NOTE_INK_ESTIMATE,
+    maxY: eventPitchBounds.maxY + getEstimatedEventBottomInkPadding(event),
     minX: x - 24,
-    minY: eventPitchBounds.minY - NOTEHEAD_ANNOTATION_INK_PADDING,
+    minY: eventPitchBounds.minY - getEstimatedEventTopInkPadding(event),
   };
 }
 
@@ -409,7 +455,7 @@ function getStaffSystemAnnotationExtents(
 
     return getEstimatedEventInkBounds({
       beat: event.beat,
-      eventPitches: getEventPitches(event),
+      event,
       measureIndex: measure.index,
       score,
       staffIndex,
@@ -468,7 +514,7 @@ function getStaffSystemAnnotationExtents(
         const isManualLayout = hasManualAnnotationLayout(event, kind);
         const eventInkBounds = getEstimatedEventInkBounds({
           beat: event.beat,
-          eventPitches: getEventPitches(event),
+          event,
           measureIndex: measure.index,
           score,
           staffIndex,

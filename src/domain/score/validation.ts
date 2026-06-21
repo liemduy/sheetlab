@@ -13,6 +13,7 @@ import type {
   GraceNotePlaybackTiming,
   GraceNoteStealTime,
   HairpinMark,
+  ImportedScoreLayout,
   KeySignature,
   KeySignatureAccidental,
   LyricMap,
@@ -112,6 +113,10 @@ function isString(value: unknown): value is string {
 
 function isNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isOptionalPositiveNumber(value: unknown) {
+  return value === undefined || (isNumber(value) && value >= 0);
 }
 
 function isPitch(value: unknown) {
@@ -270,6 +275,49 @@ function isGraceNoteAttachment(value: unknown): value is GraceNoteAttachment {
   );
 }
 
+function isImportedScoreLayout(value: unknown): value is ImportedScoreLayout {
+  return (
+    isRecord(value) &&
+    value.source === 'musicxml' &&
+    (value.credits === undefined ||
+      (Array.isArray(value.credits) &&
+        value.credits.every(
+          (credit) =>
+            isRecord(credit) &&
+            isNumber(credit.page) &&
+            Number.isInteger(credit.page) &&
+            credit.page >= 1 &&
+            isString(credit.type) &&
+            Array.isArray(credit.lines) &&
+            credit.lines.length > 0 &&
+            credit.lines.every(isString) &&
+            (credit.fontFamily === undefined ||
+              isString(credit.fontFamily)) &&
+            (credit.fontSize === undefined || isNumber(credit.fontSize)) &&
+            (credit.fontStyle === undefined || isString(credit.fontStyle)) &&
+            (credit.fontWeight === undefined || isString(credit.fontWeight)) &&
+            (credit.justify === undefined || isString(credit.justify)) &&
+            (credit.valign === undefined || isString(credit.valign)),
+        ))) &&
+    Array.isArray(value.measureLayouts) &&
+    value.measureLayouts.every(
+      (layout) =>
+        isRecord(layout) &&
+        isNumber(layout.measureIndex) &&
+        Number.isInteger(layout.measureIndex) &&
+        layout.measureIndex >= 0 &&
+        (layout.pageBreakBefore === undefined ||
+          typeof layout.pageBreakBefore === 'boolean') &&
+        (layout.systemBreakBefore === undefined ||
+          typeof layout.systemBreakBefore === 'boolean') &&
+        isOptionalPositiveNumber(layout.staffDistance) &&
+        isOptionalPositiveNumber(layout.systemDistance) &&
+        isOptionalPositiveNumber(layout.topSystemDistance) &&
+        isOptionalPositiveNumber(layout.xmlWidth),
+    )
+  );
+}
+
 function isScoreEvent(value: unknown): value is ScoreEvent {
   if (!isRecord(value)) {
     return false;
@@ -300,6 +348,7 @@ function isScoreEvent(value: unknown): value is ScoreEvent {
     (value.lyric === undefined || isString(value.lyric)) &&
     (value.lyricMap === undefined || isLyricMap(value.lyricMap)) &&
     (value.pedal === undefined || PEDAL_MARKS.has(value.pedal as PedalMark)) &&
+    (value.pedalLine === undefined || typeof value.pedalLine === 'boolean') &&
     (value.slurs === undefined ||
       (Array.isArray(value.slurs) && value.slurs.every(isSlurMark))) &&
     (value.ties === undefined ||
@@ -352,6 +401,8 @@ export function isScore(value: unknown): value is Score {
     isRecord(value.timeSignature) &&
     isNumber(value.timeSignature.beats) &&
     isNumber(value.timeSignature.beatUnit) &&
+    (value.importedLayout === undefined ||
+      isImportedScoreLayout(value.importedLayout)) &&
     Array.isArray(value.parts) &&
     value.parts.every(
       (part) =>

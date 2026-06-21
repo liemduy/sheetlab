@@ -5,6 +5,7 @@ import {
 import { unzipSync } from 'fflate';
 import { createEmptyScore } from './factories';
 import { setMeasureKeySignature } from './editing';
+import { getEventDurationBeats } from './eventDuration';
 import { getEventPitches } from './events';
 import {
   createGraceNoteAttachment,
@@ -19,13 +20,20 @@ import type {
   DurationValue,
   GraceNoteAttachment,
   HairpinMark,
+  ImportedCreditLayout,
+  ImportedMeasureLayout,
   KeySignature,
+  NotationMark,
   NoteStep,
+  OttavaKind,
   PedalMark,
   Pitch,
+  RangeNotationMark,
   Score,
   ScoreEvent,
+  ScorePosition,
   SlurMark,
+  AnnotationPlacementSide,
   StaffId,
   TieMark,
   TimeSignature,
@@ -133,12 +141,38 @@ interface MusicXmlDuration {
   duration: DurationValue;
 }
 
+interface MusicXmlOctaveShiftMark {
+  kind?: OttavaKind;
+  number: string;
+  placement?: AnnotationPlacementSide;
+  type: 'down' | 'stop' | 'up';
+}
+
+interface MusicXmlWedgeMark {
+  hairpin?: HairpinMark;
+  number: string;
+  placement?: AnnotationPlacementSide;
+  type: 'crescendo' | 'diminuendo' | 'stop';
+}
+
 interface MusicXmlDirectionMark {
   beat: number;
   dynamic?: string;
   hairpin?: HairpinMark;
+  octaveShift?: MusicXmlOctaveShiftMark;
   pedal?: PedalMark;
+  pedalLine?: boolean;
+  rehearsal?: string;
   staffId: StaffId;
+  wedge?: MusicXmlWedgeMark;
+  words?: string;
+}
+
+interface MusicXmlDirectionTargetContext {
+  event: ScoreEvent;
+  measureIndex: number;
+  staffId: StaffId;
+  voiceIndex: number;
 }
 
 interface MusicXmlTupletState {
@@ -805,6 +839,121 @@ function getMusicXmlComposer(document: Document) {
     getTextContent(document, 'creator');
 }
 
+function getMusicXmlCreditLayouts(document: Document): ImportedCreditLayout[] {
+  return [...document.querySelectorAll('credit')].reduce<ImportedCreditLayout[]>(
+    (credits, credit) => {
+      const words = getDirectChildren(credit, 'credit-words');
+      const lines = words
+        .map((word) => word.textContent?.replace(/\s+/g, ' ').trim() ?? '')
+        .filter((line) => line.length > 0);
+      const firstWord = words[0] ?? null;
+      const page = Number(credit.getAttribute('page') ?? '1');
+      const fontSize = Number(firstWord?.getAttribute('font-size') ?? '');
+
+      if (lines.length === 0) {
+        return credits;
+      }
+
+      credits.push({
+        fontFamily: firstWord?.getAttribute('font-family') ?? undefined,
+        fontSize: Number.isFinite(fontSize) && fontSize > 0
+          ? fontSize
+          : undefined,
+        fontStyle: firstWord?.getAttribute('font-style') ?? undefined,
+        fontWeight: firstWord?.getAttribute('font-weight') ?? undefined,
+        justify: firstWord?.getAttribute('justify') ?? undefined,
+        lines,
+        page: Number.isFinite(page) && page >= 1 ? Math.round(page) : 1,
+        type: getDirectChildText(credit, 'credit-type') || 'other',
+        valign: firstWord?.getAttribute('valign') ?? undefined,
+      });
+
+      return credits;
+    },
+    [],
+  );
+}
+
+function getMusicXmlOptionalNumber(value: string | null | undefined) {
+  const number = Number(value);
+
+  return Number.isFinite(number) ? number : undefined;
+}
+
+function getMusicXmlOptionalElementNumber(
+  parent: Element | null,
+  selector: string,
+) {
+  return parent
+    ? getMusicXmlOptionalNumber(parent.querySelector(selector)?.textContent?.trim())
+    : undefined;
+}
+
+function parseMusicXmlMeasureLayout(
+  measure: Element,
+  measureIndex: number,
+): ImportedMeasureLayout | null {
+  const print = getDirectChild(measure, 'print');
+  const systemLayout = print?.querySelector('system-layout') ?? null;
+  const staffLayout = print?.querySelector('staff-layout[number="2"]') ??
+    print?.querySelector('staff-layout') ??
+    null;
+  const layout: ImportedMeasureLayout = {
+    measureIndex,
+  };
+  const xmlWidth = getMusicXmlOptionalNumber(measure.getAttribute('width'));
+  const systemDistance = getMusicXmlOptionalElementNumber(
+    systemLayout,
+    'system-distance',
+  );
+  const topSystemDistance = getMusicXmlOptionalElementNumber(
+    systemLayout,
+    'top-system-distance',
+  );
+  const staffDistance = getMusicXmlOptionalElementNumber(
+    staffLayout,
+    'staff-distance',
+  );
+
+  if (xmlWidth !== undefined && xmlWidth > 0) {
+    layout.xmlWidth = xmlWidth;
+  }
+
+  if (print?.getAttribute('new-page') === 'yes') {
+    layout.pageBreakBefore = measureIndex > 0;
+  }
+
+  if (print?.getAttribute('new-system') === 'yes') {
+    layout.systemBreakBefore = measureIndex > 0;
+  }
+
+  if (systemDistance !== undefined) {
+    layout.systemDistance = systemDistance;
+  }
+
+  if (topSystemDistance !== undefined) {
+    layout.topSystemDistance = topSystemDistance;
+  }
+
+  if (staffDistance !== undefined) {
+    layout.staffDistance = staffDistance;
+  }
+
+  return Object.keys(layout).length > 1 ? layout : null;
+}
+
+function getMusicXmlImportedMeasureLayouts(
+  part: Element | null,
+): ImportedMeasureLayout[] {
+  return part
+    ? [...part.querySelectorAll(':scope > measure')]
+        .map((measure, measureIndex) =>
+          parseMusicXmlMeasureLayout(measure, measureIndex),
+        )
+        .filter((layout): layout is ImportedMeasureLayout => Boolean(layout))
+    : [];
+}
+
 function createMusicXmlEvent({
   beat,
   duration,
@@ -878,6 +1027,51 @@ function getDirectionBeat(direction: Element, cursorUnits: number, divisions: nu
   return Math.max(0, cursorUnits + offsetUnits) / ABC_UNITS_PER_QUARTER;
 }
 
+function getMusicXmlDirectionPlacement(
+  direction: Element,
+  element?: Element | null,
+): AnnotationPlacementSide | undefined {
+  const explicitPlacement = direction.getAttribute('placement');
+
+  if (explicitPlacement === 'above' || explicitPlacement === 'below') {
+    return explicitPlacement;
+  }
+
+  const defaultY = getMusicXmlOptionalNumber(element?.getAttribute('default-y'));
+
+  if (defaultY !== undefined) {
+    return defaultY < 0 ? 'below' : 'above';
+  }
+
+  return undefined;
+}
+
+function getMusicXmlOctaveShiftKind(
+  type: string,
+  size: string,
+  placement?: AnnotationPlacementSide,
+): OttavaKind | undefined {
+  if (type !== 'up' && type !== 'down') {
+    return undefined;
+  }
+
+  const isBelow = placement === 'below' || (!placement && type === 'down');
+
+  if (size === '15') {
+    return isBelow ? '15mb' : '15ma';
+  }
+
+  return isBelow ? '8vb' : '8va';
+}
+
+function getMusicXmlDirectionText(direction: Element, localName: string) {
+  return [...direction.querySelectorAll(localName)]
+    .map((element) => element.textContent?.trim() ?? '')
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+}
+
 function parseMusicXmlDirection(
   direction: Element,
   cursorUnits: number,
@@ -887,9 +1081,13 @@ function parseMusicXmlDirection(
   const dynamicElement = direction.querySelector('dynamics')?.firstElementChild;
   const pedalElement = direction.querySelector('pedal');
   const wedgeElement = direction.querySelector('wedge');
+  const octaveShiftElement = direction.querySelector('octave-shift');
   const staffId = parseMusicXmlStaffId(direction, fallbackStaffId);
   const pedalType = pedalElement?.getAttribute('type') ?? '';
   const wedgeType = wedgeElement?.getAttribute('type') ?? '';
+  const octaveShiftType = octaveShiftElement?.getAttribute('type') ?? '';
+  const words = getMusicXmlDirectionText(direction, 'words');
+  const rehearsal = getMusicXmlDirectionText(direction, 'rehearsal');
   const pedal: PedalMark | undefined =
     pedalType === 'start'
       ? 'start'
@@ -898,14 +1096,58 @@ function parseMusicXmlDirection(
         : pedalType === 'change'
           ? 'start-release'
           : undefined;
+  const pedalLineAttribute = pedalElement?.getAttribute('line');
+  const pedalLine = pedal
+    ? pedalLineAttribute === 'no'
+      ? false
+      : pedalLineAttribute === 'yes'
+        ? true
+        : undefined
+    : undefined;
   const hairpin: HairpinMark | undefined =
     wedgeType === 'crescendo'
       ? 'crescendo'
       : wedgeType === 'diminuendo'
         ? 'diminuendo'
         : undefined;
+  const wedge: MusicXmlWedgeMark | undefined =
+    wedgeType === 'crescendo' || wedgeType === 'diminuendo' || wedgeType === 'stop'
+      ? {
+          hairpin,
+          number: wedgeElement?.getAttribute('number') || '1',
+          placement: getMusicXmlDirectionPlacement(direction, wedgeElement),
+          type: wedgeType,
+        }
+      : undefined;
+  const octavePlacement = getMusicXmlDirectionPlacement(
+    direction,
+    octaveShiftElement,
+  );
+  const octaveShift: MusicXmlOctaveShiftMark | undefined =
+    octaveShiftType === 'up' ||
+    octaveShiftType === 'down' ||
+    octaveShiftType === 'stop'
+      ? {
+          kind: getMusicXmlOctaveShiftKind(
+            octaveShiftType,
+            octaveShiftElement?.getAttribute('size') ?? '8',
+            octavePlacement,
+          ),
+          number: octaveShiftElement?.getAttribute('number') || '1',
+          placement: octavePlacement,
+          type: octaveShiftType,
+        }
+      : undefined;
 
-  if (!dynamicElement && !pedal && !hairpin) {
+  if (
+    !dynamicElement &&
+    !pedal &&
+    !hairpin &&
+    !octaveShift &&
+    !rehearsal &&
+    !wedge &&
+    !words
+  ) {
     return null;
   }
 
@@ -913,23 +1155,28 @@ function parseMusicXmlDirection(
     beat: getDirectionBeat(direction, cursorUnits, divisions),
     dynamic: dynamicElement?.localName,
     hairpin,
+    octaveShift,
     pedal,
+    pedalLine,
+    rehearsal,
     staffId,
+    wedge,
+    words,
   } satisfies MusicXmlDirectionMark;
 }
 
 function findDirectionTargetEvent(
-  events: ScoreEvent[],
+  contexts: MusicXmlDirectionTargetContext[],
   beat: number,
 ) {
-  return events
-    .filter((event) => event.kind !== 'rest')
+  return contexts
+    .filter(({ event }) => event.kind !== 'rest')
     .sort((first, second) => {
-      const firstIsAfter = first.beat >= beat ? 0 : 1;
-      const secondIsAfter = second.beat >= beat ? 0 : 1;
+      const firstIsAfter = first.event.beat >= beat ? 0 : 1;
+      const secondIsAfter = second.event.beat >= beat ? 0 : 1;
 
       return firstIsAfter - secondIsAfter ||
-        Math.abs(first.beat - beat) - Math.abs(second.beat - beat);
+        Math.abs(first.event.beat - beat) - Math.abs(second.event.beat - beat);
     })[0] ?? null;
 }
 
@@ -937,27 +1184,73 @@ function applyMusicXmlDirectionMarks(
   eventsByMeasure: Map<string, ScoreEvent[]>,
   measureIndex: number,
   marks: readonly MusicXmlDirectionMark[],
+  handlers?: {
+    onHairpinDirection?: (
+      mark: MusicXmlDirectionMark,
+      target: MusicXmlDirectionTargetContext,
+    ) => void;
+    onOctaveShiftDirection?: (
+      mark: MusicXmlDirectionMark,
+      target: MusicXmlDirectionTargetContext,
+    ) => void;
+    onRehearsal?: (mark: MusicXmlDirectionMark) => void;
+  },
 ) {
   marks.forEach((mark) => {
-    const events = [...eventsByMeasure.entries()]
+    const contexts = [...eventsByMeasure.entries()]
       .filter(([key]) => key.startsWith(`${mark.staffId}:${measureIndex}:`))
-      .flatMap(([, measureEvents]) => measureEvents);
-    const target = findDirectionTargetEvent(events, mark.beat);
+      .flatMap(([key, measureEvents]) => {
+        const [, , voiceIndexText] = key.split(':');
+        const voiceIndex = Number(voiceIndexText);
+
+        return measureEvents.map((event) => ({
+          event,
+          measureIndex,
+          staffId: mark.staffId,
+          voiceIndex: Number.isInteger(voiceIndex) ? voiceIndex : 0,
+        }));
+      });
+    const target = findDirectionTargetEvent(contexts, mark.beat);
+
+    if (mark.rehearsal) {
+      handlers?.onRehearsal?.(mark);
+    }
 
     if (!target) {
       return;
     }
 
     if (mark.dynamic) {
-      target.dynamic = mark.dynamic;
+      target.event.dynamic = mark.dynamic;
     }
 
     if (mark.pedal) {
-      target.pedal = mergePedalMark(target.pedal, mark.pedal);
+      target.event.pedal = mergePedalMark(target.event.pedal, mark.pedal);
+      if (mark.pedalLine !== undefined) {
+        target.event.pedalLine = mark.pedalLine;
+      }
     }
 
     if (mark.hairpin) {
-      target.hairpin = mark.hairpin;
+      target.event.hairpin = mark.hairpin;
+    }
+
+    if (mark.words) {
+      target.event.chordSymbol = target.event.chordSymbol
+        ? `${target.event.chordSymbol} ${mark.words}`
+        : mark.words;
+      target.event.annotationPlacements = {
+        ...(target.event.annotationPlacements ?? {}),
+        chordSymbol: 'above',
+      };
+    }
+
+    if (mark.wedge) {
+      handlers?.onHairpinDirection?.(mark, target);
+    }
+
+    if (mark.octaveShift) {
+      handlers?.onOctaveShiftDirection?.(mark, target);
     }
   });
 }
@@ -1082,6 +1375,16 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
           part.querySelectorAll(':scope > measure').length,
         )),
   );
+  const importedMeasureLayouts = getMusicXmlImportedMeasureLayouts(firstPart);
+  const importedCredits = getMusicXmlCreditLayouts(document);
+  const importedLayout = importedMeasureLayouts.length > 0 ||
+    importedCredits.length > 0
+    ? {
+        ...(importedCredits.length > 0 ? { credits: importedCredits } : {}),
+        measureLayouts: importedMeasureLayouts,
+        source: 'musicxml' as const,
+      }
+    : undefined;
   const baseScore = createEmptyScore(scoreType, {
     composer,
     measureCount,
@@ -1095,6 +1398,26 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
   const eventById = new Map<string, ScoreEvent>();
   const pendingSlurByKey = new Map<string, { eventId: string }>();
   const pendingTieByPitch = new Map<string, MusicXmlConnectionSource>();
+  const pendingHairpinByKey = new Map<
+    string,
+    {
+      hairpin: HairpinMark;
+      placement?: AnnotationPlacementSide;
+      sourceEventId: string;
+      start: ScorePosition;
+    }
+  >();
+  const pendingOttavaByKey = new Map<
+    string,
+    {
+      kind: OttavaKind;
+      placement?: AnnotationPlacementSide;
+      sourceEventId: string;
+      start: ScorePosition;
+    }
+  >();
+  const importedMarks: NotationMark[] = [];
+  const sectionMarkersByMeasure = new Map<number, string>();
   const voiceIndexesByStaff = new Map<StaffId, Map<string, number>>();
   const activeClefByStaff = new Map<StaffId, Clef>([
     ['bass', 'bass'],
@@ -1139,6 +1462,120 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
 
   function registerEvent(event: ScoreEvent) {
     eventById.set(event.id, event);
+  }
+
+  function getDirectionTargetStartPosition(
+    target: MusicXmlDirectionTargetContext,
+  ): ScorePosition {
+    return {
+      beat: target.event.beat,
+      measureIndex: target.measureIndex,
+      staffId: target.staffId,
+      voiceIndex: target.voiceIndex,
+    };
+  }
+
+  function getDirectionTargetEndPosition(
+    target: MusicXmlDirectionTargetContext,
+  ): ScorePosition {
+    return {
+      beat: target.event.beat + getEventDurationBeats(target.event),
+      measureIndex: target.measureIndex,
+      staffId: target.staffId,
+      voiceIndex: target.voiceIndex,
+    };
+  }
+
+  function applyImportedHairpinDirection(
+    mark: MusicXmlDirectionMark,
+    target: MusicXmlDirectionTargetContext,
+  ) {
+    if (!mark.wedge) {
+      return;
+    }
+
+    const key = `${mark.staffId}:${mark.wedge.number}`;
+
+    if (mark.wedge.type === 'crescendo' || mark.wedge.type === 'diminuendo') {
+      if (!mark.wedge.hairpin) {
+        return;
+      }
+
+      pendingHairpinByKey.set(key, {
+        hairpin: mark.wedge.hairpin,
+        placement: mark.wedge.placement ?? 'below',
+        sourceEventId: target.event.id,
+        start: getDirectionTargetStartPosition(target),
+      });
+      return;
+    }
+
+    const source = pendingHairpinByKey.get(key);
+
+    if (!source || source.sourceEventId === target.event.id) {
+      pendingHairpinByKey.delete(key);
+      return;
+    }
+
+    importedMarks.push({
+      end: getDirectionTargetEndPosition(target),
+      hairpin: source.hairpin,
+      id: `xml-hairpin-${source.sourceEventId}-${target.event.id}-${mark.wedge.number}`,
+      kind: 'hairpin',
+      placement: source.placement,
+      scope: 'range',
+      sourceEventId: source.sourceEventId,
+      start: source.start,
+      targetEventId: target.event.id,
+    } satisfies RangeNotationMark);
+    pendingHairpinByKey.delete(key);
+  }
+
+  function applyImportedOctaveShiftDirection(
+    mark: MusicXmlDirectionMark,
+    target: MusicXmlDirectionTargetContext,
+  ) {
+    if (!mark.octaveShift) {
+      return;
+    }
+
+    const key = `${mark.staffId}:${mark.octaveShift.number}`;
+
+    if (mark.octaveShift.type === 'up' || mark.octaveShift.type === 'down') {
+      if (!mark.octaveShift.kind) {
+        return;
+      }
+
+      pendingOttavaByKey.set(key, {
+        kind: mark.octaveShift.kind,
+        placement:
+          mark.octaveShift.placement ??
+          (mark.octaveShift.kind.endsWith('b') ? 'below' : 'above'),
+        sourceEventId: target.event.id,
+        start: getDirectionTargetStartPosition(target),
+      });
+      return;
+    }
+
+    const source = pendingOttavaByKey.get(key);
+
+    if (!source || source.sourceEventId === target.event.id) {
+      pendingOttavaByKey.delete(key);
+      return;
+    }
+
+    importedMarks.push({
+      end: getDirectionTargetEndPosition(target),
+      id: `xml-ottava-${source.sourceEventId}-${target.event.id}-${mark.octaveShift.number}`,
+      kind: 'ottava',
+      ottava: source.kind,
+      placement: source.placement,
+      scope: 'range',
+      sourceEventId: source.sourceEventId,
+      start: source.start,
+      targetEventId: target.event.id,
+    } satisfies RangeNotationMark);
+    pendingOttavaByKey.delete(key);
   }
 
   function addClefChange(
@@ -1478,7 +1915,15 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
         cursorUnits += durationUnits;
       });
 
-      applyMusicXmlDirectionMarks(eventsByMeasure, measureIndex, directionMarks);
+      applyMusicXmlDirectionMarks(eventsByMeasure, measureIndex, directionMarks, {
+        onHairpinDirection: applyImportedHairpinDirection,
+        onOctaveShiftDirection: applyImportedOctaveShiftDirection,
+        onRehearsal: (mark) => {
+          if (mark.rehearsal) {
+            sectionMarkersByMeasure.set(measureIndex, mark.rehearsal);
+          }
+        },
+      });
     });
   }
 
@@ -1492,6 +1937,10 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
   return {
     score: {
       ...scoreWithKey,
+      importedLayout,
+      marks: importedMarks.length > 0
+        ? [...(scoreWithKey.marks ?? []), ...importedMarks]
+        : scoreWithKey.marks,
       parts: scoreWithKey.parts.map((part) => ({
         ...part,
         staves: part.staves.map((staff) => ({
@@ -1503,6 +1952,11 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
                   clefChanges: clefChangesByMeasure.get(
                     `${staff.id}:${measure.index}`,
                   ),
+                }
+              : {}),
+            ...(staff.id === 'treble' && sectionMarkersByMeasure.has(measure.index)
+              ? {
+                  sectionMarker: sectionMarkersByMeasure.get(measure.index),
                 }
               : {}),
             voices: getImportedMeasureVoices(

@@ -34,6 +34,36 @@ import type {
 
 const PAGE_OBSERVER_DELAY_MS = 160;
 
+interface ImportedCreditHeading {
+  composerLines: string[];
+  title: string;
+}
+
+function getImportedCreditHeading(score: Score): ImportedCreditHeading | null {
+  const firstPageCredits = score.importedLayout?.credits?.filter(
+    (credit) => credit.page === 1,
+  );
+
+  if (!firstPageCredits || firstPageCredits.length === 0) {
+    return null;
+  }
+
+  const titleCredit = firstPageCredits.find(
+    (credit) => credit.type.toLowerCase() === 'title',
+  );
+  const composerCredit = firstPageCredits.find(
+    (credit) => credit.type.toLowerCase() === 'composer',
+  );
+  const title = titleCredit?.lines.join(' ').trim() || score.title;
+  const composerLines = composerCredit?.lines.filter(Boolean) ??
+    (score.composer ? [score.composer] : []);
+
+  return {
+    composerLines,
+    title,
+  };
+}
+
 export interface ReferenceBackground {
   kind: 'image' | 'pdf';
   name: string;
@@ -410,6 +440,8 @@ export function SheetSurface({
             pageViewports.length <= 1 ||
             renderedPageIndexes.has(pageViewport.index) ||
             isPlaybackPage;
+          const importedCreditHeading =
+            pageViewport.index === 0 ? getImportedCreditHeading(score) : null;
 
           return (
             <div
@@ -423,31 +455,49 @@ export function SheetSurface({
               }
             >
               {pageViewport.index === 0 ? (
-                <div className="paper-heading">
-                  <input
-                    aria-label="Score title"
-                    className="score-title-input"
-                    value={score.title}
-                    onChange={(event) =>
-                      onUpdateScoreMetadata({ title: event.target.value })
-                    }
-                    onClick={onClearInteraction}
-                    onFocus={onClearInteraction}
-                  />
-                  <div className="score-meta-row">
+                importedCreditHeading ? (
+                  <div
+                    aria-label="Imported score credit heading"
+                    className="paper-heading paper-heading-imported"
+                  >
+                    <div className="imported-score-title">
+                      {importedCreditHeading.title}
+                    </div>
+                    {importedCreditHeading.composerLines.length > 0 ? (
+                      <div className="imported-score-credits">
+                        {importedCreditHeading.composerLines.map((line) => (
+                          <div key={line}>{line}</div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="paper-heading">
                     <input
-                      aria-label="Composer"
-                      className="score-composer-input"
-                      placeholder="Composer"
-                      value={score.composer}
+                      aria-label="Score title"
+                      className="score-title-input"
+                      value={score.title}
                       onChange={(event) =>
-                        onUpdateScoreMetadata({ composer: event.target.value })
+                        onUpdateScoreMetadata({ title: event.target.value })
                       }
                       onClick={onClearInteraction}
                       onFocus={onClearInteraction}
                     />
+                    <div className="score-meta-row">
+                      <input
+                        aria-label="Composer"
+                        className="score-composer-input"
+                        placeholder="Composer"
+                        value={score.composer}
+                        onChange={(event) =>
+                          onUpdateScoreMetadata({ composer: event.target.value })
+                        }
+                        onClick={onClearInteraction}
+                        onFocus={onClearInteraction}
+                      />
+                    </div>
                   </div>
-                </div>
+                )
               ) : null}
               <div
                 className="notation-scroll"

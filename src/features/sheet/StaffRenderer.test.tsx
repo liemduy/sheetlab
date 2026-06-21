@@ -28,11 +28,13 @@ import type {
   ChordEvent,
   Clef,
   Pitch,
+  RangeNotationMark,
   ScoreType,
   StaffId,
 } from '../../domain/score/types';
 import type { MusicPosition } from './interaction';
 import { getMeasureKey } from './measureKey';
+import { PEDAL_PED_GLYPH, PEDAL_UP_GLYPH } from './pedalMarks';
 import {
   MEASURES_PER_SYSTEM,
   STAFF_GAP,
@@ -2523,7 +2525,7 @@ describe('StaffRenderer', () => {
 
     await waitFor(() => {
       expect(screen.getAllByTestId('measure-number').map((node) => node.textContent))
-        .toEqual(['1', String(MEASURES_PER_SYSTEM + 1)]);
+        .toEqual([String(MEASURES_PER_SYSTEM + 1)]);
     });
   });
 
@@ -2999,7 +3001,10 @@ describe('StaffRenderer', () => {
     await waitFor(() => {
       expect(screen.getByTestId('rendered-dynamic')).toHaveTextContent('mf');
       expect(screen.getByTestId('rendered-fermata')).toBeInTheDocument();
-      expect(screen.getAllByTestId('rendered-pedal')[0]).toHaveTextContent('Ped.');
+      expect(screen.getAllByTestId('rendered-pedal')[0]).toHaveAttribute(
+        'data-pedal-mark',
+        'start',
+      );
       expect(screen.getByTestId('rendered-pedal-line')).toHaveAttribute(
         'data-source-id',
         'marked-note-1',
@@ -3012,6 +3017,144 @@ describe('StaffRenderer', () => {
       expect(screen.getByTestId('rendered-hairpin')).toHaveAttribute(
         'data-hairpin',
         'crescendo',
+      );
+    });
+  });
+
+  it('renders pedal changes with engraved release and pedal glyphs', async () => {
+    const noteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'pedal-change-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const score = tryUpdateScoreEvent(noteScore, 'pedal-change-note', {
+      pedal: 'start-release',
+    }).score;
+
+    const { container } = render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      const pedal = screen.getByTestId('rendered-pedal');
+      const pedalParts = container.querySelectorAll(
+        '[data-testid="rendered-pedal"] .sheetlab-pedal-glyph',
+      );
+
+      expect(pedal).toHaveAttribute('data-pedal-mark', 'start-release');
+      expect(pedal).toHaveAttribute('aria-label', 'Pedal change');
+      expect(pedalParts).toHaveLength(2);
+      expect(pedalParts[0]).toHaveTextContent(PEDAL_UP_GLYPH);
+      expect(pedalParts[1]).toHaveTextContent(PEDAL_PED_GLYPH);
+      expect(
+        container.querySelector(
+          '[data-testid="annotation-hit-target"][data-annotation-kind="pedal"]',
+        ),
+      ).toHaveAttribute('data-event-id', 'pedal-change-note');
+    });
+  });
+
+  it('renders sign-only MusicXML pedal marks without sustain brackets', async () => {
+    const firstNoteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'pedal-sign-start',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const secondNoteScore = placeScoreEvent(firstNoteScore, {
+      eventId: 'pedal-sign-release',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 1,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'D', octave: 4 },
+    });
+    const scoreWithStart = tryUpdateScoreEvent(
+      secondNoteScore,
+      'pedal-sign-start',
+      {
+        pedal: 'start',
+        pedalLine: false,
+      },
+    ).score;
+    const score = tryUpdateScoreEvent(scoreWithStart, 'pedal-sign-release', {
+      pedal: 'release',
+      pedalLine: false,
+    }).score;
+
+    render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('rendered-pedal')).toHaveLength(2);
+    });
+    expect(screen.queryByTestId('rendered-pedal-line')).not.toBeInTheDocument();
+  });
+
+  it('renders explicit range hairpin marks without requiring legacy event hairpins', async () => {
+    const firstNoteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'range-hairpin-source',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 4 },
+    });
+    const secondNoteScore = placeScoreEvent(firstNoteScore, {
+      eventId: 'range-hairpin-target',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 2,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'G', octave: 4 },
+    });
+    const hairpin: RangeNotationMark = {
+      end: {
+        beat: 3,
+        measureIndex: 0,
+        staffId: 'treble',
+        voiceIndex: 0,
+      },
+      hairpin: 'diminuendo',
+      id: 'range-hairpin-mark',
+      kind: 'hairpin',
+      placement: 'below',
+      scope: 'range',
+      sourceEventId: 'range-hairpin-source',
+      start: {
+        beat: 0,
+        measureIndex: 0,
+        staffId: 'treble',
+        voiceIndex: 0,
+      },
+      targetEventId: 'range-hairpin-target',
+    };
+    const score = {
+      ...secondNoteScore,
+      marks: [hairpin],
+    };
+
+    render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-hairpin')).toHaveAttribute(
+        'data-hairpin',
+        'diminuendo',
+      );
+      expect(screen.getByTestId('rendered-hairpin')).toHaveAttribute(
+        'data-source-id',
+        'range-hairpin-source',
+      );
+      expect(screen.getByTestId('rendered-hairpin')).toHaveAttribute(
+        'data-target-id',
+        'range-hairpin-target',
       );
     });
   });
@@ -3516,7 +3659,10 @@ describe('StaffRenderer', () => {
     await waitFor(() => {
       expect(screen.getByTestId('rendered-lyric')).toHaveTextContent('sing');
       expect(screen.getByTestId('rendered-dynamic')).toHaveTextContent('mf');
-      expect(screen.getByTestId('rendered-pedal')).toHaveTextContent('Ped.');
+      expect(screen.getByTestId('rendered-pedal')).toHaveAttribute(
+        'data-pedal-mark',
+        'start',
+      );
     });
 
     const lyricY = Number(screen.getByTestId('rendered-lyric').getAttribute('y'));
@@ -3608,7 +3754,10 @@ describe('StaffRenderer', () => {
     await waitFor(() => {
       expect(screen.getByTestId('rendered-lyric')).toHaveTextContent('cc');
       expect(screen.getByTestId('rendered-dynamic')).toHaveTextContent('mf');
-      expect(screen.getByTestId('rendered-pedal')).toHaveTextContent('Ped.');
+      expect(screen.getByTestId('rendered-pedal')).toHaveAttribute(
+        'data-pedal-mark',
+        'start',
+      );
     });
 
     const lyricY = Number(screen.getByTestId('rendered-lyric').getAttribute('y'));
@@ -3705,7 +3854,7 @@ describe('StaffRenderer', () => {
 
     expect(lyric).toHaveAttribute('data-voice-index', '0');
     expect(lyricTop).toBeGreaterThanOrEqual(expectedOwningNoteBottom);
-    expect(lyricTop).toBeLessThanOrEqual(expectedOwningNoteBottom + 5);
+    expect(lyricTop).toBeLessThanOrEqual(expectedOwningNoteBottom + 8);
     expect(lyricTop).toBeLessThan(distantLowPitchY);
   });
 
@@ -3829,7 +3978,10 @@ describe('StaffRenderer', () => {
     render(<StaffRenderer score={score} />);
 
     await waitFor(() => {
-      expect(screen.getByTestId('rendered-pedal')).toHaveTextContent('Ped.');
+      expect(screen.getByTestId('rendered-pedal')).toHaveAttribute(
+        'data-pedal-mark',
+        'start',
+      );
     });
 
     expect(screen.getByTestId('rendered-pedal')).toHaveAttribute(
@@ -4131,7 +4283,10 @@ describe('StaffRenderer', () => {
     render(<StaffRenderer score={score} />);
 
     await waitFor(() => {
-      expect(screen.getByTestId('rendered-pedal')).toHaveTextContent('Ped.');
+      expect(screen.getByTestId('rendered-pedal')).toHaveAttribute(
+        'data-pedal-mark',
+        'start',
+      );
     });
 
     const staffGap = getScoreStaffGap(score);
@@ -4163,7 +4318,10 @@ describe('StaffRenderer', () => {
     render(<StaffRenderer score={score} />);
 
     await waitFor(() => {
-      expect(screen.getByTestId('rendered-pedal')).toHaveTextContent('Ped.');
+      expect(screen.getByTestId('rendered-pedal')).toHaveAttribute(
+        'data-pedal-mark',
+        'start',
+      );
     });
 
     const firstSystemGap = getScoreStaffGap(score, 0);

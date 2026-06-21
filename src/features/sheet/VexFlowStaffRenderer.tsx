@@ -311,9 +311,11 @@ function drawVexFlowStaves(
   {
     fingeringHints,
     pageViewport,
+    showMeasureNumbers,
   }: {
     fingeringHints?: StaffRendererProps['fingeringHints'];
     pageViewport?: StaffRendererProps['pageViewport'];
+    showMeasureNumbers?: boolean;
   } = {},
 ) {
   const staves = score.parts[0]?.staves ?? [];
@@ -444,6 +446,7 @@ function drawVexFlowStaves(
     score,
     eventLayouts,
     visibleMeasureIndexes,
+    showMeasureNumbers ?? false,
   );
   drawFingeringHints(
     container,
@@ -658,6 +661,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
             ? props.fingeringHints
             : [],
           pageViewport: props.pageViewport,
+          showMeasureNumbers: props.showMeasureNumbers,
         },
       );
       setEventLayouts(nextEventLayouts);
@@ -680,6 +684,7 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
     props.practiceFeedbackByEventId,
     props.score,
     props.showFingeringHints,
+    props.showMeasureNumbers,
   ]);
 
   useEffect(() => {
@@ -784,7 +789,6 @@ export function VexFlowStaffRenderer(props: StaffRendererProps) {
         selectedPitchIndex={props.selectedPitchIndex}
         showLayoutZones={props.showLayoutZones ?? false}
         showLyricMap={props.showLyricMap ?? false}
-        showMeasureNumbers={props.showMeasureNumbers ?? false}
         svgHeight={pageHeight}
         svgWidth={width}
         voiceIndex={props.voiceIndex}

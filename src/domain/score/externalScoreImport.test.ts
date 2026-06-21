@@ -117,7 +117,7 @@ describe('externalScoreImport', () => {
             </note>
             <backup><duration>1</duration></backup>
             <direction>
-              <direction-type><pedal type="start"/></direction-type>
+              <direction-type><pedal type="start" line="no"/></direction-type>
               <staff>2</staff>
             </direction>
             <note>
@@ -128,7 +128,7 @@ describe('externalScoreImport', () => {
               <staff>2</staff>
             </note>
             <direction>
-              <direction-type><pedal type="stop"/></direction-type>
+              <direction-type><pedal type="stop" line="no"/></direction-type>
               <staff>2</staff>
             </direction>
           </measure>
@@ -153,6 +153,8 @@ describe('externalScoreImport', () => {
     expect(trebleEvents.some((event) => event.dynamic === 'mf')).toBe(true);
     expect(trebleEvents.some((event) => event.hairpin === 'crescendo')).toBe(true);
     expect(bassEvents.some((event) => event.pedal)).toBe(true);
+    expect(bassEvents.filter((event) => event.pedal).map((event) => event.pedalLine))
+      .toEqual([false]);
   });
 
   it('imports MusicXML grace notes as attachments without rhythm overlap', () => {
@@ -443,6 +445,132 @@ describe('externalScoreImport', () => {
       }),
     ]);
     expect(getScoreRhythmIssues(result.score)).toEqual([]);
+  });
+
+  it('imports MusicXML engraving layout and range directions', () => {
+    const result = importScoreFromMusicXml(`
+      <score-partwise version="3.1">
+        <work><work-title>Engraved XML</work-title></work>
+        <credit page="1">
+          <credit-type>title</credit-type>
+          <credit-words font-family="Courier New" font-size="24" font-weight="bold">Engraved XML</credit-words>
+        </credit>
+        <credit page="1">
+          <credit-type>composer</credit-type>
+          <credit-words font-family="Courier New" font-size="12">Composer: Tester</credit-words>
+          <credit-words>Arranger: SheetLab</credit-words>
+        </credit>
+        <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+        <part id="P1">
+          <measure number="1" width="320">
+            <print>
+              <system-layout><top-system-distance>72</top-system-distance></system-layout>
+              <staff-layout number="2"><staff-distance>76</staff-distance></staff-layout>
+            </print>
+            <attributes>
+              <divisions>1</divisions>
+              <time><beats>4</beats><beat-type>4</beat-type></time>
+              <staves>2</staves>
+            </attributes>
+            <direction placement="above">
+              <direction-type><rehearsal>A</rehearsal></direction-type>
+              <staff>1</staff>
+            </direction>
+            <direction placement="above">
+              <direction-type><words font-style="italic">rit.</words></direction-type>
+              <staff>1</staff>
+            </direction>
+            <direction placement="above">
+              <direction-type><octave-shift type="up" size="8" number="1"/></direction-type>
+              <staff>1</staff>
+            </direction>
+            <direction placement="below">
+              <direction-type><wedge type="crescendo" number="1"/></direction-type>
+              <staff>1</staff>
+            </direction>
+            <note>
+              <pitch><step>C</step><octave>5</octave></pitch>
+              <duration>1</duration>
+              <voice>1</voice>
+              <type>quarter</type>
+              <staff>1</staff>
+            </note>
+          </measure>
+          <measure number="2" width="160">
+            <print new-system="yes"><system-layout><system-distance>100</system-distance></system-layout></print>
+            <direction placement="below">
+              <direction-type><wedge type="stop" number="1"/></direction-type>
+              <staff>1</staff>
+            </direction>
+            <note>
+              <pitch><step>D</step><octave>5</octave></pitch>
+              <duration>1</duration>
+              <voice>1</voice>
+              <type>quarter</type>
+              <staff>1</staff>
+            </note>
+            <direction placement="above">
+              <direction-type><octave-shift type="stop" size="8" number="1"/></direction-type>
+              <staff>1</staff>
+            </direction>
+          </measure>
+        </part>
+      </score-partwise>
+    `);
+    const trebleMeasures = result.score.parts[0]?.staves.find(
+      (staff) => staff.id === 'treble',
+    )?.measures;
+    const firstEvent = trebleMeasures?.[0]?.voices[0]?.events[0];
+    const marks = result.score.marks ?? [];
+
+    expect(result.score.importedLayout?.measureLayouts).toEqual([
+      expect.objectContaining({
+        measureIndex: 0,
+        staffDistance: 76,
+        topSystemDistance: 72,
+        xmlWidth: 320,
+      }),
+      expect.objectContaining({
+        measureIndex: 1,
+        systemBreakBefore: true,
+        systemDistance: 100,
+        xmlWidth: 160,
+      }),
+    ]);
+    expect(result.score.importedLayout?.credits).toEqual([
+      expect.objectContaining({
+        fontFamily: 'Courier New',
+        fontSize: 24,
+        fontWeight: 'bold',
+        lines: ['Engraved XML'],
+        page: 1,
+        type: 'title',
+      }),
+      expect.objectContaining({
+        fontFamily: 'Courier New',
+        fontSize: 12,
+        lines: ['Composer: Tester', 'Arranger: SheetLab'],
+        page: 1,
+        type: 'composer',
+      }),
+    ]);
+    expect(trebleMeasures?.[0]?.sectionMarker).toBe('A');
+    expect(firstEvent).toMatchObject({
+      chordSymbol: 'rit.',
+      hairpin: 'crescendo',
+    });
+    expect(
+      marks.find((mark) => mark.scope === 'range' && mark.kind === 'ottava'),
+    ).toMatchObject({
+      ottava: '8va',
+      sourceEventId: firstEvent?.id,
+    });
+    expect(
+      marks.find((mark) => mark.scope === 'range' && mark.kind === 'hairpin'),
+    ).toMatchObject({
+      hairpin: 'crescendo',
+      sourceEventId: firstEvent?.id,
+    });
   });
 
   it('imports a minimal MIDI note track', () => {

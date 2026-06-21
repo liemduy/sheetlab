@@ -1,5 +1,9 @@
 import type { Score, ScoreType } from '../../domain/score/types';
 import {
+  getImportedMeasureLayout,
+  hasImportedSystemLayout,
+} from '../../domain/score/importedLayout';
+import {
   MAX_SYSTEM_NOTEHEADS,
   MEASURES_PER_SYSTEM,
   SYSTEM_READABILITY_BREATHING_ROOM,
@@ -7,6 +11,8 @@ import {
 } from './layoutConstants';
 import { countMeasureLaneDensities } from './measureDensity';
 import { getMeasureReadableMinWidthForLocalIndex } from './measureWidthPolicy';
+
+export const IMPORTED_SYSTEM_READABILITY_BREATHING_ROOM = 32;
 
 export interface ScoreSystemLayout {
   firstMeasureIndex: number;
@@ -32,12 +38,17 @@ export function getStaticSystemCount(score: Score | ScoreType) {
 
 export function computeScoreSystems(score: Score): ScoreSystemLayout[] {
   const measureCount = getScoreMeasureCount(score);
+  const usesImportedBreaks = hasImportedSystemLayout(score);
+
   const systems: ScoreSystemLayout[] = [];
   let currentSystemMeasureIndexes: number[] = [];
   let currentSystemLaneDensities = new Map<string, number>();
+  const readableWidthLimit = usesImportedBreaks
+    ? SYSTEM_WIDTH - IMPORTED_SYSTEM_READABILITY_BREATHING_ROOM
+    : SYSTEM_WIDTH - SYSTEM_READABILITY_BREATHING_ROOM;
 
-  function getProjectedReadableWidth(candidateMeasureIndex: number) {
-    return [...currentSystemMeasureIndexes, candidateMeasureIndex].reduce(
+  function getProjectedReadableWidth(measureIndexes: number[]) {
+    return measureIndexes.reduce(
       (total, measureIndex, localMeasureIndex) =>
         total +
         getMeasureReadableMinWidthForLocalIndex(
@@ -49,15 +60,42 @@ export function computeScoreSystems(score: Score): ScoreSystemLayout[] {
     );
   }
 
+  function flushCurrentSystem(fallbackMeasureIndex: number) {
+    if (currentSystemMeasureIndexes.length === 0) {
+      return;
+    }
+
+    systems.push({
+      firstMeasureIndex: currentSystemMeasureIndexes[0] ?? fallbackMeasureIndex,
+      measureIndexes: currentSystemMeasureIndexes,
+    });
+    currentSystemMeasureIndexes = [];
+    currentSystemLaneDensities = new Map<string, number>();
+  }
+
   for (let measureIndex = 0; measureIndex < measureCount; measureIndex += 1) {
+    const importedLayout = usesImportedBreaks
+      ? getImportedMeasureLayout(score, measureIndex)
+      : null;
+    const shouldHonorImportedBreak =
+      measureIndex > 0 &&
+      currentSystemMeasureIndexes.length > 0 &&
+      Boolean(importedLayout?.systemBreakBefore || importedLayout?.pageBreakBefore);
+
+    if (shouldHonorImportedBreak) {
+      flushCurrentSystem(measureIndex);
+    }
+
     const measureLaneDensities = countMeasureLaneDensities(score, measureIndex);
     const shouldBreakForCount =
+      !usesImportedBreaks &&
       currentSystemMeasureIndexes.length >= MEASURES_PER_SYSTEM;
     const shouldBreakForReadableWidth =
       currentSystemMeasureIndexes.length > 0 &&
-      getProjectedReadableWidth(measureIndex) >
-        SYSTEM_WIDTH - SYSTEM_READABILITY_BREATHING_ROOM;
+      getProjectedReadableWidth([...currentSystemMeasureIndexes, measureIndex]) >
+        readableWidthLimit;
     const shouldBreakForDensity =
+      !usesImportedBreaks &&
       currentSystemMeasureIndexes.length > 0 &&
       [...measureLaneDensities].some(
         ([laneKey, measureDensity]) =>
@@ -66,12 +104,7 @@ export function computeScoreSystems(score: Score): ScoreSystemLayout[] {
       );
 
     if (shouldBreakForCount || shouldBreakForReadableWidth || shouldBreakForDensity) {
-      systems.push({
-        firstMeasureIndex: currentSystemMeasureIndexes[0] ?? measureIndex,
-        measureIndexes: currentSystemMeasureIndexes,
-      });
-      currentSystemMeasureIndexes = [];
-      currentSystemLaneDensities = new Map<string, number>();
+      flushCurrentSystem(measureIndex);
     }
 
     currentSystemMeasureIndexes.push(measureIndex);
@@ -84,10 +117,7 @@ export function computeScoreSystems(score: Score): ScoreSystemLayout[] {
   }
 
   if (currentSystemMeasureIndexes.length > 0) {
-    systems.push({
-      firstMeasureIndex: currentSystemMeasureIndexes[0] ?? 0,
-      measureIndexes: currentSystemMeasureIndexes,
-    });
+    flushCurrentSystem(0);
   }
 
   return systems.length > 0

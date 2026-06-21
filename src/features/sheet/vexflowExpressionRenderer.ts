@@ -7,7 +7,11 @@ import {
   TextBracket,
 } from 'vexflow';
 import { isGeneratedRestEvent } from '../../domain/score/events';
-import type { Score } from '../../domain/score/types';
+import type {
+  HairpinMark,
+  RangeNotationMark,
+  Score,
+} from '../../domain/score/types';
 import { getOttavaMarks } from '../../domain/score/ottava';
 import {
   getMeasureCountForSystem,
@@ -98,28 +102,31 @@ function getNextPlayableRef(refs: RenderedNoteRef[], sourceIndex: number) {
   return refs[sourceIndex + 1] ?? null;
 }
 
-function getHairpinType(sourceRef: RenderedNoteRef) {
-  if (!sourceRef.event.hairpin) {
+function getHairpinType(hairpin: HairpinMark | undefined) {
+  if (!hairpin) {
     return null;
   }
 
-  return sourceRef.event.hairpin === 'crescendo'
+  return hairpin === 'crescendo'
     ? StaveHairpin.type.CRESC
     : StaveHairpin.type.DECRESC;
 }
 
 function drawHairpin({
   context,
+  hairpin,
   sourceRef,
   targetRef,
 }: {
   context: ReturnType<Renderer['getContext']>;
+  hairpin?: HairpinMark;
   sourceRef: RenderedNoteRef;
   targetRef: RenderedNoteRef;
 }) {
-  const hairpinType = getHairpinType(sourceRef);
+  const activeHairpin = hairpin ?? sourceRef.event.hairpin;
+  const hairpinType = getHairpinType(activeHairpin);
 
-  if (!sourceRef.event.hairpin || !hairpinType) {
+  if (!activeHairpin || !hairpinType) {
     return;
   }
 
@@ -128,7 +135,7 @@ function drawHairpin({
     context,
     dataset: {
       'data-event-id': sourceRef.event.id,
-      'data-hairpin': sourceRef.event.hairpin,
+      'data-hairpin': activeHairpin,
       'data-source-id': sourceRef.event.id,
       'data-target-id': targetRef.event.id,
       'data-testid': 'rendered-hairpin',
@@ -162,6 +169,7 @@ function drawHairpinSegment({
   context,
   continuation,
   firstX,
+  hairpin,
   lastX,
   sourceRef,
   systemRef,
@@ -170,14 +178,16 @@ function drawHairpinSegment({
   context: ReturnType<Renderer['getContext']>;
   continuation: 'start' | 'end';
   firstX: number;
+  hairpin?: HairpinMark;
   lastX: number;
   sourceRef: RenderedNoteRef;
   systemRef: RenderedNoteRef;
   targetRef: RenderedNoteRef;
 }) {
-  const hairpinType = getHairpinType(sourceRef);
+  const activeHairpin = hairpin ?? sourceRef.event.hairpin;
+  const hairpinType = getHairpinType(activeHairpin);
 
-  if (!sourceRef.event.hairpin || !hairpinType || lastX - firstX < 4) {
+  if (!activeHairpin || !hairpinType || lastX - firstX < 4) {
     return;
   }
 
@@ -189,7 +199,7 @@ function drawHairpinSegment({
     dataset: {
       'data-continuation': continuation,
       'data-event-id': sourceRef.event.id,
-      'data-hairpin': sourceRef.event.hairpin,
+      'data-hairpin': activeHairpin,
       'data-source-id': sourceRef.event.id,
       'data-target-id': targetRef.event.id,
       'data-testid': 'rendered-hairpin',
@@ -223,10 +233,12 @@ function drawHairpinSegment({
 
 function drawCrossSystemHairpin({
   context,
+  hairpin,
   sourceRef,
   targetRef,
 }: {
   context: ReturnType<Renderer['getContext']>;
+  hairpin?: HairpinMark;
   sourceRef: RenderedNoteRef;
   targetRef: RenderedNoteRef;
 }) {
@@ -241,6 +253,7 @@ function drawCrossSystemHairpin({
     context,
     continuation: 'start',
     firstX: sourceStartX,
+    hairpin,
     lastX: sourceEndX,
     sourceRef,
     systemRef: sourceRef,
@@ -250,6 +263,7 @@ function drawCrossSystemHairpin({
     context,
     continuation: 'end',
     firstX: targetStartX,
+    hairpin,
     lastX: targetEndX,
     sourceRef,
     systemRef: targetRef,
@@ -535,6 +549,7 @@ function drawPedalBrackets({
   score: Score;
 }) {
   let activeStartRef: RenderedNoteRef | null = null;
+  const usesPedalLine = (ref: RenderedNoteRef) => ref.event.pedalLine !== false;
 
   refs.forEach((ref) => {
     const pedal = ref.event.pedal;
@@ -544,11 +559,15 @@ function drawPedalBrackets({
     }
 
     if (pedal === 'start') {
-      activeStartRef = ref;
+      activeStartRef = usesPedalLine(ref) ? ref : null;
       return;
     }
 
-    if ((pedal === 'release' || pedal === 'start-release') && activeStartRef) {
+    if (
+      (pedal === 'release' || pedal === 'start-release') &&
+      activeStartRef &&
+      usesPedalLine(ref)
+    ) {
       const sourceSystemIndex = getSystemIndex(activeStartRef.measureIndex, score);
       const targetSystemIndex = getSystemIndex(ref.measureIndex, score);
 
@@ -581,8 +600,63 @@ function drawPedalBrackets({
       }
     }
 
-    activeStartRef = pedal === 'start-release' ? ref : null;
+    activeStartRef = pedal === 'start-release' && usesPedalLine(ref) ? ref : null;
   });
+}
+
+function getRangeHairpinMarks(score: Score) {
+  return (score.marks ?? []).filter(
+    (mark): mark is RangeNotationMark =>
+      mark.scope === 'range' && mark.kind === 'hairpin' && Boolean(mark.hairpin),
+  );
+}
+
+function drawRangeHairpins({
+  context,
+  noteRefs,
+  score,
+}: {
+  context: ReturnType<Renderer['getContext']>;
+  noteRefs: Map<string, RenderedNoteRef>;
+  score: Score;
+}) {
+  getRangeHairpinMarks(score).forEach((mark) => {
+    if (!mark.sourceEventId || !mark.targetEventId || !mark.hairpin) {
+      return;
+    }
+
+    const sourceRef = noteRefs.get(mark.sourceEventId);
+    const targetRef = noteRefs.get(mark.targetEventId);
+
+    if (!sourceRef || !targetRef) {
+      return;
+    }
+
+    if (getSystemIndex(sourceRef.measureIndex, score) === getSystemIndex(targetRef.measureIndex, score)) {
+      drawHairpin({
+        context,
+        hairpin: mark.hairpin,
+        sourceRef,
+        targetRef,
+      });
+      return;
+    }
+
+    drawCrossSystemHairpin({
+      context,
+      hairpin: mark.hairpin,
+      sourceRef,
+      targetRef,
+    });
+  });
+}
+
+function getRangeHairpinSourceIds(score: Score) {
+  return new Set(
+    getRangeHairpinMarks(score).flatMap((mark) =>
+      mark.sourceEventId ? [mark.sourceEventId] : [],
+    ),
+  );
 }
 
 function drawOttavaBrackets({
@@ -650,11 +724,17 @@ export function drawVexFlowExpressionMarks({
   score: Score;
 }) {
   const refsByVoice = getPlayableNoteRefsByVoice(noteRefs);
+  const rangeHairpinSourceIds = getRangeHairpinSourceIds(score);
 
   drawArpeggios({ context, noteRefs });
+  drawRangeHairpins({ context, noteRefs, score });
 
   refsByVoice.forEach((refs) => {
     refs.forEach((ref, refIndex) => {
+      if (rangeHairpinSourceIds.has(ref.event.id)) {
+        return;
+      }
+
       const targetRef = getNextPlayableRef(refs, refIndex);
 
       if (targetRef) {

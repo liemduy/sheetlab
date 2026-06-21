@@ -1,5 +1,9 @@
 import type { Score, ScoreType } from '../../domain/score/types';
 import {
+  getImportedMeasureXmlWidth,
+  hasImportedSystemLayout,
+} from '../../domain/score/importedLayout';
+import {
   FIRST_MEASURE_LEFT_PADDING,
   FIRST_STAFF_Y,
   GRAND_SYSTEM_PADDING,
@@ -57,6 +61,26 @@ type ScoreLayoutCache = {
 
 const scoreLayoutCache = new WeakMap<Score, ScoreLayoutCache>();
 const ANNOTATION_INTERACTION_PADDING = 72;
+const IMPORTED_LAYOUT_VERTICAL_SCALE = 0.9;
+const MIN_IMPORTED_STAFF_GAP = 140;
+const INTER_SYSTEM_ANNOTATION_CLEARANCE = 16;
+const IMPORTED_INTER_SYSTEM_ANNOTATION_CLEARANCE = 80;
+
+function getImportedVerticalScale(score: Score) {
+  return hasImportedSystemLayout(score) ? IMPORTED_LAYOUT_VERTICAL_SCALE : 1;
+}
+
+function getGrandSystemPadding(score: Score | ScoreType) {
+  return typeof score === 'string'
+    ? GRAND_SYSTEM_PADDING
+    : GRAND_SYSTEM_PADDING * getImportedVerticalScale(score);
+}
+
+function getTrebleSystemGap(score: Score | ScoreType) {
+  return typeof score === 'string'
+    ? TREBLE_SYSTEM_GAP
+    : TREBLE_SYSTEM_GAP * getImportedVerticalScale(score);
+}
 
 export function getScoreSystemCount(score: Score | ScoreType) {
   if (typeof score === 'string') {
@@ -91,7 +115,9 @@ function getSystemTopPadding(
   const baseSystemGap =
     score.type === 'grand' ? GRAND_SYSTEM_PADDING : TREBLE_SYSTEM_GAP;
   const availableAboveStaff = baseSystemGap - STAFF_LINE_SPACING * 4;
-  const minimumClearance = 16;
+  const minimumClearance = hasImportedSystemLayout(score)
+    ? IMPORTED_INTER_SYSTEM_ANNOTATION_CLEARANCE
+    : INTER_SYSTEM_ANNOTATION_CLEARANCE;
 
   return Math.max(
     0,
@@ -107,18 +133,23 @@ function getScoreLayoutCache(score: Score) {
   }
 
   const systems = computeScoreSystems(score);
-  const systemGaps = systems.map((system, systemIndex) =>
-    score.type === 'grand'
+  const verticalScale = getImportedVerticalScale(score);
+  const systemGaps = systems.map((system, systemIndex) => {
+    const rawGap = score.type === 'grand'
       ? computeSystemStaffGap(score, systemIndex, system.measureIndexes)
-      : STAFF_GAP,
-  );
+      : STAFF_GAP;
+
+    return verticalScale < 1
+      ? Math.max(MIN_IMPORTED_STAFF_GAP, rawGap * verticalScale)
+      : rawGap;
+  });
   const systemTopPaddings = systems.map((system, systemIndex) =>
     getSystemTopPadding(
       score,
       systemIndex,
       system.measureIndexes,
       systems[systemIndex - 1]?.measureIndexes,
-    ),
+    ) * verticalScale,
   );
   const systemTops: number[] = [];
   const measureSystemIndexes = Array.from(
@@ -134,8 +165,8 @@ function getScoreLayoutCache(score: Score) {
       measureSystemIndexes[measureIndex] = systemIndex;
     });
     y += score.type === 'grand'
-      ? systemGaps[systemIndex] + GRAND_SYSTEM_PADDING
-      : TREBLE_SYSTEM_GAP;
+      ? systemGaps[systemIndex] + getGrandSystemPadding(score)
+      : getTrebleSystemGap(score);
   });
 
   const nextCache = {
@@ -201,8 +232,8 @@ export function getScoreSystemGap(
   const scoreType = typeof score === 'string' ? score : score.type;
 
   return scoreType === 'grand'
-    ? getScoreStaffGap(score, measureIndex) + GRAND_SYSTEM_PADDING
-    : TREBLE_SYSTEM_GAP;
+    ? getScoreStaffGap(score, measureIndex) + getGrandSystemPadding(score)
+    : getTrebleSystemGap(score);
 }
 
 export function getScoreSystemTop(score: Score | ScoreType, measureIndex = 0) {
@@ -316,9 +347,27 @@ function getSystemMeasureWidths(score: Score, systemIndex: number) {
     return [];
   }
 
+  const importedWidths = systemMeasureIndexes.map((measureIndex) =>
+    getImportedMeasureXmlWidth(score, measureIndex),
+  );
   const minWidths = systemMeasureIndexes.map((measureIndex) =>
     getMeasureReadableMinWidth(measureIndex, score),
   );
+
+  if (importedWidths.some((width) => width !== null)) {
+    const fallbackWidth = SYSTEM_WIDTH / systemMeasureIndexes.length;
+    const safeWidths = importedWidths.map((width) => width ?? fallbackWidth);
+    const totalWidth = safeWidths.reduce((total, width) => total + width, 0);
+
+    if (totalWidth > 0) {
+      const normalizedWidths = safeWidths.map(
+        (width) => (width / totalWidth) * SYSTEM_WIDTH,
+      );
+
+      return fitMeasureWidthsToMinimums(normalizedWidths, minWidths);
+    }
+  }
+
   const weights = systemMeasureIndexes.map((index) =>
     getMeasureDistributionWeight(score, index),
   );
@@ -348,6 +397,59 @@ function getSystemMeasureWidths(score: Score, systemIndex: number) {
     (width, index) =>
       width + availableExtraWidth * ((safeWeights[index] ?? 1) / totalWeight),
   );
+}
+
+function fitMeasureWidthsToMinimums(
+  preferredWidths: number[],
+  minWidths: number[],
+) {
+  const minWidthTotal = minWidths.reduce((total, width) => total + width, 0);
+
+  if (minWidthTotal >= SYSTEM_WIDTH) {
+    const compactScale = SYSTEM_WIDTH / minWidthTotal;
+
+    return minWidths.map((width) => width * compactScale);
+  }
+
+  if (
+    preferredWidths.length === minWidths.length &&
+    preferredWidths.every((width, index) => width >= (minWidths[index] ?? 0))
+  ) {
+    return preferredWidths;
+  }
+
+  const widths = preferredWidths.map((width, index) =>
+    Math.max(width, minWidths[index] ?? 0),
+  );
+  let overflow =
+    widths.reduce((total, width) => total + width, 0) - SYSTEM_WIDTH;
+
+  while (overflow > 0.0001) {
+    const flexibleIndexes = widths
+      .map((width, index) => ({
+        index,
+        room: Math.max(0, width - (minWidths[index] ?? 0)),
+      }))
+      .filter(({ room }) => room > 0.0001);
+    const totalRoom = flexibleIndexes.reduce(
+      (total, { room }) => total + room,
+      0,
+    );
+
+    if (totalRoom <= 0.0001) {
+      break;
+    }
+
+    flexibleIndexes.forEach(({ index, room }) => {
+      const reduction = Math.min(room, overflow * (room / totalRoom));
+
+      widths[index] = (widths[index] ?? 0) - reduction;
+    });
+    overflow =
+      widths.reduce((total, width) => total + width, 0) - SYSTEM_WIDTH;
+  }
+
+  return widths;
 }
 
 export function getMeasureWidth(measureIndex: number, score?: Score) {

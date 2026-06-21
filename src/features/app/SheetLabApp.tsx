@@ -103,6 +103,10 @@ import {
   isPdfExportMode,
   loadInitialScoreForApp,
 } from './appBootstrap';
+import {
+  extractMusicXmlFromMxl,
+  importScoreFromMusicXml,
+} from '../../domain/score/externalScoreImport';
 import { getAdjacentSelectableScoreEvent } from './scoreEventNavigation';
 import { saveAutosaveToStorage } from '../persistence/projectStorage';
 import {
@@ -144,6 +148,22 @@ function scoreHasStaff(score: Score, staffId: StaffId) {
   return score.parts
     .flatMap((part) => part.staves)
     .some((staff) => staff.id === staffId);
+}
+
+function getImportedScoreDisplayState(
+  score: Score,
+): Pick<EditorToolState, 'showFingeringHints' | 'showMeasureNumbers'> {
+  if (!score.importedLayout) {
+    return {
+      showFingeringHints: DEFAULT_EDITOR_TOOL_STATE.showFingeringHints,
+      showMeasureNumbers: DEFAULT_EDITOR_TOOL_STATE.showMeasureNumbers,
+    };
+  }
+
+  return {
+    showFingeringHints: false,
+    showMeasureNumbers: true,
+  };
 }
 
 function getLyricBulkTargetEventIds(
@@ -211,6 +231,7 @@ function SheetLabApp() {
     () => ({
       ...DEFAULT_EDITOR_TOOL_STATE,
       scoreType: initialScore.type,
+      ...getImportedScoreDisplayState(initialScore),
       tempo: initialScore.tempo,
     }),
   );
@@ -294,6 +315,7 @@ function SheetLabApp() {
     useState<AnnotationTarget | null>(null);
   const notationViewportRef = useRef<HTMLDivElement | null>(null);
   const referenceInputRef = useRef<HTMLInputElement | null>(null);
+  const qaImportLoadedRef = useRef(false);
   const [referenceBackground, setReferenceBackground] =
     useState<ReferenceBackground | null>(null);
   const authSession = useAuthSession();
@@ -882,6 +904,7 @@ function SheetLabApp() {
       ...current,
       scoreType: loadedScore.type,
       tempo: loadedScore.tempo,
+      ...getImportedScoreDisplayState(loadedScore),
       clefChange: null,
       isInputArmed: false,
       tuplet: null,
@@ -913,6 +936,52 @@ function SheetLabApp() {
     score,
     setEditorMessage,
   });
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || qaImportLoadedRef.current) {
+      return;
+    }
+
+    const qaImportUrl = new URLSearchParams(window.location.search).get(
+      'qa-import',
+    );
+
+    if (!qaImportUrl) {
+      return;
+    }
+
+    const importUrl = qaImportUrl;
+    qaImportLoadedRef.current = true;
+
+    async function loadQaImport() {
+      try {
+        setEditorMessage(`QA importing ${importUrl}`);
+        const response = await fetch(importUrl);
+
+        if (!response.ok) {
+          throw new Error(`QA import request failed: ${response.status}`);
+        }
+
+        const lowerUrl = importUrl.toLowerCase();
+        const musicXmlText = lowerUrl.endsWith('.mxl')
+          ? await extractMusicXmlFromMxl(await response.arrayBuffer())
+          : await response.text();
+        const result = importScoreFromMusicXml(musicXmlText);
+
+        handleLoadedScoreFromFile(
+          result.score,
+          result.warnings.length > 0
+            ? `QA imported ${importUrl}: ${result.warnings.length} warnings`
+            : `QA imported ${importUrl}`,
+          { closePalette: true },
+        );
+      } catch {
+        setEditorMessage(`QA import failed: ${importUrl}`);
+      }
+    }
+
+    void loadQaImport();
+  }, [setEditorMessage]);
   const {
     cloudScores,
     cloudStatusLabel,
