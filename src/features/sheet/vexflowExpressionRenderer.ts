@@ -4,6 +4,7 @@ import {
   Renderer,
   StaveHairpin,
   StaveLine,
+  TextBracket,
 } from 'vexflow';
 import { isGeneratedRestEvent } from '../../domain/score/events';
 import type {
@@ -28,10 +29,8 @@ const ARPEGGIO_MIN_HEIGHT = 28;
 const ARPEGGIO_NOTEHEAD_GAP = 10;
 const ARPEGGIO_WAVE_STEP = 5;
 const ARPEGGIO_WAVE_WIDTH = 4;
-const OTTAVA_NOTE_CLEARANCE = 36;
-const OTTAVA_LABEL_LINE_GAP = 28;
-const OTTAVA_LINE_END_PADDING = 14;
-const OTTAVA_HOOK_HEIGHT = 8;
+const OTTAVA_STAFF_CLEARANCE = 8;
+const OTTAVA_MAX_TEXT_LINE = 6;
 
 function tagGroupedVexFlowElements({
   className,
@@ -683,10 +682,29 @@ function getRefYRange(ref: RenderedNoteRef) {
     };
   }
 
-  return {
+  const range = {
     bottomY: Math.max(...noteYs),
     topY: Math.min(...noteYs),
   };
+
+  try {
+    const stemExtents = ref.note.getStemExtents();
+
+    range.topY = Math.min(
+      range.topY,
+      stemExtents.topY,
+      stemExtents.baseY,
+    );
+    range.bottomY = Math.max(
+      range.bottomY,
+      stemExtents.topY,
+      stemExtents.baseY,
+    );
+  } catch {
+    // Whole notes and some imported ornaments can be stemless.
+  }
+
+  return range;
 }
 
 function getOttavaRangeRefs({
@@ -720,7 +738,7 @@ function getOttavaRangeRefs({
   });
 }
 
-function getOttavaBracketY({
+function getOttavaTextLine({
   noteRefs,
   placement,
   score,
@@ -741,127 +759,51 @@ function getOttavaBracketY({
     targetRef,
   });
   const ranges = rangeRefs.map(getRefYRange);
+  const minLine = placement === 'below' ? 2 : 1;
 
   if (placement === 'below') {
     const noteBottom = ranges.length
       ? Math.max(...ranges.map((range) => range.bottomY))
       : stave.getYForLine(4);
+    const minimumY = noteBottom + OTTAVA_STAFF_CLEARANCE;
 
-    return Math.max(stave.getYForBottomText(2), noteBottom + OTTAVA_NOTE_CLEARANCE);
+    for (let line = minLine; line <= OTTAVA_MAX_TEXT_LINE; line += 1) {
+      if (stave.getYForBottomText(line) >= minimumY) {
+        return line;
+      }
+    }
+
+    return OTTAVA_MAX_TEXT_LINE;
   }
 
   const noteTop = ranges.length
     ? Math.min(...ranges.map((range) => range.topY))
     : stave.getYForLine(0);
+  const maximumY = noteTop - OTTAVA_STAFF_CLEARANCE;
 
-  return Math.min(stave.getYForTopText(1), noteTop - OTTAVA_NOTE_CLEARANCE);
+  for (let line = minLine; line <= OTTAVA_MAX_TEXT_LINE; line += 1) {
+    if (stave.getYForTopText(line) <= maximumY) {
+      return line;
+    }
+  }
+
+  return OTTAVA_MAX_TEXT_LINE;
 }
 
-function appendSvgLine({
-  className,
-  parent,
-  x1,
-  x2,
-  y1,
-  y2,
-}: {
-  className?: string;
-  parent: SVGElement;
-  x1: number;
-  x2: number;
-  y1: number;
-  y2: number;
-}) {
-  const line = document.createElementNS(SVG_NAMESPACE, 'line');
+function getOttavaTextParts(ottava: string) {
+  const match = ottava.trim().match(/^(\d+)([a-z]+)?$/i);
 
-  if (className) {
-    line.classList.add(className);
-  }
-  line.setAttribute('x1', formatSvgNumber(x1).toString());
-  line.setAttribute('x2', formatSvgNumber(x2).toString());
-  line.setAttribute('y1', formatSvgNumber(y1).toString());
-  line.setAttribute('y2', formatSvgNumber(y2).toString());
-  parent.appendChild(line);
-
-  return line;
-}
-
-function appendOttavaBracket({
-  context,
-  mark,
-  noteRefs,
-  score,
-  sourceRef,
-  targetRef,
-}: {
-  context: ReturnType<Renderer['getContext']>;
-  mark: RangeNotationMark;
-  noteRefs: Map<string, RenderedNoteRef>;
-  score: Score;
-  sourceRef: RenderedNoteRef;
-  targetRef: RenderedNoteRef;
-}) {
-  const svg = (context as { svg?: SVGSVGElement }).svg;
-
-  if (!svg || !mark.ottava) {
-    return;
+  if (!match) {
+    return {
+      superscript: '',
+      text: ottava,
+    };
   }
 
-  const position =
-    mark.placement === 'below'
-      ? ModifierPosition.BELOW
-      : ModifierPosition.ABOVE;
-  const sourceX =
-    sourceRef.note.getModifierStartXY(position, 0).x - 4;
-  const targetX =
-    targetRef.note.getModifierStartXY(position, 0).x + OTTAVA_LINE_END_PADDING;
-  const firstX = Math.min(sourceX, targetX);
-  const lastX = Math.max(sourceX, targetX);
-
-  if (lastX - firstX < OTTAVA_LABEL_LINE_GAP + 4) {
-    return;
-  }
-
-  const lineY = getOttavaBracketY({
-    noteRefs,
-    placement: mark.placement,
-    score,
-    sourceRef,
-    targetRef,
-  });
-  const group = document.createElementNS(SVG_NAMESPACE, 'g');
-  const text = document.createElementNS(SVG_NAMESPACE, 'text');
-  const hookDirection = mark.placement === 'below' ? -1 : 1;
-
-  group.classList.add('sheetlab-ottava');
-  group.setAttribute('data-ottava', mark.ottava);
-  group.setAttribute('data-source-id', sourceRef.event.id);
-  group.setAttribute('data-target-id', targetRef.event.id);
-  group.setAttribute('data-testid', 'rendered-ottava');
-
-  text.classList.add('sheetlab-ottava-label');
-  text.setAttribute('x', formatSvgNumber(firstX).toString());
-  text.setAttribute('y', formatSvgNumber(lineY + 4).toString());
-  text.textContent = mark.ottava;
-  group.appendChild(text);
-
-  appendSvgLine({
-    className: 'sheetlab-ottava-line',
-    parent: group,
-    x1: firstX + OTTAVA_LABEL_LINE_GAP,
-    x2: lastX,
-    y1: lineY,
-    y2: lineY,
-  });
-  appendSvgLine({
-    className: 'sheetlab-ottava-hook',
-    parent: group,
-    x1: lastX,
-    x2: lastX,
-    y1: lineY,
-    y2: lineY + hookDirection * OTTAVA_HOOK_HEIGHT,
-  });
-  svg.appendChild(group);
+  return {
+    superscript: match[2] ?? '',
+    text: match[1],
+  };
 }
 
 function drawOttavaBrackets({
@@ -889,13 +831,42 @@ function drawOttavaBrackets({
       return;
     }
 
-    appendOttavaBracket({
+    tagGroupedVexFlowElements({
+      className: 'sheetlab-ottava',
       context,
-      mark,
-      noteRefs,
-      score,
-      sourceRef,
-      targetRef,
+      dataset: {
+        'data-ottava': mark.ottava,
+        'data-source-id': sourceRef.event.id,
+        'data-target-id': targetRef.event.id,
+        'data-testid': 'rendered-ottava',
+      },
+      draw: () => {
+        const { superscript, text } = getOttavaTextParts(mark.ottava ?? '');
+        const textBracket = new TextBracket({
+          position:
+            mark.placement === 'below'
+              ? TextBracket.Position.BOTTOM
+              : TextBracket.Position.TOP,
+          start: sourceRef.note,
+          stop: targetRef.note,
+          superscript,
+          text,
+        });
+
+        textBracket
+          .setDashed(true, [4, 3])
+          .setLine(
+            getOttavaTextLine({
+              noteRefs,
+              placement: mark.placement,
+              score,
+              sourceRef,
+              targetRef,
+            }),
+          )
+          .setContext(context)
+          .draw();
+      },
     });
   });
 }
