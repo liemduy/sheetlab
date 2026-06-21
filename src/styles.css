@@ -1545,6 +1545,26 @@ button {
   vector-effect: non-scaling-stroke;
 }
 
+.vexflow-output .sheetlab-ottava-label {
+  fill: #111111;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 13px;
+  font-style: italic;
+  font-weight: 700;
+  stroke: none;
+}
+
+.vexflow-output .sheetlab-ottava-line {
+  fill: none;
+  stroke-dasharray: 4 3;
+  stroke-linecap: round;
+}
+
+.vexflow-output .sheetlab-ottava-hook {
+  fill: none;
+  stroke-linecap: square;
+}
+
 .vexflow-output .sheetlab-section-marker {
   pointer-events: none;
 }
