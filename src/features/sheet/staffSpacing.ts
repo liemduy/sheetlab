@@ -39,9 +39,11 @@ import {
   getEventAnnotationKinds,
   getEventAnnotationText,
   hasManualAnnotationLayout,
+  insetAnnotationBounds,
   keepAnnotationPlacementOutsideStaff,
   moveAnnotationBounds,
   placeAnnotationInRows,
+  resolveAnnotationPlacementCollisions,
 } from './annotationLayoutPolicy';
 import {
   getEstimatedEventBottomInkPadding,
@@ -389,7 +391,7 @@ function getStaffSystemAnnotationExtents(
       belowPlacements: AnnotationPlacement[];
     }
   >();
-  const systemEvents = getSystemMeasures(score, staffIndex, systemIndex, measureIndexes)
+  const ownSystemEvents = getSystemMeasures(score, staffIndex, systemIndex, measureIndexes)
     .flatMap((measure) =>
       measure.voices.flatMap((voice, voiceIndex) =>
         voice.events
@@ -404,7 +406,48 @@ function getStaffSystemAnnotationExtents(
         a.event.beat - b.event.beat ||
         a.event.id.localeCompare(b.event.id),
     );
-  const staffInkBlockers = systemEvents.map(({ event, measure }) => {
+  const lastStaffIndex = Math.max(0, (score.parts[0]?.staves.length ?? 1) - 1);
+  const delegatedGrandPedalEvents =
+    score.type === 'grand' && staffIndex === lastStaffIndex
+      ? score.parts[0]?.staves.flatMap((_, candidateStaffIndex) =>
+          candidateStaffIndex === staffIndex
+            ? []
+            : getSystemMeasures(
+                score,
+                candidateStaffIndex,
+                systemIndex,
+                measureIndexes,
+              ).flatMap((measure) =>
+                measure.voices.flatMap((voice, voiceIndex) =>
+                  voice.events
+                    .filter(
+                      (event) =>
+                        !isGeneratedRestEvent(event) && Boolean(event.pedal),
+                    )
+                    .sort((a, b) => a.beat - b.beat)
+                    .map((event) => ({
+                      delegatedGrandPedal: true,
+                      event,
+                      measure,
+                      voiceIndex,
+                    })),
+                ),
+              ),
+        ) ?? []
+      : [];
+  const systemEvents = [
+    ...ownSystemEvents.map((eventContext) => ({
+      ...eventContext,
+      delegatedGrandPedal: false,
+    })),
+    ...delegatedGrandPedalEvents,
+  ].sort(
+    (a, b) =>
+      a.measure.index - b.measure.index ||
+      a.event.beat - b.event.beat ||
+      a.event.id.localeCompare(b.event.id),
+  );
+  const staffInkBlockers = ownSystemEvents.map(({ event, measure }) => {
     const x = getEstimatedEventX(
       score,
       measure.index,
@@ -412,14 +455,17 @@ function getStaffSystemAnnotationExtents(
       measureIndexes,
     );
 
-    return getEstimatedEventInkBounds({
-      beat: event.beat,
-      event,
-      measureIndex: measure.index,
-      score,
-      staffIndex,
-      x,
-    });
+    return {
+      bounds: getEstimatedEventInkBounds({
+        beat: event.beat,
+        event,
+        measureIndex: measure.index,
+        score,
+        staffIndex,
+        x,
+      }),
+      eventId: event.id,
+    };
   });
   const getVoiceState = (voiceIndex: number) => {
     const existingState = voiceStates.get(voiceIndex);
@@ -438,7 +484,7 @@ function getStaffSystemAnnotationExtents(
   };
 
   systemEvents
-    .forEach(({ event, measure, voiceIndex }) => {
+    .forEach(({ delegatedGrandPedal, event, measure, voiceIndex }) => {
       const x = getEstimatedEventX(
         score,
         measure.index,
@@ -447,7 +493,11 @@ function getStaffSystemAnnotationExtents(
       );
       const voiceState = getVoiceState(voiceIndex);
 
-      getEventAnnotationKinds(event).forEach((kind) => {
+      const annotationKinds = delegatedGrandPedal
+        ? (['pedal'] as const)
+        : getEventAnnotationKinds(event);
+
+      annotationKinds.forEach((kind) => {
         const text = getEventAnnotationText(event, kind);
 
         if (!text) {
@@ -464,21 +514,39 @@ function getStaffSystemAnnotationExtents(
                 systemIndex,
               })
             : x;
-        const side = getAutomaticAnnotationSide(
+        const automaticSide = getAutomaticAnnotationSide(
           event,
           kind,
           voiceState.abovePlacements,
           voiceState.belowPlacements,
         );
+        const side =
+          kind === 'pedal' &&
+          score.type === 'grand' &&
+          event.annotationPlacements?.pedal !== 'above'
+            ? 'below'
+            : automaticSide;
+
+        if (
+          kind === 'pedal' &&
+          score.type === 'grand' &&
+          side === 'below' &&
+          staffIndex !== lastStaffIndex
+        ) {
+          return;
+        }
+
         const isManualLayout = hasManualAnnotationLayout(event, kind);
-        const eventInkBounds = getEstimatedEventInkBounds({
-          beat: event.beat,
-          event,
-          measureIndex: measure.index,
-          score,
-          staffIndex,
-          x,
-        });
+        const eventInkBounds = delegatedGrandPedal
+          ? staffBounds
+          : getEstimatedEventInkBounds({
+              beat: event.beat,
+              event,
+              measureIndex: measure.index,
+              score,
+              staffIndex,
+              x,
+            });
 
         const preferredBounds = getAnnotationBounds({
           kind,
@@ -491,6 +559,11 @@ function getStaffSystemAnnotationExtents(
             staffBounds,
           }),
         });
+        const otherEventInkBlockers = staffInkBlockers
+          .filter((blocker) => blocker.eventId !== event.id)
+          .map((blocker) =>
+            insetAnnotationBounds(blocker.bounds, { x: 10, y: 6 }),
+          );
 
         if (isManualLayout) {
           const placement = keepAnnotationPlacementOutsideStaff(
@@ -500,14 +573,25 @@ function getStaffSystemAnnotationExtents(
             ),
             staffBounds,
           );
+          const resolvedPlacement = keepAnnotationPlacementOutsideStaff(
+            resolveAnnotationPlacementCollisions({
+              blockers: [
+                ...otherEventInkBlockers,
+                ...systemAnnotationPlacements,
+              ],
+              direction: side,
+              placement,
+            }),
+            staffBounds,
+          );
 
-          systemAnnotationPlacements.push(placement);
+          systemAnnotationPlacements.push(resolvedPlacement);
           return;
         }
 
         const placement = placeAnnotationInRows({
           blockers: [
-            ...staffInkBlockers,
+            ...otherEventInkBlockers,
             ...systemAnnotationPlacements,
           ],
           direction: side,

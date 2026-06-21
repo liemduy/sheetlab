@@ -32,8 +32,10 @@ import {
   getAutomaticAnnotationSide,
   getEventAnnotationText,
   hasManualAnnotationLayout,
+  insetAnnotationBounds,
   keepAnnotationPlacementOutsideStaff,
   placeAnnotationInRows,
+  resolveAnnotationPlacementCollisions,
 } from './annotationLayoutPolicy';
 import {
   getRenderedEventInkBounds,
@@ -386,6 +388,13 @@ export function drawTextAnnotations(
           belowPlacements: AnnotationPlacement[];
         }
       >();
+      const systemInkBlockers = Object.entries(eventLayouts).flatMap(
+        ([eventId, eventLayout]) =>
+          getSystemIndex(eventLayout.measureIndex, score) === systemIndex &&
+          !eventLayout.isGeneratedRest
+            ? [{ bounds: getRenderedEventInkBounds(eventLayout), eventId }]
+            : [],
+      );
       const staffInkBlockers = Object.entries(eventLayouts).flatMap(
         ([eventId, eventLayout]) =>
           eventLayout.staffId === staff.id &&
@@ -421,12 +430,10 @@ export function drawTextAnnotations(
         const tempoText = getScoreTempoMarkText(score);
 
         systemAnnotationPlacements.push({
-          ...getAnnotationBounds({
-            kind: 'sectionMarker',
-            text: tempoText,
-            x: tempoX + 34,
-            y: tempoY,
-          }),
+          maxX: tempoX + Math.max(78, tempoText.length * 7.4),
+          maxY: tempoY + 2,
+          minX: tempoX - 3,
+          minY: tempoY - 18,
           row: 0,
           side: 'above',
         });
@@ -448,6 +455,18 @@ export function drawTextAnnotations(
         showMeasureNumbers &&
         systemFirstMeasureIndex > 0
       ) {
+        const measureNumberText = String(systemFirstMeasureIndex + 1);
+        const measureNumberX = getMeasureX(systemFirstMeasureIndex, score) - 24;
+        const measureNumberY = staffTop - 18;
+
+        systemAnnotationPlacements.push({
+          maxX: measureNumberX + Math.max(16, measureNumberText.length * 8),
+          maxY: measureNumberY + 4,
+          minX: measureNumberX - 4,
+          minY: measureNumberY - 16,
+          row: 0,
+          side: 'above',
+        });
         appendSvgText({
           className: 'sheetlab-measure-number',
           dataset: {
@@ -455,9 +474,9 @@ export function drawTextAnnotations(
             'data-testid': 'measure-number',
           },
           svg,
-          text: String(systemFirstMeasureIndex + 1),
-          x: getMeasureX(systemFirstMeasureIndex, score) - 24,
-          y: staffTop - 18,
+          text: measureNumberText,
+          x: measureNumberX,
+          y: measureNumberY,
         });
       }
 
@@ -474,7 +493,7 @@ export function drawTextAnnotations(
             systemIndex,
           });
           const markerPlacement = getSectionMarkerPlacementAvoidingBlockers({
-            blockers: staffSymbolInkBlockers,
+            blockers: [...staffSymbolInkBlockers, ...systemAnnotationPlacements],
             text: measure.sectionMarker,
             x: markerX,
             y: desiredMarkerY,
@@ -547,12 +566,31 @@ export function drawTextAnnotations(
                       systemIndex,
                     })
                   : layout.x;
-              const side = getAutomaticAnnotationSide(
+              const automaticSide = getAutomaticAnnotationSide(
                 event,
                 kind,
                 voiceState.abovePlacements,
                 voiceState.belowPlacements,
               );
+              const side =
+                kind === 'pedal' &&
+                score.type === 'grand' &&
+                event.annotationPlacements?.pedal !== 'above'
+                  ? 'below'
+                  : automaticSide;
+              const grandPedalStaffIndex =
+                kind === 'pedal' && score.type === 'grand' && side === 'below'
+                  ? Math.max(0, staves.length - 1)
+                  : staffIndex;
+              const annotationStaffTop = getScoreStaffTop(
+                score,
+                grandPedalStaffIndex,
+                systemFirstMeasureIndex,
+              );
+              const annotationStaffBounds = {
+                maxY: annotationStaffTop + STAFF_LINE_SPACING * 4,
+                minY: annotationStaffTop,
+              };
               const sidePlacements =
                 side === 'below'
                   ? voiceState.belowPlacements
@@ -562,38 +600,73 @@ export function drawTextAnnotations(
               const preferredBounds = getAnnotationBounds({
                 kind,
                 text,
-                x: annotationX,
-                y: getAnnotationBaseline({
-                  eventInkBounds,
-                  kind,
-                  side,
-                  staffBounds,
-                }),
-              });
+                  x: annotationX,
+                  y: getAnnotationBaseline({
+                    eventInkBounds,
+                    kind,
+                    side,
+                    staffBounds: annotationStaffBounds,
+                  }),
+                });
               const isManualLayout = hasManualAnnotationLayout(event, kind);
+              const inkBlockerSource =
+                kind === 'pedal' && score.type === 'grand' && side === 'below'
+                  ? systemInkBlockers
+                  : staffInkBlockers;
+              const annotationStaffSymbolInkBlockers =
+                grandPedalStaffIndex === staffIndex
+                  ? staffSymbolInkBlockers
+                  : getRenderedSystemStaffSymbolInkBounds(
+                      score,
+                      grandPedalStaffIndex,
+                      systemIndex,
+                    );
+              const otherEventInkBlockers = inkBlockerSource
+                .filter((blocker) => blocker.eventId !== event.id)
+                .map((blocker) =>
+                  insetAnnotationBounds(blocker.bounds, { x: 10, y: 6 }),
+                );
+              const manualStaffSymbolBlockers =
+                annotationStaffSymbolInkBlockers.map((blocker) =>
+                  insetAnnotationBounds(blocker, { x: 12, y: 8 }),
+                );
+              const manualBlockers = [
+                ...otherEventInkBlockers,
+                ...manualStaffSymbolBlockers,
+                ...systemAnnotationPlacements,
+              ];
+              const autoBlockers = [
+                ...otherEventInkBlockers,
+                ...annotationStaffSymbolInkBlockers,
+                ...systemAnnotationPlacements,
+              ];
               const placement = isManualLayout
                 ? createManualAnnotationPlacement(preferredBounds, side)
                 : placeAnnotationInRows({
-                    blockers: [
-                      ...staffInkBlockers
-                        .filter((blocker) => blocker.eventId !== event.id)
-                        .map((blocker) => blocker.bounds),
-                      ...staffSymbolInkBlockers,
-                      ...systemAnnotationPlacements,
-                    ],
+                    blockers: autoBlockers,
                     direction: side,
                     placements: sidePlacements,
                     preferredBounds,
                   });
               const shiftedPlacement = keepAnnotationPlacementOutsideStaff(
                 moveAnnotationPlacement(placement, offset),
-                staffBounds,
+                annotationStaffBounds,
               );
+              const renderedPlacement = isManualLayout
+                ? keepAnnotationPlacementOutsideStaff(
+                    resolveAnnotationPlacementCollisions({
+                      blockers: manualBlockers,
+                      direction: side,
+                      placement: shiftedPlacement,
+                    }),
+                    annotationStaffBounds,
+                  )
+                : shiftedPlacement;
 
               if (isManualLayout) {
-                sidePlacements.push(shiftedPlacement);
+                sidePlacements.push(renderedPlacement);
               }
-              systemAnnotationPlacements.push(shiftedPlacement);
+              systemAnnotationPlacements.push(renderedPlacement);
 
               const renderedAnnotationLayout = createRenderedAnnotationLayout({
                 eventId: event.id,
@@ -601,7 +674,7 @@ export function drawTextAnnotations(
                 measureIndex: measure.index,
                 offsetX: offset.x,
                 offsetY: offset.y,
-                placement: shiftedPlacement,
+                placement: renderedPlacement,
                 staffId: staff.id,
                 text,
                 voiceIndex,
@@ -613,7 +686,7 @@ export function drawTextAnnotations(
                 'data-annotation-kind': kind,
                 'data-annotation-offset-x': String(offset.x),
                 'data-annotation-offset-y': String(offset.y),
-                'data-annotation-row': String(shiftedPlacement.row),
+                'data-annotation-row': String(renderedPlacement.row),
                 'data-annotation-side': side,
                 'data-event-id': event.id,
                 'data-testid': testId,

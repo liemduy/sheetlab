@@ -1297,7 +1297,7 @@ describe('App editor state', () => {
     await waitFor(() => {
       expect(screen.getByTestId('rendered-pedal')).toHaveAttribute(
         'data-annotation-side',
-        'above',
+        'below',
       );
     });
 

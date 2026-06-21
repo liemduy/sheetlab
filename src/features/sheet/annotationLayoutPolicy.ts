@@ -36,6 +36,8 @@ export const NOTEHEAD_ANNOTATION_INK_PADDING = 10;
 export const ANNOTATION_HORIZONTAL_GAP = 6;
 export const MAX_ANNOTATION_ROW_ATTEMPTS = 8;
 export const MAX_AUTO_BELOW_ANNOTATION_ROWS = 2;
+export const MANUAL_ANNOTATION_COLLISION_STEP = 8;
+export const MAX_MANUAL_ANNOTATION_COLLISION_ATTEMPTS = 16;
 
 export const ANNOTATION_METRICS = {
   chordSymbol: { charWidth: 9.5, descent: 5, height: 20, minWidth: 22 },
@@ -107,15 +109,15 @@ export function doAnnotationBoundsOverlap(
   );
 }
 
-export function moveAnnotationBoundsY(
-  bounds: AnnotationBounds,
+export function moveAnnotationBoundsY<TBounds extends AnnotationBounds>(
+  bounds: TBounds,
   deltaY: number,
-) {
+): TBounds {
   return {
     ...bounds,
     maxY: bounds.maxY + deltaY,
     minY: bounds.minY + deltaY,
-  };
+  } as TBounds;
 }
 
 export function moveAnnotationBounds<TBounds extends AnnotationBounds>(
@@ -129,6 +131,27 @@ export function moveAnnotationBounds<TBounds extends AnnotationBounds>(
     minX: bounds.minX + offset.x,
     minY: bounds.minY + offset.y,
   } as TBounds;
+}
+
+export function insetAnnotationBounds(
+  bounds: AnnotationBounds,
+  inset: { x: number; y: number },
+): AnnotationBounds {
+  const nextMinX = bounds.minX + inset.x;
+  const nextMaxX = bounds.maxX - inset.x;
+  const nextMinY = bounds.minY + inset.y;
+  const nextMaxY = bounds.maxY - inset.y;
+
+  if (nextMinX >= nextMaxX || nextMinY >= nextMaxY) {
+    return bounds;
+  }
+
+  return {
+    maxX: nextMaxX,
+    maxY: nextMaxY,
+    minX: nextMinX,
+    minY: nextMinY,
+  };
 }
 
 export function placeAnnotationInRows({
@@ -191,6 +214,53 @@ export function createManualAnnotationPlacement(
     ...bounds,
     row: 0,
     side,
+  };
+}
+
+export function resolveAnnotationPlacementCollisions({
+  blockers = [],
+  direction,
+  maxAttempts = MAX_MANUAL_ANNOTATION_COLLISION_ATTEMPTS,
+  placement,
+  step = MANUAL_ANNOTATION_COLLISION_STEP,
+}: {
+  blockers?: AnnotationBounds[];
+  direction: AnnotationSide;
+  maxAttempts?: number;
+  placement: AnnotationPlacement;
+  step?: number;
+}): AnnotationPlacement {
+  if (blockers.length === 0) {
+    return placement;
+  }
+
+  const rowDirection = direction === 'below' ? 1 : -1;
+  let lastCandidate = placement;
+
+  for (let attempt = 0; attempt <= maxAttempts; attempt += 1) {
+    const candidate = attempt === 0
+      ? placement
+      : moveAnnotationBoundsY(
+          placement,
+          rowDirection * attempt * step,
+        );
+    const hasCollision = blockers.some((blocker) =>
+      doAnnotationBoundsOverlap(candidate, blocker),
+    );
+
+    if (!hasCollision) {
+      return {
+        ...candidate,
+        row: placement.row,
+      };
+    }
+
+    lastCandidate = candidate;
+  }
+
+  return {
+    ...lastCandidate,
+    row: placement.row,
   };
 }
 

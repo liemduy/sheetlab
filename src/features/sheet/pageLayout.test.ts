@@ -42,7 +42,7 @@ describe('score page layout', () => {
     expect(pageMeasureIndexes).toEqual(
       Array.from({ length: 86 }, (_, index) => index),
     );
-    expect(pages.length).toBeLessThanOrEqual(10);
+    expect(pages.length).toBeLessThanOrEqual(11);
     expect(getScorePageForMeasureIndex(pages, 85)?.index).toBe(
       pages.length - 1,
     );

@@ -4264,7 +4264,7 @@ describe('StaffRenderer', () => {
     expect(pedalY).toBeLessThan(getStaffTop(0) + 50);
   });
 
-  it('widens the grand staff gap so treble annotations do not overlap the bass staff', async () => {
+  it('places grand-staff pedal marks below the bass staff', async () => {
     const noteScore = placeScoreEvent(createEmptyScore('grand'), {
       eventId: 'grand-low-annotated-note',
       staffId: 'treble',
@@ -4294,9 +4294,15 @@ describe('StaffRenderer', () => {
     const pedalBaselineY = Number(
       screen.getByTestId('rendered-pedal').getAttribute('y'),
     );
+    const pedalTop = pedalBaselineY - ANNOTATION_METRICS.pedal.height;
 
     expect(staffGap).toBeGreaterThan(STAFF_GAP);
-    expect(pedalBaselineY + 6).toBeLessThan(bassTop - 8);
+    expect(pedalTop).toBeGreaterThanOrEqual(
+      bassTop +
+        STAFF_LINE_SPACING * 4 +
+        STAFF_OUTSIDE_ANNOTATION_GAP -
+        1,
+    );
   });
 
   it('widens only the grand-staff system that needs annotation space', async () => {
