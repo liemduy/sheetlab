@@ -62,6 +62,8 @@ import {
   STAFF_OUTSIDE_ANNOTATION_GAP,
 } from './annotationLayoutPolicy';
 
+const BASS_CLEF_GLYPH = String.fromCodePoint(0xe062);
+
 const trebleHover: MusicPosition = {
   staffId: 'treble',
   staffIndex: 0,
@@ -2636,6 +2638,47 @@ describe('StaffRenderer', () => {
         1,
         getScoreStaffGap(score, 0),
       ),
+    );
+  });
+
+  it('renders an inline bass clef change on a treble staff only once', async () => {
+    const scoreWithClef = trySetClefChange(
+      createEmptyScore('treble', { measureCount: 1 }),
+      'treble',
+      0,
+      1,
+      'bass',
+    ).score;
+    const clefChangeId =
+      scoreWithClef.parts[0]?.staves
+        .find((staff) => staff.id === 'treble')
+        ?.measures[0]?.clefChanges?.[0]?.id ?? '';
+    const score = placeScoreEvent(scoreWithClef, {
+      eventId: 'treble-staff-bass-clef-note',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 1,
+      duration: 'quarter',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 3 },
+    });
+    const { container } = render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-clef-change')).toHaveAttribute(
+        'data-clef-change-id',
+        clefChangeId,
+      );
+    });
+
+    const renderedBassClefTexts = Array.from(
+      container.querySelectorAll('.vexflow-output text'),
+    ).filter((element) => element.textContent === BASS_CLEF_GLYPH);
+
+    expect(renderedBassClefTexts).toHaveLength(1);
+    expect(renderedBassClefTexts[0]).toHaveAttribute(
+      'data-clef-change-id',
+      clefChangeId,
     );
   });
 

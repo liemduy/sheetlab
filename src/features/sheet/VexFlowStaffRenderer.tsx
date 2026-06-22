@@ -81,6 +81,70 @@ const CLEF_CHANGE_STAVE_LINE = {
   bass: 1,
   treble: 3,
 } satisfies Record<Clef, number>;
+const CLEF_CHANGE_GLYPH_MATCH_TOLERANCE = 8;
+
+function getClefChangeGlyph(clef: Clef) {
+  return String.fromCodePoint(CLEF_CHANGE_GLYPH_CODEPOINT[clef]);
+}
+
+function getSvgNumberAttribute(element: SVGElement, attribute: 'x' | 'y') {
+  const value = element.getAttribute(attribute);
+
+  if (!value) {
+    return Number.NaN;
+  }
+
+  return Number.parseFloat(value);
+}
+
+function findRenderedClefNoteElement({
+  change,
+  note,
+  stave,
+  svg,
+}: {
+  change: { clef: Clef };
+  note: ClefNote;
+  stave: Stave;
+  svg: SVGSVGElement;
+}) {
+  const expectedX = note.getAbsoluteX();
+  const expectedY = stave.getYForLine(CLEF_CHANGE_STAVE_LINE[change.clef]);
+
+  if (!Number.isFinite(expectedX) || !Number.isFinite(expectedY)) {
+    return null;
+  }
+
+  const glyph = getClefChangeGlyph(change.clef);
+  const candidates = Array.from(svg.querySelectorAll('text'))
+    .filter(
+      (element) =>
+        element.textContent === glyph &&
+        !element.hasAttribute('data-clef-change-id'),
+    )
+    .map((element) => {
+      const x = getSvgNumberAttribute(element, 'x');
+      const y = getSvgNumberAttribute(element, 'y');
+
+      return {
+        distance:
+          Math.abs(x - expectedX) + Math.abs(y - expectedY),
+        element,
+        x,
+        y,
+      };
+    })
+    .filter(
+      ({ x, y }) =>
+        Number.isFinite(x) &&
+        Number.isFinite(y) &&
+        Math.abs(x - expectedX) <= CLEF_CHANGE_GLYPH_MATCH_TOLERANCE &&
+        Math.abs(y - expectedY) <= CLEF_CHANGE_GLYPH_MATCH_TOLERANCE,
+    )
+    .sort((left, right) => left.distance - right.distance);
+
+  return candidates[0]?.element ?? null;
+}
 
 function drawVexFlowMeasureEvents({
   beatsPerMeasure,
@@ -231,7 +295,17 @@ function drawVexFlowMeasureEvents({
   renderedVoices
     .flatMap(({ clefNotes }) => clefNotes)
     .forEach(({ change, note }) => {
-      const svgElement = note.getClef().getSVGElement();
+      const svg = (context as { svg?: SVGSVGElement }).svg;
+      const svgElement =
+        note.getClef().getSVGElement() ??
+        (svg
+          ? findRenderedClefNoteElement({
+              change,
+              note,
+              stave,
+              svg,
+            })
+          : null);
 
       if (svgElement) {
         tagRenderedClefChangeElement({
@@ -243,8 +317,6 @@ function drawVexFlowMeasureEvents({
 
         return;
       }
-
-      const svg = (context as { svg?: SVGSVGElement }).svg;
 
       if (!svg) {
         return;
@@ -263,9 +335,7 @@ function drawVexFlowMeasureEvents({
           ? absoluteX
           : Math.max(getMeasureContentLeft(measureIndex, score), fallbackX - 14);
 
-      clefText.textContent = String.fromCodePoint(
-        CLEF_CHANGE_GLYPH_CODEPOINT[change.clef],
-      );
+      clefText.textContent = getClefChangeGlyph(change.clef);
       clefText.setAttribute('font-family', 'Bravura, Academico');
       clefText.setAttribute('font-size', '24pt');
       clefText.setAttribute('stroke', 'none');
