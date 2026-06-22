@@ -3014,10 +3014,53 @@ describe('StaffRenderer', () => {
         'data-event-id',
         'marked-note-1',
       );
+      expect(screen.getByTestId('rendered-arpeggio')).toHaveAttribute(
+        'data-has-arpeggio',
+        'true',
+      );
       expect(screen.getByTestId('rendered-hairpin')).toHaveAttribute(
         'data-hairpin',
         'crescendo',
       );
+    });
+  });
+
+  it('renders arpeggios as native VexFlow strokes inside accidental chords', async () => {
+    const score = createEmptyScore('treble', { measureCount: 1 });
+    const arpeggiatedChord: ChordEvent = {
+      arpeggio: true,
+      beat: 0,
+      duration: 'quarter',
+      id: 'arpeggio-accidental-chord',
+      kind: 'chord',
+      pitches: [
+        { accidental: 'sharp', octave: 4, step: 'C' },
+        { accidental: 'sharp', octave: 4, step: 'E' },
+        { accidental: 'sharp', octave: 4, step: 'G' },
+      ],
+    };
+
+    score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events.push(
+      arpeggiatedChord,
+    );
+
+    const { container } = render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      const arpeggioEvent = screen.getByTestId('rendered-arpeggio');
+      const arpeggioGlyph = screen.getByTestId('rendered-arpeggio-glyph');
+
+      expect(arpeggioEvent).toHaveAttribute(
+        'data-event-id',
+        'arpeggio-accidental-chord',
+      );
+      expect(arpeggioEvent).toHaveAttribute('data-has-arpeggio', 'true');
+      expect(arpeggioGlyph).toHaveAttribute(
+        'data-event-id',
+        'arpeggio-accidental-chord',
+      );
+      expect(arpeggioGlyph.textContent).toContain('\uEAA9');
+      expect(container.querySelector('.sheetlab-arpeggio')).toBeNull();
     });
   });
 

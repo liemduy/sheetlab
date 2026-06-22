@@ -6,6 +6,7 @@ import {
   GraceNoteGroup,
   ModifierPosition,
   StaveNote,
+  Stroke as VexFlowStroke,
 } from 'vexflow';
 import type {
   ArticulationKind,
@@ -157,6 +158,13 @@ export function createVexFlowNote(
       ).beamNotes();
 
       staveNote.addModifier(graceNoteGroup, 0);
+    }
+
+    if (event.arpeggio) {
+      staveNote.addStroke(
+        0,
+        new VexFlowStroke(VexFlowStroke.Type.ARPEGGIO_DIRECTIONLESS),
+      );
     }
   }
 
