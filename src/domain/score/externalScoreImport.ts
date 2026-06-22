@@ -36,6 +36,7 @@ import type {
   SlurMark,
   AnnotationPlacementSide,
   StaffId,
+  StemDirection,
   TieMark,
   TimeSignature,
   TupletInfo,
@@ -1001,6 +1002,7 @@ function createMusicXmlEvent({
   isRest,
   lyric,
   pitch,
+  stemDirection,
   tuplet,
 }: {
   beat: number;
@@ -1010,6 +1012,7 @@ function createMusicXmlEvent({
   isRest: boolean;
   lyric?: string;
   pitch: Pitch | null;
+  stemDirection?: StemDirection;
   tuplet?: TupletInfo;
 }): ScoreEvent {
   const base = {
@@ -1033,7 +1036,18 @@ function createMusicXmlEvent({
     graceNotes: normalizeGraceNotes(graceNotes, base.id),
     kind: 'note',
     pitch,
+    stemDirection,
   };
+}
+
+function parseMusicXmlStemDirection(note: Element): StemDirection | undefined {
+  const stem = getDirectChildText(note, 'stem')?.trim();
+
+  if (stem === 'up' || stem === 'down') {
+    return stem;
+  }
+
+  return undefined;
 }
 
 function appendPitchToMusicXmlEvent(event: ScoreEvent, pitch: Pitch) {
@@ -1938,6 +1952,9 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
 
         const durationUnits = getMusicXmlDurationUnits(child, divisions, warnings);
         const duration = getMusicXmlEventDuration(child, durationUnits, warnings);
+        const stemDirection = !isRest
+          ? parseMusicXmlStemDirection(child)
+          : undefined;
 
         if (isChord && pitch) {
           const previousEvent = lastEventByStaff.get(voiceKey);
@@ -1984,6 +2001,7 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
           isRest,
           lyric,
           pitch,
+          stemDirection,
           tuplet,
         });
         const beamGroupId = !isRest

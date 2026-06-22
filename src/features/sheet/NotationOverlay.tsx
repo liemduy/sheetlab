@@ -84,10 +84,7 @@ import {
   type LyricMapDragAnchor,
 } from './OverlayLyricMapLayer';
 import { PlaybackLayer } from './OverlayPlaybackLayer';
-import {
-  getScorePageViewBox,
-  type ScorePageViewport,
-} from './pageLayout';
+import type { ScorePageViewport } from './pageLayout';
 import { VoiceZoneDebugOverlay } from './OverlayVoiceZoneLayer';
 import { getNestedSvgPoint, getSvgPoint } from './overlaySvgPoint';
 import type {
@@ -279,7 +276,12 @@ export function NotationOverlay({
   const suppressNextPlaceRef = useRef(false);
   const staves = score.parts[0]?.staves ?? [];
   const beatsPerMeasure = getMeasureBeats(score.timeSignature);
-  const viewBox = getScorePageViewBox(pageViewport, svgWidth, svgHeight);
+  const viewBox = {
+    height: svgHeight,
+    width: svgWidth,
+    x: 0,
+    y: pageViewport?.y ?? 0,
+  };
   const visibleMeasureIndexSet = pageViewport
     ? new Set(pageViewport.measureIndexes)
     : null;

@@ -73,7 +73,6 @@ import {
   tagRenderedClefChangeElement,
 } from './vexflowSvgTagging';
 import { collectRenderedMeasureEventLayouts } from './vexflowLayoutCollector';
-import { getScorePageViewBox } from './pageLayout';
 
 const CLEF_CHANGE_GLYPH_CODEPOINT = {
   bass: 0xe062,
@@ -146,8 +145,12 @@ function createVexFlowBeams({
     const explicitNoteIndexes = new Set(
       explicitGroupEntries.flatMap((group) => group.indexes),
     );
-    const explicitBeams = explicitGroupEntries.map(
-      (group) => new Beam(group.notes),
+    const explicitBeams = explicitGroupEntries.flatMap(
+      (group) =>
+        Beam.generateBeams(group.notes, {
+          ...defaultBeamOptions,
+          maintainStemDirections: true,
+        }),
     );
     const autoNotes = notes.filter((_, noteIndex) =>
       !explicitNoteIndexes.has(noteIndex),
@@ -536,11 +539,9 @@ function drawVexFlowStaves(
   const svg = container.querySelector('svg');
 
   if (svg) {
-    const viewBox = getScorePageViewBox(pageViewport, width, height);
-
     svg.setAttribute(
       'viewBox',
-      `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`,
+      `0 ${pageViewport?.y ?? 0} ${width} ${height}`,
     );
     svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
   }

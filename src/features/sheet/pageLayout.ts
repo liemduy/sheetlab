@@ -13,10 +13,6 @@ export interface ScorePageViewport {
   height: number;
   index: number;
   measureIndexes: number[];
-  viewBoxHeight?: number;
-  viewBoxWidth?: number;
-  viewBoxX?: number;
-  viewBoxY?: number;
   y: number;
 }
 
@@ -29,47 +25,6 @@ const PAGE_SYSTEM_TOP_PADDING = 48;
 const PAGE_SYSTEM_BOTTOM_PADDING = 112;
 const IMPORTED_PAGE_SYSTEM_TOP_PADDING = 24;
 const IMPORTED_PAGE_SYSTEM_BOTTOM_PADDING = 48;
-const PAGE_VIEWBOX_HORIZONTAL_BLEED = 32;
-const PAGE_VIEWBOX_VERTICAL_BLEED = 96;
-
-function withPageViewBoxBleed(
-  viewport: Omit<ScorePageViewport, 'viewBoxHeight' | 'viewBoxWidth' | 'viewBoxX' | 'viewBoxY'>,
-): ScorePageViewport {
-  const viewBoxY = Math.max(0, viewport.y - PAGE_VIEWBOX_VERTICAL_BLEED);
-
-  return {
-    ...viewport,
-    viewBoxHeight:
-      viewport.height + (viewport.y - viewBoxY) + PAGE_VIEWBOX_VERTICAL_BLEED,
-    viewBoxWidth: undefined,
-    viewBoxX: -PAGE_VIEWBOX_HORIZONTAL_BLEED,
-    viewBoxY,
-  };
-}
-
-export function getScorePageViewBox(
-  pageViewport: ScorePageViewport | undefined,
-  fallbackWidth: number,
-  fallbackHeight: number,
-) {
-  if (!pageViewport) {
-    return {
-      height: fallbackHeight,
-      width: fallbackWidth,
-      x: 0,
-      y: 0,
-    };
-  }
-
-  return {
-    height: pageViewport.viewBoxHeight ?? pageViewport.height,
-    width:
-      pageViewport.viewBoxWidth ??
-      fallbackWidth + PAGE_VIEWBOX_HORIZONTAL_BLEED * 2,
-    x: pageViewport.viewBoxX ?? 0,
-    y: pageViewport.viewBoxY ?? pageViewport.y,
-  };
-}
 
 export function getInitialScorePageIndexes(pageCount: number) {
   return pageCount <= 0 ? new Set<number>() : new Set([0]);
@@ -105,7 +60,7 @@ function getScoreMeasureCount(score: Score) {
 }
 
 function getUnpaginatedViewport(score: Score): ScorePageViewport {
-  return withPageViewBoxBleed({
+  return {
     height: Math.max(PAGE_NOTATION_HEIGHT[score.pageSize], getScoreSvgHeight(score)),
     index: 0,
     measureIndexes: Array.from(
@@ -113,7 +68,7 @@ function getUnpaginatedViewport(score: Score): ScorePageViewport {
       (_, index) => index,
     ),
     y: 0,
-  });
+  };
 }
 
 function getSystemBounds(score: Score, systemIndex: number) {
@@ -175,7 +130,7 @@ function getImportedPageViewports(score: Score): ScorePageViewport[] | null {
     const pageTop = pageIndex === 0 ? 0 : firstSystem.top;
     const pageBottom = Math.max(pageTop + pageHeight, lastSystem.bottom);
 
-    return withPageViewBoxBleed({
+    return {
       height: pageBottom - pageTop,
       index: pageIndex,
       measureIndexes: Array.from(
@@ -183,7 +138,7 @@ function getImportedPageViewports(score: Score): ScorePageViewport[] | null {
         (_, offset) => firstMeasureIndex + offset,
       ),
       y: pageTop,
-    });
+    };
   });
 }
 
@@ -211,12 +166,12 @@ export function getScorePageViewports(score: Score): ScorePageViewport[] {
       pageMeasureIndexes.length > 0 && system.bottom > pageBottom;
 
     if (shouldStartNextPage) {
-      pages.push(withPageViewBoxBleed({
+      pages.push({
         height: pageBottom - pageTop,
         index: pages.length,
         measureIndexes: pageMeasureIndexes,
         y: pageTop,
-      }));
+      });
       pageMeasureIndexes = [];
       pageTop = system.top;
       pageBottom = pageTop + pageHeight;
@@ -227,12 +182,12 @@ export function getScorePageViewports(score: Score): ScorePageViewport[] {
   }
 
   if (pageMeasureIndexes.length > 0) {
-    pages.push(withPageViewBoxBleed({
+    pages.push({
       height: Math.max(pageHeight, pageBottom - pageTop),
       index: pages.length,
       measureIndexes: pageMeasureIndexes,
       y: pageTop,
-    }));
+    });
   }
 
   return pages.length > 0

@@ -469,6 +469,7 @@ describe('externalScoreImport', () => {
               <voice>1</voice>
               <type>32nd</type>
               <staff>2</staff>
+              <stem>down</stem>
               <beam number="1">begin</beam>
             </note>
             <note>
@@ -477,6 +478,7 @@ describe('externalScoreImport', () => {
               <voice>1</voice>
               <type>32nd</type>
               <staff>2</staff>
+              <stem>down</stem>
               <beam number="1">continue</beam>
             </note>
             <note>
@@ -485,6 +487,7 @@ describe('externalScoreImport', () => {
               <voice>1</voice>
               <type>32nd</type>
               <staff>2</staff>
+              <stem>down</stem>
               <beam number="1">end</beam>
             </note>
             <note>
@@ -493,6 +496,7 @@ describe('externalScoreImport', () => {
               <voice>1</voice>
               <type>32nd</type>
               <staff>2</staff>
+              <stem>up</stem>
             </note>
           </measure>
         </part>
@@ -511,6 +515,10 @@ describe('externalScoreImport', () => {
       clef: 'treble',
       octaveShift: 1,
     });
+    expect(events[0]?.stemDirection).toBe('down');
+    expect(events[1]?.stemDirection).toBe('down');
+    expect(events[2]?.stemDirection).toBe('down');
+    expect(events[3]?.stemDirection).toBe('up');
     expect(new Set(explicitBeamGroupIds).size).toBe(1);
     expect(explicitBeamGroupIds.every(Boolean)).toBe(true);
     expect(events[3]?.beamGroupId).toBeUndefined();

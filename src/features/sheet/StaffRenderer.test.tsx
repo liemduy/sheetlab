@@ -2255,6 +2255,67 @@ describe('StaffRenderer', () => {
     expect(container.querySelectorAll('.vexflow-output .vf-flag')).toHaveLength(0);
   });
 
+  it('keeps imported explicit beam groups from overriding manual stem direction', async () => {
+    const firstNoteScore = placeScoreEvent(createEmptyScore('treble'), {
+      eventId: 'explicit-beam-down-1',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'B', octave: 4 },
+    });
+    const beamedScore = placeScoreEvent(firstNoteScore, {
+      eventId: 'explicit-beam-down-2',
+      staffId: 'treble',
+      measureIndex: 0,
+      beat: 0.5,
+      duration: 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'C', octave: 5 },
+    });
+    const score = {
+      ...beamedScore,
+      parts: beamedScore.parts.map((part) => ({
+        ...part,
+        staves: part.staves.map((staff) => ({
+          ...staff,
+          measures: staff.measures.map((measure) => ({
+            ...measure,
+            voices: measure.voices.map((voice) => ({
+              ...voice,
+              events: voice.events.map((event) =>
+                event.id.startsWith('explicit-beam-down-')
+                  ? {
+                      ...event,
+                      beamGroupId: 'imported-explicit-down-beam',
+                      stemDirection: 'down' as const,
+                    }
+                  : event,
+              ),
+            })),
+          })),
+        })),
+      })),
+    };
+    const { container } = render(<StaffRenderer score={score} />);
+
+    await waitFor(() => {
+      ['explicit-beam-down-1', 'explicit-beam-down-2'].forEach((eventId) => {
+        const eventElement = container.querySelector(
+          `.vexflow-output .vf-user-event[data-event-id="${eventId}"]`,
+        );
+
+        expect(eventElement).toHaveAttribute('data-stem-direction', 'down');
+        expect(eventElement).toHaveAttribute(
+          'data-stem-direction-source',
+          'manual',
+        );
+      });
+      expect(container.querySelectorAll('.vexflow-output .vf-beam').length).toBeGreaterThan(0);
+    });
+  });
+
   it('renders octave-shifted clef notes at their written display octave', () => {
     const baseScore = createEmptyScore('grand', { measureCount: 1 });
     const scoreWithClef = {
