@@ -16,8 +16,8 @@ import {
 } from './layout';
 import { getPitchYForScore } from './notationGeometry';
 
-const SYMBOL_SPACING = 14;
-const SYSTEM_START_X_OFFSET = 55;
+const SYMBOL_SPACING = 11.5;
+const SYSTEM_START_X_OFFSET = 47;
 const MID_MEASURE_X_OFFSET = 14;
 
 const DISPLAY_PITCH_BY_CLEF_AND_ACCIDENTAL = {

@@ -76,6 +76,7 @@ const CLEF_CHANGE_GLYPH_CODEPOINT = {
   bass: 0xe062,
   treble: 0xe050,
 } satisfies Record<Clef, number>;
+const SYSTEM_START_KEY_SIGNATURE_BREATHING_ROOM = 12;
 const CLEF_CHANGE_STAVE_LINE = {
   bass: 1,
   treble: 3,
@@ -349,9 +350,14 @@ function drawVexFlowStaves(
         },
       );
 
-      if (getLocalMeasureIndex(measure.index, score) === 0) {
+      const isSystemStart = getLocalMeasureIndex(measure.index, score) === 0;
+      const activeKeySignature = getActiveKeySignature(score, measure.index);
+      const hasStartKeySignature =
+        activeKeySignature !== 'C' &&
+        (isSystemStart || measureStartsKeySignatureChange(score, measure.index));
+
+      if (isSystemStart) {
         stave.addClef(getActiveClef(score, staff.id, measure.index, 0));
-        const activeKeySignature = getActiveKeySignature(score, measure.index);
 
         if (activeKeySignature !== 'C') {
           stave.addKeySignature(activeKeySignature);
@@ -363,13 +369,19 @@ function drawVexFlowStaves(
           );
         }
       } else if (measureStartsKeySignatureChange(score, measure.index)) {
-        stave.addKeySignature(getActiveKeySignature(score, measure.index));
+        stave.addKeySignature(activeKeySignature);
       }
 
       applyRepeatJumpToStave(stave, score, measure.index, staffIndex);
       stave.setAttribute('data-measure-index', String(measure.index));
       stave.setAttribute('data-staff-id', staff.id);
       stave.setContext(context).draw();
+
+      if (hasStartKeySignature && measure.index > 0) {
+        stave.setNoteStartX(
+          stave.getNoteStartX() + SYSTEM_START_KEY_SIGNATURE_BREATHING_ROOM,
+        );
+      }
 
       return stave;
     }),

@@ -3551,17 +3551,31 @@ describe('StaffRenderer', () => {
     },
   );
 
-  it('renders dense chromatic key signatures with real glyphs and separated header marks', async () => {
-    render(<StaffRenderer score={extremeClefOttavaChromaticFixture} />);
+  it('keeps dense chromatic key signatures native and separated from header marks', async () => {
+    const { container } = render(
+      <StaffRenderer score={extremeClefOttavaChromaticFixture} />,
+    );
 
     await waitFor(() => {
-      expect(screen.getAllByTestId('rendered-key-signature-symbol').length)
-        .toBeGreaterThan(0);
+      expect(screen.queryAllByTestId('rendered-key-signature-symbol').length)
+        .toBe(0);
+      expect(
+        container.querySelectorAll('.vexflow-output .vf-keysignature').length,
+      ).toBeGreaterThan(0);
     });
 
-    screen.getAllByTestId('rendered-key-signature-symbol').forEach((symbol) => {
-      expect(['♯', '♭']).toContain(symbol.textContent);
-      expect(symbol.textContent).not.toMatch(/[Ãâ]/);
+    container
+      .querySelectorAll('.vexflow-output .vf-keysignature')
+      .forEach((symbol) => {
+        expect(symbol).not.toHaveAttribute(
+          'data-sheetlab-hidden-standard-key-signature',
+        );
+      });
+    expect(
+      container.querySelectorAll('.vexflow-output .sheetlab-key-signature-symbol'),
+    ).toHaveLength(0);
+    screen.getAllByTestId('key-signature-symbol-target').forEach((target) => {
+      expect(target).toHaveAttribute('data-accidental');
     });
 
     const tempoY = Number(

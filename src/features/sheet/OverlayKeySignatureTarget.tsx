@@ -44,8 +44,8 @@ export function KeySignatureSymbolTarget({
         className="key-signature-symbol-target"
         height={44}
         rx={5}
-        width={10}
-        x={layout.x - 5}
+        width={14}
+        x={layout.x - 7}
         y={layout.y - 22}
       />
     </g>
