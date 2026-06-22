@@ -5,7 +5,7 @@ import type {
   Staff,
   StemDirection,
 } from '../../domain/score/types';
-import { getActiveClef } from '../../domain/score/clefChanges';
+import { getActiveClefState } from '../../domain/score/clefChanges';
 import { getEffectiveStemDirection } from '../../domain/score/stemDirection';
 
 export function createVexFlowTuplets(
@@ -40,12 +40,22 @@ export function createVexFlowTuplets(
 
     const group = groups.get(event.tuplet.id) ?? {
       actualNotes: event.tuplet.actualNotes,
-      direction: getEffectiveStemDirection({
-        clef: getActiveClef(score, staff.id, measureIndex, event.beat),
-        event,
-        hasMultipleVoices,
-        voiceIndex,
-      }),
+      direction: (() => {
+        const activeClefState = getActiveClefState(
+          score,
+          staff.id,
+          measureIndex,
+          event.beat,
+        );
+
+        return getEffectiveStemDirection({
+          clef: activeClefState.clef,
+          clefOctaveShift: activeClefState.octaveShift,
+          event,
+          hasMultipleVoices,
+          voiceIndex,
+        });
+      })(),
       normalNotes: event.tuplet.normalNotes,
       notesByIndex: new Map<number, StaveNote>(),
     };

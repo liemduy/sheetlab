@@ -146,7 +146,8 @@ function isClefChange(value: unknown): value is ClefChange {
     isString(value.id) &&
     isNumber(value.beat) &&
     value.beat >= 0 &&
-    CLEFS.has(value.clef as Clef)
+    CLEFS.has(value.clef as Clef) &&
+    (value.octaveShift === undefined || isNumber(value.octaveShift))
   );
 }
 
@@ -330,6 +331,7 @@ function isScoreEvent(value: unknown): value is ScoreEvent {
     (value.arpeggio === undefined || typeof value.arpeggio === 'boolean') &&
     (value.articulations === undefined ||
       isArticulations(value.articulations)) &&
+    (value.beamGroupId === undefined || isString(value.beamGroupId)) &&
     (value.stemDirection === undefined ||
       isScoreStemDirection(value.stemDirection)) &&
     (value.chordSymbol === undefined || isString(value.chordSymbol)) &&

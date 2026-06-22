@@ -12,6 +12,7 @@ import {
   normalizeGraceNotes,
 } from './graceNotes';
 import { createEmptyVoice } from './voices';
+import { normalizeClefOctaveShift } from './clefChanges';
 import type {
   Accidental,
   ArticulationKind,
@@ -196,6 +197,18 @@ interface MusicXmlNoteMarks {
     type: 'start' | 'stop';
   }>;
   ties: Array<'start' | 'stop'>;
+}
+
+interface ParsedMusicXmlClef {
+  clef: Clef;
+  octaveShift: number;
+}
+
+type MusicXmlBeamRole = 'begin' | 'continue' | 'end' | 'forward hook' | 'backward hook';
+
+interface MusicXmlBeamMark {
+  number: string;
+  role: MusicXmlBeamRole;
 }
 
 export interface MusicXmlImportAnalysis {
@@ -749,6 +762,29 @@ function getMusicXmlNoteMarks(note: Element): MusicXmlNoteMarks {
   };
 }
 
+function getMusicXmlBeamMarks(note: Element): MusicXmlBeamMark[] {
+  return getDirectChildren(note, 'beam').flatMap((beam) => {
+    const role = beam.textContent?.trim() as MusicXmlBeamRole | '';
+
+    if (
+      role !== 'begin' &&
+      role !== 'continue' &&
+      role !== 'end' &&
+      role !== 'forward hook' &&
+      role !== 'backward hook'
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        number: beam.getAttribute('number') || '1',
+        role,
+      },
+    ];
+  });
+}
+
 function getMusicXmlPitchConnectionKey(
   staffId: StaffId,
   voiceIndex: number,
@@ -781,15 +817,18 @@ function mergeMusicXmlMarksIntoEvent(event: ScoreEvent, marks: MusicXmlNoteMarks
   }
 }
 
-function parseMusicXmlClef(clef: Element): Clef | null {
+function parseMusicXmlClef(clef: Element): ParsedMusicXmlClef | null {
   const sign = getDirectChildText(clef, 'sign');
+  const octaveShift = normalizeClefOctaveShift(
+    Number(getDirectChildText(clef, 'clef-octave-change')),
+  );
 
   if (sign === 'G') {
-    return 'treble';
+    return { clef: 'treble', octaveShift };
   }
 
   if (sign === 'F') {
-    return 'bass';
+    return { clef: 'bass', octaveShift };
   }
 
   return null;
@@ -1419,10 +1458,11 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
   const importedMarks: NotationMark[] = [];
   const sectionMarkersByMeasure = new Map<number, string>();
   const voiceIndexesByStaff = new Map<StaffId, Map<string, number>>();
-  const activeClefByStaff = new Map<StaffId, Clef>([
-    ['bass', 'bass'],
-    ['treble', 'treble'],
+  const activeClefByStaff = new Map<StaffId, ParsedMusicXmlClef>([
+    ['bass', { clef: 'bass', octaveShift: 0 }],
+    ['treble', { clef: 'treble', octaveShift: 0 }],
   ]);
+  const pendingBeamGroupByKey = new Map<string, string>();
   let eventCounter = 1;
 
   function getMusicXmlVoiceIndex(staffId: StaffId, note: Element) {
@@ -1582,21 +1622,31 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
     staffId: StaffId,
     measureIndex: number,
     beat: number,
-    clef: Clef,
+    clefState: ParsedMusicXmlClef,
     clefIndex: number,
   ) {
-    if (activeClefByStaff.get(staffId) === clef) {
+    const activeClef = activeClefByStaff.get(staffId);
+    const octaveShift = normalizeClefOctaveShift(clefState.octaveShift);
+
+    if (
+      activeClef?.clef === clefState.clef &&
+      normalizeClefOctaveShift(activeClef.octaveShift) === octaveShift
+    ) {
       return;
     }
 
-    activeClefByStaff.set(staffId, clef);
+    activeClefByStaff.set(staffId, {
+      clef: clefState.clef,
+      octaveShift,
+    });
     const key = `${staffId}:${measureIndex}`;
     const changes = clefChangesByMeasure.get(key) ?? [];
 
     changes.push({
       beat,
-      clef,
-      id: `xml-clef-${staffId}-${measureIndex + 1}-${beat.toFixed(4)}-${clefIndex}-${clef}`,
+      clef: clefState.clef,
+      id: `xml-clef-${staffId}-${measureIndex + 1}-${beat.toFixed(4)}-${clefIndex}-${clefState.clef}-${octaveShift}`,
+      ...(octaveShift !== 0 ? { octaveShift } : {}),
     });
     clefChangesByMeasure.set(key, changes);
   }
@@ -1716,6 +1766,48 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
       staffId,
       voiceIndex,
     });
+  }
+
+  function getMusicXmlBeamGroupId({
+    eventId,
+    measureIndex,
+    note,
+    staffId,
+    voiceIndex,
+  }: {
+    eventId: string;
+    measureIndex: number;
+    note: Element;
+    staffId: StaffId;
+    voiceIndex: number;
+  }) {
+    const beam = getMusicXmlBeamMarks(note).find((mark) => mark.number === '1') ??
+      getMusicXmlBeamMarks(note)[0];
+
+    if (!beam || beam.role === 'forward hook' || beam.role === 'backward hook') {
+      return undefined;
+    }
+
+    const key = `${staffId}:${measureIndex}:${voiceIndex}:${beam.number}`;
+
+    if (beam.role === 'begin') {
+      const groupId = `xml-beam-${staffId}-m${measureIndex + 1}-v${voiceIndex}-${eventId}-${beam.number}`;
+
+      pendingBeamGroupByKey.set(key, groupId);
+      return groupId;
+    }
+
+    const groupId =
+      pendingBeamGroupByKey.get(key) ??
+      `xml-beam-${staffId}-m${measureIndex + 1}-v${voiceIndex}-${eventId}-${beam.number}`;
+
+    if (beam.role === 'end') {
+      pendingBeamGroupByKey.delete(key);
+    } else {
+      pendingBeamGroupByKey.set(key, groupId);
+    }
+
+    return groupId;
   }
 
   function getImportedMeasureVoices(
@@ -1894,8 +1986,20 @@ export function importScoreFromMusicXml(xml: string): AbcImportResult {
           pitch,
           tuplet,
         });
+        const beamGroupId = !isRest
+          ? getMusicXmlBeamGroupId({
+              eventId: event.id,
+              measureIndex,
+              note: child,
+              staffId,
+              voiceIndex,
+            })
+          : undefined;
 
         eventCounter += 1;
+        if (beamGroupId && event.kind !== 'rest') {
+          event.beamGroupId = beamGroupId;
+        }
         events.push(event);
         registerEvent(event);
         pendingGraceNotesByStaff.delete(voiceKey);

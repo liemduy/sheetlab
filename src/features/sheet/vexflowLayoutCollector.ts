@@ -1,11 +1,14 @@
 import { StaveNote, Stem } from 'vexflow';
 import type { Score, ScoreEvent, Staff } from '../../domain/score/types';
-import { getActiveClef } from '../../domain/score/clefChanges';
+import { getActiveClefState } from '../../domain/score/clefChanges';
 import {
   getEventPitches,
   isGeneratedRestEvent,
 } from '../../domain/score/events';
-import { clampPitchToClefRange } from '../../domain/score/pitchRange';
+import {
+  clampPitchToClefRange,
+  getDisplayPitchForClefOctaveShift,
+} from '../../domain/score/pitchRange';
 import {
   STAFF_LINE_SPACING,
   getScoreStaffTop,
@@ -70,7 +73,12 @@ export function collectRenderedMeasureEventLayouts({
       svgElement.setAttribute('data-duration', event.duration);
       svgElement.setAttribute('data-measure-index', String(measureIndex));
       const eventPitches = getEventPitches(event);
-      const activeClef = getActiveClef(score, staff.id, measureIndex, event.beat);
+      const activeClefState = getActiveClefState(
+        score,
+        staff.id,
+        measureIndex,
+        event.beat,
+      );
       svgElement.setAttribute('data-pitch-count', String(eventPitches.length));
       svgElement.setAttribute('data-staff-id', staff.id);
       if (event.tuplet) {
@@ -99,8 +107,14 @@ export function collectRenderedMeasureEventLayouts({
         eventPitches.length > 0
           ? eventPitches.map((pitch) =>
               getPitchYForScore(
-                clampPitchToClefRange(pitch, activeClef),
-                activeClef,
+                clampPitchToClefRange(
+                  getDisplayPitchForClefOctaveShift(
+                    pitch,
+                    activeClefState.octaveShift,
+                  ),
+                  activeClefState.clef,
+                ),
+                activeClefState.clef,
                 staffIndex,
                 score,
                 measureIndex,

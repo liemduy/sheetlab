@@ -225,6 +225,7 @@ export interface ClefChange {
   id: string;
   beat: number;
   clef: Clef;
+  octaveShift?: number;
 }
 
 export interface BaseScoreEvent {
@@ -233,6 +234,7 @@ export interface BaseScoreEvent {
   beat: number;
   arpeggio?: boolean;
   articulations?: ArticulationKind[];
+  beamGroupId?: string;
   dots?: number;
   stemDirection?: StemDirection;
   chordSymbol?: string;

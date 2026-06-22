@@ -35,6 +35,27 @@ export function diatonicValueToPitch(value: number): Pitch {
   };
 }
 
+export function transposePitchOctaves(pitch: Pitch, octaves: number): Pitch {
+  return {
+    ...pitch,
+    octave: pitch.octave + octaves,
+  };
+}
+
+export function getDisplayPitchForClefOctaveShift(
+  pitch: Pitch,
+  octaveShift = 0,
+): Pitch {
+  return transposePitchOctaves(pitch, -octaveShift);
+}
+
+export function getStoredPitchForClefOctaveShift(
+  pitch: Pitch,
+  octaveShift = 0,
+): Pitch {
+  return transposePitchOctaves(pitch, octaveShift);
+}
+
 export function getClefPitchRange(clef: Clef) {
   return CLEF_PITCH_RANGE[clef];
 }

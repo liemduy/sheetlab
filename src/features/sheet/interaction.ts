@@ -10,6 +10,7 @@ import {
   TOP_LINE_BY_CLEF,
   clampPitchToClefRange,
   diatonicValueToPitch,
+  getStoredPitchForClefOctaveShift,
   pitchToDiatonicValue,
 } from '../../domain/score/pitchRange';
 import {
@@ -26,7 +27,7 @@ import {
   getStaffTop,
 } from './layout';
 import { getMeasureBeats } from '../../domain/score/timeSignatures';
-import { getActiveClef } from '../../domain/score/clefChanges';
+import { getActiveClefState } from '../../domain/score/clefChanges';
 
 export interface SvgPoint {
   x: number;
@@ -272,13 +273,17 @@ export function mapPointToMusicPosition(
     beatsPerMeasure,
     options.dots ?? 0,
   );
-  const activeClef = getActiveClef(score, staff.id, measureIndex, beat);
-  const pitch = mapScoreStaffYToPitch(
+  const activeClefState = getActiveClefState(score, staff.id, measureIndex, beat);
+  const displayPitch = mapScoreStaffYToPitch(
     point.y,
-    activeClef,
+    activeClefState.clef,
     staffIndex,
     score,
     measureIndex,
+  );
+  const pitch = getStoredPitchForClefOctaveShift(
+    displayPitch,
+    activeClefState.octaveShift,
   );
 
   return {

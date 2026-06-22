@@ -14,9 +14,10 @@ import {
 import {
   TOP_LINE_BY_CLEF,
   clampPitchToClefRange,
+  getDisplayPitchForClefOctaveShift,
   pitchToDiatonicValue,
 } from './pitchRange';
-import { getActiveClef } from './clefChanges';
+import { getActiveClefState } from './clefChanges';
 
 const BEAMABLE_DURATIONS = new Set<ScoreEvent['duration']>([
   'eighth',
@@ -75,11 +76,13 @@ function hasMultipleVisibleVoices(measure: Measure) {
 
 export function getAutomaticStemDirection({
   clef,
+  clefOctaveShift = 0,
   event,
   hasMultipleVoices,
   voiceIndex,
 }: {
   clef: Clef;
+  clefOctaveShift?: number;
   event: ScoreEvent;
   hasMultipleVoices: boolean;
   voiceIndex: number;
@@ -93,7 +96,10 @@ export function getAutomaticStemDirection({
   }
 
   const eventPitches = getEventPitches(event).map((pitch) =>
-    clampPitchToClefRange(pitch, clef),
+    clampPitchToClefRange(
+      getDisplayPitchForClefOctaveShift(pitch, clefOctaveShift),
+      clef,
+    ),
   );
 
   if (eventPitches.length === 0) {
@@ -112,11 +118,13 @@ export function getAutomaticStemDirection({
 
 export function getEffectiveStemDirection({
   clef,
+  clefOctaveShift = 0,
   event,
   hasMultipleVoices,
   voiceIndex,
 }: {
   clef: Clef;
+  clefOctaveShift?: number;
   event: ScoreEvent;
   hasMultipleVoices: boolean;
   voiceIndex: number;
@@ -125,6 +133,7 @@ export function getEffectiveStemDirection({
     event.stemDirection ??
     getAutomaticStemDirection({
       clef,
+      clefOctaveShift,
       event,
       hasMultipleVoices,
       voiceIndex,
@@ -150,14 +159,15 @@ export function getStemDirectionContext(score: Score, eventId: string) {
   }
 
   const hasMultipleVoices = hasMultipleVisibleVoices(measure);
-  const activeClef = getActiveClef(
+  const activeClefState = getActiveClefState(
     score,
     staff.id,
     context.measureIndex,
     context.event.beat,
   );
   const direction = getEffectiveStemDirection({
-    clef: activeClef,
+    clef: activeClefState.clef,
+    clefOctaveShift: activeClefState.octaveShift,
     event: context.event,
     hasMultipleVoices,
     voiceIndex: context.voiceIndex,

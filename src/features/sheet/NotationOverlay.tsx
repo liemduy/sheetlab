@@ -13,7 +13,11 @@ import { getKeySignatureSymbolMoveIssue } from '../../domain/score/keySignatures
 import { getEventDots } from '../../domain/score/events';
 import { clampAnnotationOffset } from '../../domain/score/annotationOffsets';
 import { getLyricMapTargetEventIds } from '../../domain/score/lyricMapping';
-import { getActiveClef } from '../../domain/score/clefChanges';
+import {
+  getActiveClef,
+  getActiveClefState,
+} from '../../domain/score/clefChanges';
+import { getStoredPitchForClefOctaveShift } from '../../domain/score/pitchRange';
 import type { AnnotationTarget } from '../app/selectionTypes';
 import type { EntryMode, PlacementMode } from '../editor/editorState';
 import type { InputCursor } from '../editor/inputCursor';
@@ -80,7 +84,10 @@ import {
   type LyricMapDragAnchor,
 } from './OverlayLyricMapLayer';
 import { PlaybackLayer } from './OverlayPlaybackLayer';
-import type { ScorePageViewport } from './pageLayout';
+import {
+  getScorePageViewBox,
+  type ScorePageViewport,
+} from './pageLayout';
 import { VoiceZoneDebugOverlay } from './OverlayVoiceZoneLayer';
 import { getNestedSvgPoint, getSvgPoint } from './overlaySvgPoint';
 import type {
@@ -272,6 +279,7 @@ export function NotationOverlay({
   const suppressNextPlaceRef = useRef(false);
   const staves = score.parts[0]?.staves ?? [];
   const beatsPerMeasure = getMeasureBeats(score.timeSignature);
+  const viewBox = getScorePageViewBox(pageViewport, svgWidth, svgHeight);
   const visibleMeasureIndexSet = pageViewport
     ? new Set(pageViewport.measureIndexes)
     : null;
@@ -428,25 +436,29 @@ export function NotationOverlay({
     }
 
     const targetMeasureIndex = mappedPosition?.measureIndex ?? origin.measureIndex;
-    const activeClef = getActiveClef(
+    const activeClefState = getActiveClefState(
       score,
       staff.id,
       targetMeasureIndex,
       origin.beat,
     );
-    const pitch = mapScoreStaffYToPitch(
+    const displayPitch = mapScoreStaffYToPitch(
       point.y,
-      activeClef,
+      activeClefState.clef,
       targetStaffIndex,
       score,
       targetMeasureIndex,
     );
     const y = getPitchYForScore(
-      pitch,
-      activeClef,
+      displayPitch,
+      activeClefState.clef,
       targetStaffIndex,
       score,
       targetMeasureIndex,
+    );
+    const pitch = getStoredPitchForClefOctaveShift(
+      displayPitch,
+      activeClefState.octaveShift,
     );
 
     return {
@@ -622,7 +634,7 @@ export function NotationOverlay({
       className="staff-renderer notation-overlay"
       data-testid="staff-renderer"
       role="img"
-      viewBox={`0 ${pageViewport?.y ?? 0} ${svgWidth} ${svgHeight}`}
+      viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
       onMouseMove={(event) => {
         if (annotationDragState) {
           const point = getSvgPoint(event, svgHeight);
@@ -901,10 +913,10 @@ export function NotationOverlay({
     >
       <rect
         className="staff-page-bg"
-        x={0}
-        y={pageViewport?.y ?? 0}
-        width={svgWidth}
-        height={svgHeight}
+        x={viewBox.x}
+        y={viewBox.y}
+        width={viewBox.width}
+        height={viewBox.height}
       />
       <VoiceZoneDebugOverlay
         show={showLayoutZones}

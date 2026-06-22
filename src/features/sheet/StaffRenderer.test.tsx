@@ -49,7 +49,7 @@ import {
   getStaffTop,
   SVG_WIDTH,
 } from './layout';
-import { getBeatX, getPitchY } from './notationGeometry';
+import { getBeatX, getPitchY, getPitchYForScore } from './notationGeometry';
 import { getLedgerLineYsForScore } from './notationGlyph';
 import { StaffRenderer } from './StaffRenderer';
 import { buildFingeringHints } from '../fingering/fingeringHints';
@@ -2253,6 +2253,62 @@ describe('StaffRenderer', () => {
 
     expect(container.querySelectorAll('.vexflow-output .vf-beam').length).toBeGreaterThan(0);
     expect(container.querySelectorAll('.vexflow-output .vf-flag')).toHaveLength(0);
+  });
+
+  it('renders octave-shifted clef notes at their written display octave', () => {
+    const baseScore = createEmptyScore('grand', { measureCount: 1 });
+    const scoreWithClef = {
+      ...baseScore,
+      parts: baseScore.parts.map((part) => ({
+        ...part,
+        staves: part.staves.map((staff) =>
+          staff.id === 'bass'
+            ? {
+                ...staff,
+                measures: staff.measures.map((measure) =>
+                  measure.index === 0
+                    ? {
+                        ...measure,
+                        clefChanges: [
+                          {
+                            beat: 0,
+                            clef: 'treble' as const,
+                            id: 'bass-treble-8va-clef',
+                            octaveShift: 1,
+                          },
+                        ],
+                      }
+                    : measure,
+                ),
+              }
+            : staff,
+        ),
+      })),
+    };
+    const score = placeScoreEvent(scoreWithClef, {
+      eventId: 'octave-clef-note',
+      staffId: 'bass',
+      measureIndex: 0,
+      beat: 0,
+      duration: 'eighth',
+      entryMode: 'note',
+      pitch: { step: 'B', octave: 6 },
+    });
+    const { container } = render(<StaffRenderer score={score} />);
+    const notehead = container.querySelector(
+      '.vf-user-notehead[data-event-id="octave-clef-note"]',
+    );
+    const renderedY = Number(notehead?.getAttribute('data-notehead-y'));
+    const expectedY = getPitchYForScore(
+      { step: 'B', octave: 5 },
+      'treble',
+      1,
+      score,
+      0,
+    );
+
+    expect(Number.isFinite(renderedY)).toBe(true);
+    expect(Math.abs(renderedY - expectedY)).toBeLessThanOrEqual(1);
   });
 
   it('renders same-beat notes in separate voices as independent targets', () => {

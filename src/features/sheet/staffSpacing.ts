@@ -11,11 +11,14 @@ import {
 } from '../../domain/score/events';
 import { findScoreEventContext } from '../../domain/score/eventLookup';
 import { getEffectiveStemDirection } from '../../domain/score/stemDirection';
-import { getActiveClef } from '../../domain/score/clefChanges';
+import {
+  getActiveClefState,
+} from '../../domain/score/clefChanges';
 import { getLyricMapEventIds } from '../../domain/score/lyricMapping';
 import {
   TOP_LINE_BY_CLEF,
   clampPitchToClefRange,
+  getDisplayPitchForClefOctaveShift,
   pitchToDiatonicValue,
 } from '../../domain/score/pitchRange';
 import { getMeasureBeats } from '../../domain/score/timeSignatures';
@@ -84,7 +87,7 @@ function getStaffPitchBounds(
       .flatMap((measure) =>
         measure.voices.flatMap((voice) =>
           voice.events.flatMap((event) => {
-            const activeClef = getActiveClef(
+            const activeClefState = getActiveClefState(
               score,
               staff.id,
               measure.index,
@@ -93,8 +96,14 @@ function getStaffPitchBounds(
 
             return getEventPitches(event).map((pitch) =>
               getPitchYRelativeToStaffTop(
-                clampPitchToClefRange(pitch, activeClef),
-                activeClef,
+                clampPitchToClefRange(
+                  getDisplayPitchForClefOctaveShift(
+                    pitch,
+                    activeClefState.octaveShift,
+                  ),
+                  activeClefState.clef,
+                ),
+                activeClefState.clef,
               ),
             );
           }),
@@ -147,7 +156,7 @@ function getStaffInkBounds(
           return [];
         }
 
-        const activeClef = getActiveClef(
+        const activeClefState = getActiveClefState(
           score,
           staff.id,
           measure.index,
@@ -155,14 +164,21 @@ function getStaffInkBounds(
         );
         const pitchYs = eventPitches.map((pitch) =>
           getPitchYRelativeToStaffTop(
-            clampPitchToClefRange(pitch, activeClef),
-            activeClef,
+            clampPitchToClefRange(
+              getDisplayPitchForClefOctaveShift(
+                pitch,
+                activeClefState.octaveShift,
+              ),
+              activeClefState.clef,
+            ),
+            activeClefState.clef,
           ),
         );
         const minPitchY = Math.min(...pitchYs);
         const maxPitchY = Math.max(...pitchYs);
         const stemDirection = getEffectiveStemDirection({
-          clef: activeClef,
+          clef: activeClefState.clef,
+          clefOctaveShift: activeClefState.octaveShift,
           event,
           hasMultipleVoices,
           voiceIndex,
@@ -327,11 +343,17 @@ function getEventPitchBounds(
     };
   }
 
-  const activeClef = getActiveClef(score, staff.id, measureIndex, beat);
+  const activeClefState = getActiveClefState(score, staff.id, measureIndex, beat);
   const pitchYs = eventPitches.map((pitch) =>
     getPitchYRelativeToStaffTop(
-      clampPitchToClefRange(pitch, activeClef),
-      activeClef,
+      clampPitchToClefRange(
+        getDisplayPitchForClefOctaveShift(
+          pitch,
+          activeClefState.octaveShift,
+        ),
+        activeClefState.clef,
+      ),
+      activeClefState.clef,
     ),
   );
 

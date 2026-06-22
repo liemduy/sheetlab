@@ -11,6 +11,12 @@ import type { Score, ScoreEvent, Staff } from '../../domain/score/types';
 import { getSystemIndex } from './layout';
 
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
+const SLUR_CONTROL_POINT_OFFSET = 16;
+const SLUR_HEAD_X_SHIFT = 8;
+const SLUR_HEAD_Y_SHIFT = 18;
+const TIE_CONTROL_POINT_NEAR = 10;
+const TIE_CONTROL_POINT_FAR = 14;
+const TIE_HEAD_Y_SHIFT = 12;
 
 export interface RenderedNoteRef {
   event: ScoreEvent;
@@ -128,6 +134,9 @@ function drawVexFlowTie({
       lastNote,
     }).setDirection(getVexFlowConnectionDirection(side));
 
+    tie.renderOptions.cp1 = TIE_CONTROL_POINT_NEAR;
+    tie.renderOptions.cp2 = TIE_CONTROL_POINT_FAR;
+    tie.renderOptions.yShift = TIE_HEAD_Y_SHIFT;
     tie.setContext(context).draw();
     tagVexFlowConnectionElement({
       className: 'connection-mark-tie',
@@ -162,15 +171,15 @@ function drawVexFlowSlur({
     const existingChildren = svg ? new Set([...svg.children]) : null;
     const slur = new Curve(from, to, {
       cps: [
-        { x: 0, y: 12 },
-        { x: 0, y: 12 },
+        { x: 0, y: SLUR_CONTROL_POINT_OFFSET },
+        { x: 0, y: SLUR_CONTROL_POINT_OFFSET },
       ],
       openingDirection: getVexFlowCurveOpeningDirection(side),
       position: Curve.Position.NEAR_HEAD,
       positionEnd: Curve.Position.NEAR_HEAD,
       thickness: 2,
-      xShift: 4,
-      yShift: 10,
+      xShift: SLUR_HEAD_X_SHIFT,
+      yShift: SLUR_HEAD_Y_SHIFT,
     });
 
     slur.setContext(context).draw();

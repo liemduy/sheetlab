@@ -16,6 +16,11 @@ export interface ClefChangeResult {
   reason?: ClefChangeIssue;
 }
 
+export interface ActiveClefState {
+  clef: Clef;
+  octaveShift: number;
+}
+
 function getStaff(score: Score, staffId: StaffId) {
   return score.parts
     .flatMap((part) => part.staves)
@@ -30,6 +35,12 @@ function getSortedClefChanges(measure: { clefChanges?: ClefChange[] }) {
 
 function beatsMatch(first: number, second: number) {
   return Math.abs(first - second) <= BEAT_EPSILON;
+}
+
+export function normalizeClefOctaveShift(octaveShift?: number) {
+  return typeof octaveShift === 'number' && Number.isFinite(octaveShift)
+    ? Math.trunc(octaveShift)
+    : 0;
 }
 
 export function getMeasureClefChanges(
@@ -84,21 +95,24 @@ export function findClefChange(
   return null;
 }
 
-export function getActiveClef(
+export function getActiveClefState(
   score: Score,
   staffId: StaffId,
   measureIndex: number,
   beat = 0,
   options: { includeAtBeat?: boolean } = {},
-): Clef {
+): ActiveClefState {
   const staff = getStaff(score, staffId);
   const includeAtBeat = options.includeAtBeat ?? true;
 
   if (!staff) {
-    return 'treble';
+    return { clef: 'treble', octaveShift: 0 };
   }
 
-  let clef = staff.clef;
+  let state: ActiveClefState = {
+    clef: staff.clef,
+    octaveShift: 0,
+  };
 
   for (const measure of staff.measures) {
     if (measure.index > measureIndex) {
@@ -112,12 +126,31 @@ export function getActiveClef(
         : change.beat < beat - BEAT_EPSILON;
 
       if (isBeforeTargetMeasure || isAtOrBeforeTargetBeat) {
-        clef = change.clef;
+        state = {
+          clef: change.clef,
+          octaveShift: normalizeClefOctaveShift(change.octaveShift),
+        };
       }
     }
   }
 
-  return clef;
+  return state;
+}
+
+export function getActiveClef(
+  score: Score,
+  staffId: StaffId,
+  measureIndex: number,
+  beat = 0,
+  options: { includeAtBeat?: boolean } = {},
+): Clef {
+  return getActiveClefState(
+    score,
+    staffId,
+    measureIndex,
+    beat,
+    options,
+  ).clef;
 }
 
 export function getActiveClefForEvent(

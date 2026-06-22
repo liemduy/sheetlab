@@ -447,6 +447,75 @@ describe('externalScoreImport', () => {
     expect(getScoreRhythmIssues(result.score)).toEqual([]);
   });
 
+  it('preserves MusicXML octave-shifted clefs and explicit beam groups', () => {
+    const result = importScoreFromMusicXml(`
+      <score-partwise version="3.1">
+        <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+        <part id="P1">
+          <measure number="1">
+            <attributes>
+              <divisions>8</divisions>
+              <time><beats>4</beats><beat-type>4</beat-type></time>
+              <staves>2</staves>
+              <clef number="2">
+                <sign>G</sign>
+                <line>2</line>
+                <clef-octave-change>1</clef-octave-change>
+              </clef>
+            </attributes>
+            <note>
+              <pitch><step>B</step><octave>6</octave></pitch>
+              <duration>1</duration>
+              <voice>1</voice>
+              <type>32nd</type>
+              <staff>2</staff>
+              <beam number="1">begin</beam>
+            </note>
+            <note>
+              <pitch><step>A</step><octave>6</octave></pitch>
+              <duration>1</duration>
+              <voice>1</voice>
+              <type>32nd</type>
+              <staff>2</staff>
+              <beam number="1">continue</beam>
+            </note>
+            <note>
+              <pitch><step>G</step><octave>6</octave></pitch>
+              <duration>1</duration>
+              <voice>1</voice>
+              <type>32nd</type>
+              <staff>2</staff>
+              <beam number="1">end</beam>
+            </note>
+            <note>
+              <pitch><step>F</step><octave>6</octave></pitch>
+              <duration>1</duration>
+              <voice>1</voice>
+              <type>32nd</type>
+              <staff>2</staff>
+            </note>
+          </measure>
+        </part>
+      </score-partwise>
+    `);
+    const bassMeasure = result.score.parts[0]?.staves.find(
+      (staff) => staff.id === 'bass',
+    )?.measures[0];
+    const events = bassMeasure?.voices[0]?.events ?? [];
+    const explicitBeamGroupIds = events
+      .slice(0, 3)
+      .map((event) => event.beamGroupId);
+
+    expect(bassMeasure?.clefChanges?.[0]).toMatchObject({
+      beat: 0,
+      clef: 'treble',
+      octaveShift: 1,
+    });
+    expect(new Set(explicitBeamGroupIds).size).toBe(1);
+    expect(explicitBeamGroupIds.every(Boolean)).toBe(true);
+    expect(events[3]?.beamGroupId).toBeUndefined();
+  });
+
   it('imports MusicXML engraving layout and range directions', () => {
     const result = importScoreFromMusicXml(`
       <score-partwise version="3.1">

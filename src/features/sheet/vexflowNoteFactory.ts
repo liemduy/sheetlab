@@ -27,6 +27,7 @@ import {
   isGeneratedRestEvent,
 } from '../../domain/score/events';
 import { clampPitchToClefRange } from '../../domain/score/pitchRange';
+import { getDisplayPitchForClefOctaveShift } from '../../domain/score/pitchRange';
 import {
   accidentalToVexFlow,
   durationToVexFlowDuration,
@@ -62,8 +63,14 @@ const ARTICULATION_RENDER_ORDER: ArticulationKind[] = [
 function createVexFlowGraceNote(
   graceNote: GraceNoteAttachment,
   clef: Clef,
+  clefOctaveShift = 0,
 ) {
-  const pitches = graceNote.pitches.map((pitch) => clampPitchToClefRange(pitch, clef));
+  const pitches = graceNote.pitches.map((pitch) =>
+    clampPitchToClefRange(
+      getDisplayPitchForClefOctaveShift(pitch, clefOctaveShift),
+      clef,
+    ),
+  );
   const vexFlowGraceNote = new VexFlowGraceNote({
     clef,
     duration: durationToVexFlowDuration(getGraceNoteDisplayDuration(graceNote)),
@@ -94,15 +101,19 @@ export function createVexFlowNote(
   staff: Staff,
   options: {
     clef?: Clef;
+    clefOctaveShift?: number;
     modifierDirection?: StemDirection | null;
     stemDirection?: number;
   } = {},
 ) {
   const eventDots = getEventDots(event);
   const clef = options.clef ?? staff.clef;
-  const { modifierDirection, stemDirection } = options;
+  const { clefOctaveShift = 0, modifierDirection, stemDirection } = options;
   const eventPitches = getEventPitches(event).map((pitch) =>
-    clampPitchToClefRange(pitch, clef),
+    clampPitchToClefRange(
+      getDisplayPitchForClefOctaveShift(pitch, clefOctaveShift),
+      clef,
+    ),
   );
   const staveNote =
     event.kind === 'rest'
@@ -152,7 +163,7 @@ export function createVexFlowNote(
     if (event.graceNotes?.length) {
       const graceNoteGroup = new GraceNoteGroup(
         event.graceNotes.map((graceNote) =>
-          createVexFlowGraceNote(graceNote, clef),
+          createVexFlowGraceNote(graceNote, clef, clefOctaveShift),
         ),
         event.graceNotes.some((graceNote) => graceNote.slurToMain ?? true),
       ).beamNotes();

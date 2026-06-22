@@ -1,7 +1,10 @@
 import type { MouseEvent } from 'react';
 import type { Score, ScoreEvent, Staff } from '../../domain/score/types';
-import { clampPitchToClefRange } from '../../domain/score/pitchRange';
-import { getActiveClef } from '../../domain/score/clefChanges';
+import {
+  clampPitchToClefRange,
+  getDisplayPitchForClefOctaveShift,
+} from '../../domain/score/pitchRange';
+import { getActiveClefState } from '../../domain/score/clefChanges';
 import {
   formatEventPitchList,
   getEventPitches,
@@ -131,19 +134,34 @@ export function EventHitTarget({
   staffIndex,
   voiceIndex,
 }: EventHitTargetProps) {
-  const activeClef = getActiveClef(score, staff.id, measureIndex, event.beat);
-  const eventPitches = getEventPitches(event).map((pitch) =>
-    clampPitchToClefRange(pitch, activeClef),
+  const activeClefState = getActiveClefState(
+    score,
+    staff.id,
+    measureIndex,
+    event.beat,
+  );
+  const storedEventPitches = getEventPitches(event);
+  const displayEventPitches = storedEventPitches.map((pitch) =>
+    clampPitchToClefRange(
+      getDisplayPitchForClefOctaveShift(pitch, activeClefState.octaveShift),
+      activeClefState.clef,
+    ),
   );
   const primaryPitch = getPrimaryEventPitch(event);
   const displayPrimaryPitch = primaryPitch
-    ? clampPitchToClefRange(primaryPitch, activeClef)
+    ? clampPitchToClefRange(
+        getDisplayPitchForClefOctaveShift(
+          primaryPitch,
+          activeClefState.octaveShift,
+        ),
+        activeClefState.clef,
+      )
     : null;
   const fallbackY =
     displayPrimaryPitch
       ? getPitchYForScore(
           displayPrimaryPitch,
-          activeClef,
+          activeClefState.clef,
           staffIndex,
           score,
           measureIndex,
@@ -183,11 +201,17 @@ export function EventHitTarget({
         );
   const targetCenterX = noteheadTargetBounds?.centerX ?? x;
   const targetCenterY = noteheadTargetBounds?.centerY ?? y;
-  const selectedPitch =
+  const selectedStoredPitch =
     selectedEventId === event.id && selectedPitchIndex !== null && selectedPitchIndex !== undefined
-      ? eventPitches[selectedPitchIndex]
+      ? storedEventPitches[selectedPitchIndex]
       : selectedEventId === event.id
-        ? eventPitches[0]
+        ? storedEventPitches[0]
+        : null;
+  const selectedDisplayPitch =
+    selectedEventId === event.id && selectedPitchIndex !== null && selectedPitchIndex !== undefined
+      ? displayEventPitches[selectedPitchIndex]
+      : selectedEventId === event.id
+        ? displayEventPitches[0]
         : null;
   const selectedPitchLayoutIndex =
     selectedEventId === event.id ? selectedPitchIndex ?? 0 : null;
@@ -195,11 +219,11 @@ export function EventHitTarget({
     eventLayout,
     selectedPitchLayoutIndex,
   )?.y;
-  const selectedPitchY = selectedPitch
+  const selectedPitchY = selectedDisplayPitch
     ? selectedPitchLayoutY ??
       getPitchYForScore(
-        selectedPitch,
-        activeClef,
+        selectedDisplayPitch,
+        activeClefState.clef,
         staffIndex,
         score,
         measureIndex,
@@ -209,24 +233,24 @@ export function EventHitTarget({
   const deleteAnchorY = selectedPitchY ?? eventLayout?.minY ?? y;
   const deleteY = deleteAnchorY - 24;
   const deleteLabel =
-    selectedPitch && event.kind === 'chord'
-      ? `Delete Note ${formatPitch(selectedPitch)} from ${label}`
+    selectedStoredPitch && event.kind === 'chord'
+      ? `Delete Note ${formatPitch(selectedStoredPitch)} from ${label}`
       : `Delete ${label}`;
 
   function getClosestPitchIndex(pointerEvent: MouseEvent<SVGElement>) {
-    if (eventPitches.length <= 1) {
+    if (displayEventPitches.length <= 1) {
       return null;
     }
 
     const point = getNestedSvgPoint(pointerEvent);
 
-    return eventPitches.reduce(
+    return displayEventPitches.reduce(
       (closest, pitch, pitchIndex) => {
         const pitchY =
           getPitchLayoutY(eventLayout, pitchIndex) ??
           getPitchYForScore(
             pitch,
-            activeClef,
+            activeClefState.clef,
             staffIndex,
             score,
             measureIndex,
@@ -248,11 +272,11 @@ export function EventHitTarget({
   }
 
   function getDragPitchIndex(pointerEvent: MouseEvent<SVGElement>) {
-    if (eventPitches.length === 0) {
+    if (storedEventPitches.length === 0) {
       return null;
     }
 
-    return eventPitches.length === 1 ? 0 : getClosestPitchIndex(pointerEvent);
+    return storedEventPitches.length === 1 ? 0 : getClosestPitchIndex(pointerEvent);
   }
 
   function getDragOriginPosition(pitchIndex: number | null): MusicPosition | null {
@@ -260,9 +284,10 @@ export function EventHitTarget({
       return null;
     }
 
-    const pitch = eventPitches[pitchIndex];
+    const pitch = storedEventPitches[pitchIndex];
+    const displayPitch = displayEventPitches[pitchIndex];
 
-    if (!pitch) {
+    if (!pitch || !displayPitch) {
       return null;
     }
 
@@ -275,7 +300,13 @@ export function EventHitTarget({
       x,
       y:
         getPitchLayoutY(eventLayout, pitchIndex) ??
-        getPitchYForScore(pitch, activeClef, staffIndex, score, measureIndex),
+        getPitchYForScore(
+          displayPitch,
+          activeClefState.clef,
+          staffIndex,
+          score,
+          measureIndex,
+        ),
     };
   }
 
@@ -359,7 +390,7 @@ export function EventHitTarget({
         onKeyDown={(eventKey) => {
           if (eventKey.key === 'Enter' || eventKey.key === ' ') {
             eventKey.preventDefault();
-            onSelectEvent?.(event.id, eventPitches.length > 1 ? 0 : null);
+            onSelectEvent?.(event.id, storedEventPitches.length > 1 ? 0 : null);
           }
         }}
       >

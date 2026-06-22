@@ -12,10 +12,12 @@ import {
 } from 'vexflow';
 import type {
   Clef,
+  ScoreEvent,
   Staff,
 } from '../../domain/score/types';
 import {
   getActiveClef,
+  getActiveClefState,
   getMeasureClefChanges,
 } from '../../domain/score/clefChanges';
 import {
@@ -71,6 +73,7 @@ import {
   tagRenderedClefChangeElement,
 } from './vexflowSvgTagging';
 import { collectRenderedMeasureEventLayouts } from './vexflowLayoutCollector';
+import { getScorePageViewBox } from './pageLayout';
 
 const CLEF_CHANGE_GLYPH_CODEPOINT = {
   bass: 0xe062,
@@ -85,6 +88,76 @@ const CLEF_CHANGE_GLYPH_MATCH_TOLERANCE = 8;
 
 function getClefChangeGlyph(clef: Clef) {
   return String.fromCodePoint(CLEF_CHANGE_GLYPH_CODEPOINT[clef]);
+}
+
+function createVexFlowBeams({
+  renderedVoices,
+  score,
+  shouldMaintainStemDirections,
+}: {
+  renderedVoices: Array<{
+    events: ScoreEvent[];
+    notes: StaveNote[];
+  }>;
+  score: StaffRendererProps['score'];
+  shouldMaintainStemDirections: boolean;
+}) {
+  const defaultBeamOptions = {
+    beamRests: false,
+    groups: Beam.getDefaultBeamGroups(
+      `${score.timeSignature.beats}/${score.timeSignature.beatUnit}`,
+    ),
+    maintainStemDirections: shouldMaintainStemDirections,
+  };
+
+  return renderedVoices.flatMap(({ events, notes }) => {
+    const explicitGroups = new Map<
+      string,
+      {
+        indexes: number[];
+        notes: StaveNote[];
+      }
+    >();
+
+    events.forEach((event, eventIndex) => {
+      if (!event.beamGroupId) {
+        return;
+      }
+
+      const note = notes[eventIndex];
+
+      if (!note) {
+        return;
+      }
+
+      const group = explicitGroups.get(event.beamGroupId) ?? {
+        indexes: [],
+        notes: [],
+      };
+
+      group.indexes.push(eventIndex);
+      group.notes.push(note);
+      explicitGroups.set(event.beamGroupId, group);
+    });
+
+    const explicitGroupEntries = [...explicitGroups.values()].filter(
+      (group) => group.notes.length >= 2,
+    );
+    const explicitNoteIndexes = new Set(
+      explicitGroupEntries.flatMap((group) => group.indexes),
+    );
+    const explicitBeams = explicitGroupEntries.map(
+      (group) => new Beam(group.notes),
+    );
+    const autoNotes = notes.filter((_, noteIndex) =>
+      !explicitNoteIndexes.has(noteIndex),
+    );
+
+    return [
+      ...explicitBeams,
+      ...Beam.generateBeams(autoNotes, defaultBeamOptions),
+    ];
+  });
 }
 
 function getSvgNumberAttribute(element: SVGElement, attribute: 'x' | 'y') {
@@ -207,9 +280,15 @@ function drawVexFlowMeasureEvents({
           }))
         : [];
     const notes = voiceGroup.events.map((event) => {
-      const activeClef = getActiveClef(score, staff.id, measureIndex, event.beat);
+      const activeClefState = getActiveClefState(
+        score,
+        staff.id,
+        measureIndex,
+        event.beat,
+      );
       const effectiveStemDirection = getEffectiveStemDirection({
-        clef: activeClef,
+        clef: activeClefState.clef,
+        clefOctaveShift: activeClefState.octaveShift,
         event,
         hasMultipleVoices,
         voiceIndex: voiceGroup.voiceIndex,
@@ -218,7 +297,8 @@ function drawVexFlowMeasureEvents({
         event.stemDirection ?? (hasMultipleVoices ? effectiveStemDirection : null);
 
       return createVexFlowNote(event, staff, {
-        clef: activeClef,
+        clef: activeClefState.clef,
+        clefOctaveShift: activeClefState.octaveShift,
         modifierDirection: effectiveStemDirection,
         stemDirection:
           manualOrVoiceStemDirection === 'up'
@@ -274,15 +354,11 @@ function drawVexFlowMeasureEvents({
     renderedVoices.some(({ events }) =>
       events.some((event) => Boolean(event.stemDirection)),
     );
-  const beams = renderedVoices.flatMap(({ notes }) =>
-    Beam.generateBeams(notes, {
-      beamRests: false,
-      groups: Beam.getDefaultBeamGroups(
-        `${score.timeSignature.beats}/${score.timeSignature.beatUnit}`,
-      ),
-      maintainStemDirections: shouldMaintainStemDirections,
-    }),
-  );
+  const beams = createVexFlowBeams({
+    renderedVoices,
+    score,
+    shouldMaintainStemDirections,
+  });
   const vexFlowVoices = renderedVoices.map((voice) => voice.vexFlowVoice);
 
   new Formatter()
@@ -460,7 +536,12 @@ function drawVexFlowStaves(
   const svg = container.querySelector('svg');
 
   if (svg) {
-    svg.setAttribute('viewBox', `0 ${pageViewport?.y ?? 0} ${width} ${height}`);
+    const viewBox = getScorePageViewBox(pageViewport, width, height);
+
+    svg.setAttribute(
+      'viewBox',
+      `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`,
+    );
     svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
   }
 
